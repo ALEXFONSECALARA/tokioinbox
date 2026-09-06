@@ -63,6 +63,7 @@ async function getAllRestaurantsRaw() {
       if (!config) return { ...r, active };
       return {
         slug: r.slug,
+        publicSlug: (config?.name || r.name || r.slug).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || r.slug,
         name: config.name || r.name,
         emoji: r.emoji,
         color: config.color || r.color,
@@ -145,7 +146,7 @@ export async function getOrder(slug, id) {
 
 export async function createOrder(slug, order) {
   const orders = await readJson(ordersPath(slug), []);
-  orders.unshift(order);
+  orders.unshift({ ...order, updatedAt: order.updatedAt || order.createdAt || new Date().toISOString() });
   await writeJson(ordersPath(slug), orders);
   return order;
 }
@@ -167,11 +168,25 @@ export async function clearFinishedOrders(slug) {
   return { removed };
 }
 
-export async function updateOrder(slug, id, patch) {
+export async function updateOrder(slug, id, patch, expectedUpdatedAt) {
   const orders = await readJson(ordersPath(slug), []);
   const idx = orders.findIndex((o) => o.id === id);
   if (idx === -1) return null;
-  orders[idx] = { ...orders[idx], ...patch };
+  const current = orders[idx];
+  if (expectedUpdatedAt && current.updatedAt && current.updatedAt !== expectedUpdatedAt) {
+    const err = new Error('Pedido foi alterado em outro dispositivo.');
+    err.code = 'ORDER_CONFLICT';
+    err.currentOrder = current;
+    throw err;
+  }
+  const next = { ...current, ...patch, id: current.id, updatedAt: new Date().toISOString() };
+  if (patch.status && patch.status !== current.status && !patch.statusHistory) {
+    next.statusHistory = [
+      ...(Array.isArray(current.statusHistory) ? current.statusHistory : []),
+      { status: patch.status, timestamp: next.updatedAt, note: patch.status === 'cancelado' ? (patch.cancelReason || 'Cancelado pelo restaurante') : undefined },
+    ];
+  }
+  orders[idx] = next;
   await writeJson(ordersPath(slug), orders);
   return orders[idx];
 }
@@ -295,6 +310,22 @@ export async function createCustomer({ name, phone, email, passwordHash }) {
   customers.push(customer);
   await writeJson(CUSTOMERS_FILE, customers);
   return customer;
+}
+
+export async function listCustomers() {
+  const customers = await readJson(CUSTOMERS_FILE, []);
+  return [...customers].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function deleteCustomer(id) {
+  const customers = await readJson(CUSTOMERS_FILE, []);
+  const idx = customers.findIndex(c => c.id === id);
+  if (idx === -1) return null;
+  const [deleted] = customers.splice(idx, 1);
+  await writeJson(CUSTOMERS_FILE, customers);
+  const addresses = await readJson(CUSTOMER_ADDRESSES_FILE, []);
+  await writeJson(CUSTOMER_ADDRESSES_FILE, addresses.filter(a => a.customerId !== id));
+  return deleted;
 }
 
 export async function getCustomerByPhone(phone) {
@@ -560,4 +591,44 @@ export async function deleteMediaAsset(slug, id) {
   const [removed] = list.splice(idx, 1);
   await writeJson(MEDIA_FILE, list);
   return removed;
+}
+
+const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
+const EVENTS_DIR = path.join(DATA_DIR, 'realtime-events');
+export async function createRestaurantBackup(slug, payload, createdBy = null) {
+  const id = randomUUID(); const now = new Date().toISOString();
+  const row = { id, restaurantSlug: slug, version: '18.0.0', payload, createdAt: now, createdBy };
+  const file = path.join(BACKUPS_DIR, `${slug}.json`); const rows = await readJson(file, []); rows.push(row); await writeJson(file, rows.slice(-20)); return row;
+}
+export async function listRestaurantBackups(slug) { return readJson(path.join(BACKUPS_DIR, `${slug}.json`), []); }
+export async function getRestaurantBackup(slug,id) { return (await listRestaurantBackups(slug)).find(x=>x.id===id)||null; }
+export async function appendRealtimeEvent(slug,event) { const file=path.join(EVENTS_DIR,`${slug}.json`); const rows=await readJson(file,[]); const row={id:Date.now()+Math.random(),restaurantSlug:slug,payload:event,createdAt:new Date().toISOString()}; rows.push(row); await writeJson(file,rows.slice(-500)); return row; }
+export async function listRealtimeEvents(slug, afterId=0) { return (await readJson(path.join(EVENTS_DIR,`${slug}.json`),[])).filter(x=>Number(x.id)>Number(afterId)); }
+
+const PRINT_JOBS_DIR = path.join(DATA_DIR, 'print-jobs');
+function printJobsPath(slug) { return path.join(PRINT_JOBS_DIR, `${slug}.json`); }
+export async function listPrintJobs(slug, limit = 100) {
+  const jobs = await readJson(printJobsPath(slug), []);
+  return jobs.slice(-Math.min(Math.max(Number(limit)||100,1),500)).reverse();
+}
+export async function createPrintJob(slug, input) {
+  const jobs = await readJson(printJobsPath(slug), []);
+  const now = new Date().toISOString();
+  const job = { id: randomUUID(), restaurantSlug: slug, orderId: input.orderId, orderNumber: input.orderNumber, variant: input.variant || 'customer', status: 'pendente', attempts: 0, createdAt: now, updatedAt: now, error: null };
+  jobs.push(job);
+  await writeJson(printJobsPath(slug), jobs.slice(-1000));
+  return job;
+}
+export async function updatePrintJob(slug, id, patch) {
+  const jobs = await readJson(printJobsPath(slug), []);
+  const idx = jobs.findIndex(j => j.id === id);
+  if (idx < 0) return null;
+  jobs[idx] = { ...jobs[idx], ...patch, id, updatedAt: new Date().toISOString() };
+  await writeJson(printJobsPath(slug), jobs);
+  return jobs[idx];
+}
+export async function claimNextPrintJob(slug, workerId='bridge') {
+  const jobs = await readJson(printJobsPath(slug), []); const now=Date.now(); const leaseUntil=new Date(now+30000).toISOString();
+  const idx=jobs.findIndex(j => j.status==='pendente' || (j.status==='imprimindo' && j.leaseUntil && new Date(j.leaseUntil).getTime()<now));
+  if(idx<0)return null; const current=jobs[idx]; const next={...current,status:'imprimindo',attempts:Number(current.attempts||0)+1,workerId,leaseUntil,updatedAt:new Date(now).toISOString()}; jobs[idx]=next; await writeJson(printJobsPath(slug),jobs); return next;
 }

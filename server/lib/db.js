@@ -39,6 +39,8 @@ export const updateAdminUser = impl.updateAdminUser;
 // Contas de cliente + endereços salvos (Fase 4, itens 20-22)
 export const createCustomer = impl.createCustomer;
 export const getCustomerByPhone = impl.getCustomerByPhone;
+export const listCustomers = impl.listCustomers;
+export const deleteCustomer = impl.deleteCustomer;
 export const getCustomerById = impl.getCustomerById;
 export const updateCustomer = impl.updateCustomer;
 export const listCustomerAddresses = impl.listCustomerAddresses;
@@ -79,3 +81,13 @@ export const createErrorLog = impl.createErrorLog;
 export const listErrorLogs = impl.listErrorLogs;
 export const clearErrorLogs = impl.clearErrorLogs;
 export const deleteErrorLog = impl.deleteErrorLog;
+export const listPrintJobs = impl.listPrintJobs;
+export const createPrintJob = impl.createPrintJob;
+export const updatePrintJob = impl.updatePrintJob;
+export const claimNextPrintJob = impl.claimNextPrintJob;
+
+export const createRestaurantBackup = impl.createRestaurantBackup;
+export const listRestaurantBackups = impl.listRestaurantBackups;
+export const getRestaurantBackup = impl.getRestaurantBackup;
+export const appendRealtimeEvent = impl.appendRealtimeEvent;
+export const listRealtimeEvents = impl.listRealtimeEvents;

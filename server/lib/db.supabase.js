@@ -203,6 +203,7 @@ function orderRowToApi(orderRow, itemRows) {
     id: orderRow.id,
     orderNumber: orderRow.order_number,
     createdAt: orderRow.created_at,
+    updatedAt: orderRow.updated_at || orderRow.created_at,
     items: (itemRows || [])
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       .map((it) => ({
@@ -241,6 +242,7 @@ function restaurantRowToSummary(r) {
   const cfg = Array.isArray(r.restaurant_configs) ? r.restaurant_configs[0] : r.restaurant_configs;
   return {
     slug: r.slug,
+    publicSlug: String(r.name || r.slug).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || r.slug,
     name: r.name,
     emoji: r.emoji,
     color: cfg?.color || r.color,
@@ -445,7 +447,7 @@ export async function clearFinishedOrders(slug) {
   const { data, error } = await supabase.from('orders').delete().eq('restaurant_id', restaurantId).in('status',['entregue','cancelado']).select('id'); if (error) throw error; return { removed:(data||[]).length };
 }
 
-export async function updateOrder(slug, id, patch) {
+export async function updateOrder(slug, id, patch, expectedUpdatedAt) {
   const restaurantId = await resolveRestaurantId(slug);
   if (!restaurantId) return null;
 
@@ -461,17 +463,29 @@ export async function updateOrder(slug, id, patch) {
   for (const [apiKey, col] of Object.entries(map)) {
     if (patch[apiKey] !== undefined) row[col] = patch[apiKey];
   }
+  if (patch.status && patch.status !== (await getOrder(slug, id))?.status && patch.statusHistory === undefined) {
+    const currentForHistory = await getOrder(slug, id);
+    if (currentForHistory) {
+      row.status_history = [
+        ...(Array.isArray(currentForHistory.statusHistory) ? currentForHistory.statusHistory : []),
+        { status: patch.status, timestamp: new Date().toISOString(), note: patch.status === 'cancelado' ? (patch.cancelReason || 'Cancelado pelo restaurante') : undefined },
+      ];
+    }
+  }
   if (Object.keys(row).length === 0) return getOrder(slug, id);
 
-  const { data, error } = await supabase
-    .from('orders')
-    .update(row)
-    .eq('restaurant_id', restaurantId)
-    .eq('id', id)
-    .select('*')
-    .maybeSingle();
+  let query = supabase.from('orders').update(row).eq('restaurant_id', restaurantId).eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select('*').maybeSingle();
   if (error) throw error;
-  if (!data) return null;
+  if (!data) {
+    const current = await getOrder(slug, id);
+    if (!current) return null;
+    const err = new Error(expectedUpdatedAt ? 'Pedido foi alterado em outro dispositivo.' : 'Pedido não encontrado.');
+    err.code = expectedUpdatedAt ? 'ORDER_CONFLICT' : 'ORDER_NOT_FOUND';
+    err.currentOrder = current;
+    throw err;
+  }
 
   const { data: itemRows, error: itemErr } = await supabase.from('order_items').select('*').eq('order_id', id);
   if (itemErr) throw itemErr;
@@ -743,13 +757,26 @@ export async function createCustomer({ name, phone, email, passwordHash }) {
   const { data, error } = await supabase.from('customers').insert(row).select('*').single();
   if (error) {
     if (error.code === '23505') {
-      const err = new Error('Já existe uma conta com esse telefone.');
-      err.code = 'PHONE_TAKEN';
+      const detail = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+      const err = new Error(detail.includes('phone') ? 'Já existe uma conta com esse telefone.' : 'Não foi possível criar a conta porque um dado informado já está cadastrado.');
+      err.code = detail.includes('phone') ? 'PHONE_TAKEN' : 'CUSTOMER_DUPLICATE';
       throw err;
     }
     throw error;
   }
   return customerRowToApi(data);
+}
+
+export async function listCustomers() {
+  const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(customerRowToApi);
+}
+
+export async function deleteCustomer(id) {
+  const { data, error } = await supabase.from('customers').delete().eq('id', id).select('*').maybeSingle();
+  if (error) throw error;
+  return data ? customerRowToApi(data) : null;
 }
 
 export async function getCustomerByPhone(phone) {
@@ -1166,3 +1193,38 @@ export async function deleteMediaAsset(slug, id) {
   if (error) throw error;
   return existing;
 }
+
+export async function listPrintJobs(slug, limit = 100) {
+  const restaurantId = await resolveRestaurantId(slug); if (!restaurantId) return [];
+  const { data, error } = await supabase.from('print_jobs').select('*').eq('restaurant_id', restaurantId).order('created_at',{ascending:false}).limit(Math.min(Math.max(Number(limit)||100,1),500));
+  if (error) throw error;
+  return (data||[]).map(r => ({ id:r.id, restaurantSlug:slug, orderId:r.order_id, orderNumber:r.order_number, variant:r.variant, status:r.status, attempts:r.attempts, createdAt:r.created_at, updatedAt:r.updated_at, error:r.error }));
+}
+export async function createPrintJob(slug, input) {
+  const restaurantId = await resolveRestaurantId(slug); if (!restaurantId) return null;
+  const { data, error } = await supabase.from('print_jobs').insert({ restaurant_id:restaurantId, order_id:input.orderId, order_number:input.orderNumber, variant:input.variant||'customer', status:'pendente', attempts:0 }).select('*').single();
+  if (error) throw error;
+  return { id:data.id, restaurantSlug:slug, orderId:data.order_id, orderNumber:data.order_number, variant:data.variant, status:data.status, attempts:data.attempts, createdAt:data.created_at, updatedAt:data.updated_at, error:data.error };
+}
+export async function updatePrintJob(slug, id, patch) {
+  const restaurantId = await resolveRestaurantId(slug); if (!restaurantId) return null;
+  const row={}; for (const k of ['status','attempts','error','variant','workerId','leaseUntil']) if (patch[k]!==undefined) row[k.replace(/[A-Z]/g,m=>'_'+m.toLowerCase())]=patch[k];
+  const { data,error }=await supabase.from('print_jobs').update(row).eq('restaurant_id',restaurantId).eq('id',id).select('*').maybeSingle(); if(error)throw error; if(!data)return null;
+  return { id:data.id, restaurantSlug:slug, orderId:data.order_id, orderNumber:data.order_number, variant:data.variant, status:data.status, attempts:data.attempts, createdAt:data.created_at, updatedAt:data.updated_at, error:data.error, workerId:data.worker_id, leaseUntil:data.lease_until };
+}
+export async function claimNextPrintJob(slug, workerId='bridge') {
+  const restaurantId=await resolveRestaurantId(slug); if(!restaurantId)return null;
+  const {data,error}=await supabase.rpc('claim_next_print_job',{p_restaurant_id:restaurantId,p_worker_id:workerId,p_lease_seconds:30}); if(error)throw error; const r=Array.isArray(data)?data[0]:data; if(!r)return null;
+  return {id:r.id,restaurantSlug:slug,orderId:r.order_id,orderNumber:r.order_number,variant:r.variant,status:r.status,attempts:r.attempts,createdAt:r.created_at,updatedAt:r.updated_at,error:r.error,workerId:r.worker_id,leaseUntil:r.lease_until};
+}
+
+
+export async function createRestaurantBackup(slug, payload, createdBy = null) {
+  const restaurantId=await resolveRestaurantId(slug); if(!restaurantId) return null;
+  const {data,error}=await supabase.from('restaurant_backups').insert({restaurant_id:restaurantId,version:'18.0.0',payload,created_by:createdBy}).select('*').single(); if(error) throw error;
+  return {id:data.id,restaurantSlug:slug,version:data.version,payload:data.payload,createdAt:data.created_at,createdBy:data.created_by};
+}
+export async function listRestaurantBackups(slug) { const restaurantId=await resolveRestaurantId(slug); if(!restaurantId)return []; const {data,error}=await supabase.from('restaurant_backups').select('*').eq('restaurant_id',restaurantId).order('created_at',{ascending:false}).limit(20); if(error)throw error; return (data||[]).map(x=>({id:x.id,restaurantSlug:slug,version:x.version,payload:x.payload,createdAt:x.created_at,createdBy:x.created_by})); }
+export async function getRestaurantBackup(slug,id) { const restaurantId=await resolveRestaurantId(slug); if(!restaurantId)return null; const {data,error}=await supabase.from('restaurant_backups').select('*').eq('restaurant_id',restaurantId).eq('id',id).maybeSingle(); if(error)throw error; return data?{id:data.id,restaurantSlug:slug,version:data.version,payload:data.payload,createdAt:data.created_at,createdBy:data.created_by}:null; }
+export async function appendRealtimeEvent(slug,event) { const restaurantId=await resolveRestaurantId(slug); if(!restaurantId)return null; const {data,error}=await supabase.from('realtime_events').insert({restaurant_id:restaurantId,event_type:event.type||'updated',payload:event}).select('*').single(); if(error)throw error; return {id:data.id,restaurantSlug:slug,payload:data.payload,createdAt:data.created_at}; }
+export async function listRealtimeEvents(slug,afterId=0) { const restaurantId=await resolveRestaurantId(slug); if(!restaurantId)return []; const {data,error}=await supabase.from('realtime_events').select('*').eq('restaurant_id',restaurantId).gt('id',Number(afterId)||0).order('id',{ascending:true}).limit(200); if(error)throw error; return (data||[]).map(x=>({id:x.id,restaurantSlug:slug,payload:x.payload,createdAt:x.created_at})); }
