@@ -14,6 +14,8 @@ const PLATFORM_FILE = path.join(DATA_DIR, 'platform.json');
 const ADMIN_USERS_FILE = path.join(DATA_DIR, 'admin-users.json');
 const CUSTOMERS_FILE = path.join(DATA_DIR, 'customers.json');
 const CUSTOMER_ADDRESSES_FILE = path.join(DATA_DIR, 'customer-addresses.json');
+const ADMIN_LOGIN_LOGS_FILE = path.join(DATA_DIR, 'admin-login-logs.json');
+const ERROR_LOGS_FILE = path.join(DATA_DIR, 'error-logs.json');
 
 const DEFAULT_PLATFORM_SETTINGS = {
   landingTitle: 'Escolha seu restaurante',
@@ -148,6 +150,23 @@ export async function createOrder(slug, order) {
   return order;
 }
 
+export async function deleteOrder(slug, id) {
+  const orders = await readJson(ordersPath(slug), []);
+  const idx = orders.findIndex((o) => o.id === id);
+  if (idx === -1) return null;
+  const [removed] = orders.splice(idx, 1);
+  await writeJson(ordersPath(slug), orders);
+  return removed;
+}
+
+export async function clearFinishedOrders(slug) {
+  const orders = await readJson(ordersPath(slug), []);
+  const kept = orders.filter((o) => !['entregue', 'cancelado'].includes(o.status));
+  const removed = orders.length - kept.length;
+  if (removed) await writeJson(ordersPath(slug), kept);
+  return { removed };
+}
+
 export async function updateOrder(slug, id, patch) {
   const orders = await readJson(ordersPath(slug), []);
   const idx = orders.findIndex((o) => o.id === id);
@@ -243,6 +262,16 @@ export async function updateAdminUser(id, patch) {
   await writeJson(ADMIN_USERS_FILE, users);
   return users[idx];
 }
+
+// ---------- Auditoria e logs administrativos ----------
+export async function createAdminLoginLog(entry) { const logs=await readJson(ADMIN_LOGIN_LOGS_FILE,[]); logs.unshift({id:randomUUID(),createdAt:new Date().toISOString(),...entry}); await writeJson(ADMIN_LOGIN_LOGS_FILE,logs.slice(0,500)); }
+export async function listAdminLoginLogs(limit=100) { const logs=await readJson(ADMIN_LOGIN_LOGS_FILE,[]); return logs.slice(0,Math.min(Number(limit)||100,500)); }
+export async function clearAdminLoginLogs() { await writeJson(ADMIN_LOGIN_LOGS_FILE,[]); return true; }
+export async function deleteAdminLoginLog(id) { const logs=await readJson(ADMIN_LOGIN_LOGS_FILE,[]); const idx=logs.findIndex(x=>x.id===id); if(idx<0)return null; const [r]=logs.splice(idx,1); await writeJson(ADMIN_LOGIN_LOGS_FILE,logs); return r; }
+export async function createErrorLog(entry) { const logs=await readJson(ERROR_LOGS_FILE,[]); logs.unshift({id:randomUUID(),createdAt:new Date().toISOString(),...entry}); await writeJson(ERROR_LOGS_FILE,logs.slice(0,500)); }
+export async function listErrorLogs(limit=100) { const logs=await readJson(ERROR_LOGS_FILE,[]); return logs.slice(0,Math.min(Number(limit)||100,500)); }
+export async function clearErrorLogs() { await writeJson(ERROR_LOGS_FILE,[]); return true; }
+export async function deleteErrorLog(id) { const logs=await readJson(ERROR_LOGS_FILE,[]); const idx=logs.findIndex(x=>x.id===id); if(idx<0)return null; const [r]=logs.splice(idx,1); await writeJson(ERROR_LOGS_FILE,logs); return r; }
 
 // ---------- Contas de cliente + endereços salvos (Fase 4, itens 20-22) ----------
 

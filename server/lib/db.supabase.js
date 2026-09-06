@@ -435,6 +435,16 @@ export async function createOrder(slug, order) {
   return order;
 }
 
+export async function deleteOrder(slug, id) {
+  const restaurantId = await resolveRestaurantId(slug); if (!restaurantId) return null;
+  const existing = await getOrder(slug, id); if (!existing) return null;
+  const { error } = await supabase.from('orders').delete().eq('restaurant_id', restaurantId).eq('id', id); if (error) throw error; return existing;
+}
+export async function clearFinishedOrders(slug) {
+  const restaurantId = await resolveRestaurantId(slug); if (!restaurantId) return { removed: 0 };
+  const { data, error } = await supabase.from('orders').delete().eq('restaurant_id', restaurantId).in('status',['entregue','cancelado']).select('id'); if (error) throw error; return { removed:(data||[]).length };
+}
+
 export async function updateOrder(slug, id, patch) {
   const restaurantId = await resolveRestaurantId(slug);
   if (!restaurantId) return null;
@@ -683,6 +693,16 @@ export async function updateAdminUser(id, patch) {
   if (error) throw error;
   return data ? adminUserRowToApi(data) : null;
 }
+
+// ---------- Auditoria e logs administrativos ----------
+export async function createAdminLoginLog(entry) { const {error}=await supabase.from('admin_login_logs').insert({admin_user_id:entry.adminUserId||null,login:entry.login||null,success:!!entry.success,mode:entry.mode||'unknown',ip:entry.ip||null,user_agent:entry.userAgent||null,details:entry.details||{}}); if(error) throw error; }
+export async function listAdminLoginLogs(limit=100) { const {data,error}=await supabase.from('admin_login_logs').select('*').order('created_at',{ascending:false}).limit(Math.min(Number(limit)||100,500)); if(error) throw error; return (data||[]).map(r=>({id:r.id,createdAt:r.created_at,adminUserId:r.admin_user_id,login:r.login,success:r.success,mode:r.mode,ip:r.ip,userAgent:r.user_agent,details:r.details||{}})); }
+export async function clearAdminLoginLogs() { const {error}=await supabase.from('admin_login_logs').delete().neq('id','00000000-0000-0000-0000-000000000000'); if(error) throw error; return true; }
+export async function deleteAdminLoginLog(id) { const {error}=await supabase.from('admin_login_logs').delete().eq('id',id); if(error) throw error; return true; }
+export async function createErrorLog(entry) { const {error}=await supabase.from('error_logs').insert({level:entry.level||'error',context:entry.context||null,message:entry.message||'Erro',stack:entry.stack||null,restaurant_slug:entry.restaurantSlug||null,details:entry.details||{}}); if(error) throw error; }
+export async function listErrorLogs(limit=100) { const {data,error}=await supabase.from('error_logs').select('*').order('created_at',{ascending:false}).limit(Math.min(Number(limit)||100,500)); if(error) throw error; return (data||[]).map(r=>({id:r.id,createdAt:r.created_at,level:r.level,context:r.context,message:r.message,stack:r.stack,restaurantSlug:r.restaurant_slug,details:r.details||{}})); }
+export async function clearErrorLogs() { const {error}=await supabase.from('error_logs').delete().neq('id','00000000-0000-0000-0000-000000000000'); if(error) throw error; return true; }
+export async function deleteErrorLog(id) { const {error}=await supabase.from('error_logs').delete().eq('id',id); if(error) throw error; return true; }
 
 // ---------- Contas de cliente + endereços salvos (Fase 4, itens 20-22) ----------
 
