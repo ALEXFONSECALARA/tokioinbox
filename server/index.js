@@ -20,6 +20,14 @@ const DATA_DIR = path.join(__dirname, 'data');
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
+async function logServerError(context, err, meta = {}) {
+  const message = err?.message || String(err || 'Erro desconhecido');
+  try { await db.createErrorLog({ context, message, stack: err?.stack || null, restaurantSlug: meta.restaurantSlug || null, details: meta.details || {} }); }
+  catch (logErr) { process.stderr.write(`[error-log-failed] ${logErr?.message || logErr}\n`); }
+  process.stderr.write(`[${context}] ${message}\n`);
+}
+
+
 // Senha única do super-admin. Em produção, defina ADMIN_PASSWORD nas variáveis
 // de ambiente do Render. Em desenvolvimento local, usa "admin123" por padrão.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
@@ -82,7 +90,7 @@ async function requireAdmin(req, res, next) {
     };
     next();
   } catch (err) {
-    console.error('Erro ao validar sessão do usuário:', err);
+    logServerError('Erro ao validar sessão do usuário:', err);
     res.status(500).json({ error: 'Não foi possível validar a sessão.' });
   }
 }
@@ -218,6 +226,9 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ---------- Rotas públicas ----------
 
+app.post('/api/client-errors', async (req,res)=>{try{const message=String(req.body?.message||'Erro de cliente').slice(0,1000);await db.createErrorLog({level:'client',context:'frontend',message,details:req.body?.details||{}});res.status(204).end()}catch{res.status(204).end()}});
+app.get('/api/pwa/manifest', async (req,res)=>{ try{const slug=String(req.query.slug||'').trim();if(!slug||!(await db.restaurantExists(slug)))return res.status(404).json({error:'Restaurante não encontrado.'});const data=await db.readRestaurantData(slug);const cfg=data.restaurantConfig||{};res.set('Cache-Control','no-store');res.json({name:cfg.name||slug,short_name:cfg.name||slug,start_url:`/r/${slug}`,scope:`/r/${slug}/`,display:'standalone',background_color:'#070908',theme_color:cfg.color||'#c9a227',description:cfg.tagline||'Delivery',icons:[{src:cfg.logo||'/tokioinbox-mark.svg',sizes:'512x512',type:cfg.logo?'image/png':'image/svg+xml',purpose:'any maskable'}]});}catch(err){logServerError('Erro ao gerar manifesto PWA',err);res.status(500).json({error:'Não foi possível gerar o aplicativo.'})} });
+
 app.get('/api/health', (req, res) => res.json({ ok: true, dataBackend: db.backendName }));
 
 // Lista os restaurantes disponíveis (pra tela inicial de escolha) — só os
@@ -227,7 +238,7 @@ app.get('/api/restaurants', async (req, res) => {
   try {
     res.json(await db.getRestaurants());
   } catch (err) {
-    console.error('Erro ao listar restaurantes:', err);
+    logServerError('Erro ao listar restaurantes:', err);
     res.status(500).json({ error: 'Não foi possível carregar a lista de restaurantes.' });
   }
 });
@@ -238,7 +249,7 @@ app.get('/api/platform', async (req, res) => {
   try {
     res.json(await db.getPlatformSettings());
   } catch (err) {
-    console.error('Erro ao carregar configuração da vitrine:', err);
+    logServerError('Erro ao carregar configuração da vitrine:', err);
     res.status(500).json({ error: 'Não foi possível carregar a configuração da vitrine.' });
   }
 });
@@ -256,7 +267,7 @@ app.get('/api/:slug/menu', async (req, res) => {
     }
     res.json(data);
   } catch (err) {
-    console.error(`Erro ao ler cardápio de ${slug}:`, err);
+    logServerError(`Erro ao ler cardápio de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível carregar o cardápio.' });
   }
 });
@@ -287,7 +298,7 @@ app.post('/api/:slug/orders', async (req, res) => {
     const saved = await db.createOrder(slug, order);
     res.status(201).json({ ok: true, order: saved });
   } catch (err) {
-    console.error(`Erro ao salvar pedido de ${slug}:`, err);
+    logServerError(`Erro ao salvar pedido de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível registrar o pedido.' });
   }
 });
@@ -296,35 +307,39 @@ app.post('/api/:slug/orders', async (req, res) => {
 
 app.post('/api/customers/register', async (req, res) => {
   const { name, phone, email, password } = req.body || {};
-  if (!name || !phone || !password) {
+  const cleanPhone = String(phone || '').replace(/\D/g, '');
+  const cleanEmail = email ? String(email).trim().toLowerCase() : null;
+  if (!name || !cleanPhone || !password) {
     return res.status(400).json({ error: 'Nome, telefone e senha são obrigatórios.' });
   }
   try {
     const passwordHash = await hashPassword(password);
-    const customer = await db.createCustomer({ name, phone, email, passwordHash });
+    const customer = await db.createCustomer({ name: String(name).trim(), phone: cleanPhone, email: cleanEmail, passwordHash });
     res.status(201).json({ token: issueCustomerToken(customer.id), customer: publicCustomer(customer) });
   } catch (err) {
     if (err.code === 'PHONE_TAKEN') {
       return res.status(409).json({ error: 'Já existe uma conta com esse telefone.' });
     }
-    console.error('Erro ao criar conta de cliente:', err);
-    res.status(500).json({ error: 'Não foi possível criar a conta.' });
+    logServerError('Erro ao criar conta de cliente', err);
+    if (err.code === '42P01' || /relation .*customers.* does not exist/i.test(String(err.message || ''))) return res.status(503).json({ error: 'O cadastro de clientes ainda não foi ativado no banco. Execute a migração 0013_customers.sql.' });
+    res.status(500).json({ error: 'Não foi possível criar a conta. Verifique os dados e tente novamente.' });
   }
 });
 
 app.post('/api/customers/login', async (req, res) => {
   const { phone, password } = req.body || {};
-  if (!phone || !password) {
+  const cleanPhone = String(phone || '').replace(/\D/g, '');
+  if (!cleanPhone || !password) {
     return res.status(400).json({ error: 'Informe telefone e senha.' });
   }
   try {
-    const customer = await db.getCustomerByPhone(phone);
+    const customer = await db.getCustomerByPhone(cleanPhone);
     if (!customer) return res.status(401).json({ error: 'Telefone ou senha incorretos.' });
     const ok = await verifyPassword(password, customer.passwordHash);
     if (!ok) return res.status(401).json({ error: 'Telefone ou senha incorretos.' });
     res.json({ token: issueCustomerToken(customer.id), customer: publicCustomer(customer) });
   } catch (err) {
-    console.error('Erro no login de cliente:', err);
+    logServerError('Erro no login de cliente:', err);
     res.status(500).json({ error: 'Não foi possível fazer login.' });
   }
 });
@@ -335,7 +350,7 @@ app.get('/api/customers/me', requireCustomer, async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Conta não encontrada.' });
     res.json(publicCustomer(customer));
   } catch (err) {
-    console.error('Erro ao buscar cliente:', err);
+    logServerError('Erro ao buscar cliente:', err);
     res.status(500).json({ error: 'Não foi possível carregar a conta.' });
   }
 });
@@ -350,7 +365,7 @@ app.patch('/api/customers/me', requireCustomer, async (req, res) => {
     const updated = await db.updateCustomer(req.customerId, patch);
     res.json(publicCustomer(updated));
   } catch (err) {
-    console.error('Erro ao atualizar cliente:', err);
+    logServerError('Erro ao atualizar cliente:', err);
     res.status(500).json({ error: 'Não foi possível atualizar a conta.' });
   }
 });
@@ -360,7 +375,7 @@ app.get('/api/customers/me/addresses', requireCustomer, async (req, res) => {
   try {
     res.json(await db.listCustomerAddresses(req.customerId));
   } catch (err) {
-    console.error('Erro ao listar endereços:', err);
+    logServerError('Erro ao listar endereços:', err);
     res.status(500).json({ error: 'Não foi possível carregar os endereços.' });
   }
 });
@@ -389,7 +404,7 @@ app.post('/api/customers/me/addresses', requireCustomer, async (req, res) => {
     });
     res.status(201).json(address);
   } catch (err) {
-    console.error('Erro ao criar endereço:', err);
+    logServerError('Erro ao criar endereço:', err);
     res.status(500).json({ error: 'Não foi possível salvar o endereço.' });
   }
 });
@@ -400,7 +415,7 @@ app.patch('/api/customers/me/addresses/:id', requireCustomer, async (req, res) =
     if (!updated) return res.status(404).json({ error: 'Endereço não encontrado.' });
     res.json(updated);
   } catch (err) {
-    console.error('Erro ao atualizar endereço:', err);
+    logServerError('Erro ao atualizar endereço:', err);
     res.status(500).json({ error: 'Não foi possível atualizar o endereço.' });
   }
 });
@@ -411,7 +426,7 @@ app.delete('/api/customers/me/addresses/:id', requireCustomer, async (req, res) 
     if (!deleted) return res.status(404).json({ error: 'Endereço não encontrado.' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('Erro ao excluir endereço:', err);
+    logServerError('Erro ao excluir endereço:', err);
     res.status(500).json({ error: 'Não foi possível excluir o endereço.' });
   }
 });
@@ -423,7 +438,7 @@ app.get('/api/customers/me/orders', requireCustomer, async (req, res) => {
   try {
     res.json(await db.listCustomerOrders(req.customerId));
   } catch (err) {
-    console.error('Erro ao buscar histórico do cliente:', err);
+    logServerError('Erro ao buscar histórico do cliente:', err);
     res.status(500).json({ error: 'Não foi possível carregar o histórico de pedidos.' });
   }
 });
@@ -459,7 +474,7 @@ app.post('/api/:slug/push/subscribe', async (req, res) => {
     });
     res.status(201).json({ ok: true, id: saved.id });
   } catch (err) {
-    console.error('Erro ao salvar inscrição de push:', err);
+    logServerError('Erro ao salvar inscrição de push:', err);
     res.status(500).json({ error: 'Não foi possível ativar as notificações.' });
   }
 });
@@ -471,7 +486,7 @@ app.post('/api/:slug/push/unsubscribe', async (req, res) => {
     await db.deletePushSubscriptionByEndpoint(endpoint);
     res.json({ ok: true });
   } catch (err) {
-    console.error('Erro ao remover inscrição de push:', err);
+    logServerError('Erro ao remover inscrição de push:', err);
     res.status(500).json({ error: 'Não foi possível desativar as notificações.' });
   }
 });
@@ -487,7 +502,7 @@ app.get('/api/admin/:slug/push/campaigns', requireAdmin, requireOwnRestaurant, a
   try {
     res.json(await db.listNotificationCampaigns(req.params.slug));
   } catch (err) {
-    console.error('Erro ao listar campanhas:', err);
+    logServerError('Erro ao listar campanhas:', err);
     res.status(500).json({ error: 'Não foi possível carregar as campanhas.' });
   }
 });
@@ -508,7 +523,7 @@ app.post('/api/admin/:slug/push/campaigns', requireAdmin, requireOwnRestaurant, 
     });
     res.status(201).json(campaign);
   } catch (err) {
-    console.error('Erro ao criar campanha:', err);
+    logServerError('Erro ao criar campanha:', err);
     res.status(500).json({ error: 'Não foi possível criar a campanha.' });
   }
 });
@@ -527,7 +542,7 @@ app.patch('/api/admin/:slug/push/campaigns/:id', requireAdmin, requireOwnRestaur
     const updated = await db.updateNotificationCampaign(req.params.id, req.body || {});
     res.json(updated);
   } catch (err) {
-    console.error('Erro ao atualizar campanha:', err);
+    logServerError('Erro ao atualizar campanha:', err);
     res.status(500).json({ error: 'Não foi possível atualizar a campanha.' });
   }
 });
@@ -541,7 +556,7 @@ app.delete('/api/admin/:slug/push/campaigns/:id', requireAdmin, requireOwnRestau
     await db.deleteNotificationCampaign(req.params.id);
     res.json({ ok: true });
   } catch (err) {
-    console.error('Erro ao excluir campanha:', err);
+    logServerError('Erro ao excluir campanha:', err);
     res.status(500).json({ error: 'Não foi possível excluir a campanha.' });
   }
 });
@@ -562,7 +577,7 @@ app.post('/api/admin/:slug/push/send', requireAdmin, requireOwnRestaurant, async
     });
     res.json({ ok: true, ...result });
   } catch (err) {
-    console.error('Erro ao enviar notificação:', err);
+    logServerError('Erro ao enviar notificação:', err);
     res.status(500).json({ error: 'Não foi possível enviar a notificação.' });
   }
 });
@@ -609,11 +624,11 @@ async function runCampaignScheduler() {
           lastSentWindow: currentWindowKey(now),
         });
       } catch (err) {
-        console.error(`Erro ao disparar a campanha "${campaign.name}":`, err);
+        logServerError(`Erro ao disparar a campanha "${campaign.name}":`, err);
       }
     }
   } catch (err) {
-    console.error('Erro no agendador de campanhas:', err);
+    logServerError('Erro no agendador de campanhas:', err);
   }
 }
 
@@ -681,7 +696,7 @@ app.post('/api/:slug/ai/chat', async (req, res) => {
       cartAction: result.cartAction,
     });
   } catch (err) {
-    console.error(`Erro no assistente de IA de ${slug}:`, err);
+    logServerError(`Erro no assistente de IA de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível falar com o assistente agora.' });
   }
 });
@@ -696,7 +711,7 @@ app.post('/api/:slug/ai/handoff', async (req, res) => {
     if (!updated) return res.status(404).json({ error: 'Conversa não encontrada.' });
     res.json({ ok: true });
   } catch (err) {
-    console.error('Erro ao transferir conversa:', err);
+    logServerError('Erro ao transferir conversa:', err);
     res.status(500).json({ error: 'Não foi possível transferir a conversa.' });
   }
 });
@@ -708,7 +723,7 @@ app.get('/api/:slug/ai/conversations/:id/messages', async (req, res) => {
   try {
     res.json(await db.listAiMessages(req.params.id));
   } catch (err) {
-    console.error('Erro ao buscar histórico da conversa:', err);
+    logServerError('Erro ao buscar histórico da conversa:', err);
     res.status(500).json({ error: 'Não foi possível carregar o histórico.' });
   }
 });
@@ -719,7 +734,7 @@ app.get('/api/admin/:slug/ai/conversations', requireAdmin, requireOwnRestaurant,
   try {
     res.json(await db.listAiConversations(req.params.slug, { status: req.query.status }));
   } catch (err) {
-    console.error('Erro ao listar conversas:', err);
+    logServerError('Erro ao listar conversas:', err);
     res.status(500).json({ error: 'Não foi possível carregar as conversas.' });
   }
 });
@@ -735,7 +750,7 @@ app.get('/api/admin/:slug/ai/conversations/:id/messages', requireAdmin, requireO
     }
     res.json(await db.listAiMessages(req.params.id));
   } catch (err) {
-    console.error('Erro ao buscar mensagens:', err);
+    logServerError('Erro ao buscar mensagens:', err);
     res.status(500).json({ error: 'Não foi possível carregar as mensagens.' });
   }
 });
@@ -753,7 +768,7 @@ app.post('/api/admin/:slug/ai/conversations/:id/reply', requireAdmin, requireOwn
     const saved = await db.addAiMessage(req.params.id, 'human_agent', message.trim());
     res.status(201).json(saved);
   } catch (err) {
-    console.error('Erro ao responder conversa:', err);
+    logServerError('Erro ao responder conversa:', err);
     res.status(500).json({ error: 'Não foi possível enviar a resposta.' });
   }
 });
@@ -772,7 +787,7 @@ app.patch('/api/admin/:slug/ai/conversations/:id', requireAdmin, requireOwnResta
     const updated = await db.updateAiConversationStatus(req.params.id, status);
     res.json(updated);
   } catch (err) {
-    console.error('Erro ao atualizar conversa:', err);
+    logServerError('Erro ao atualizar conversa:', err);
     res.status(500).json({ error: 'Não foi possível atualizar a conversa.' });
   }
 });
@@ -790,7 +805,7 @@ app.post('/api/admin/:slug/ai/campaign-suggest', requireAdmin, requireOwnRestaur
     const suggestion = await generateCampaignSuggestion(brief.trim(), restaurantContext);
     res.json(suggestion);
   } catch (err) {
-    console.error('Erro ao gerar sugestão de campanha:', err);
+    logServerError('Erro ao gerar sugestão de campanha:', err);
     res.status(500).json({ error: 'Não foi possível gerar a sugestão agora.' });
   }
 });
@@ -826,7 +841,7 @@ Produtos mais pedidos: ${topItems.map(([name, qty]) => `${name} (${qty}x)`).join
     const analysis = await generateSalesAnalysis(summary);
     res.json({ summary, analysis });
   } catch (err) {
-    console.error('Erro na análise administrativa de IA:', err);
+    logServerError('Erro na análise administrativa de IA:', err);
     res.status(500).json({ error: 'Não foi possível gerar a análise agora.' });
   }
 });
@@ -842,7 +857,7 @@ app.get('/api/:slug/orders/:id', async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Pedido não encontrado.' });
     res.json(order);
   } catch (err) {
-    console.error(`Erro ao buscar pedido de ${slug}:`, err);
+    logServerError(`Erro ao buscar pedido de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível buscar o pedido.' });
   }
 });
@@ -852,8 +867,10 @@ app.get('/api/:slug/orders/:id', async (req, res) => {
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body || {};
   if (password !== ADMIN_PASSWORD) {
+    void db.createAdminLoginLog({login:'master',success:false,mode:'master',ip:req.ip,userAgent:req.get('user-agent'),details:{reason:'invalid_password'}}).catch(()=>{});
     return res.status(401).json({ error: 'Senha incorreta.' });
   }
+  void db.createAdminLoginLog({login:'master',success:true,mode:'master',ip:req.ip,userAgent:req.get('user-agent')}).catch(()=>{});
   res.json({ token: issueToken() });
 });
 
@@ -869,12 +886,15 @@ app.post('/api/admin/users/login', async (req, res) => {
   try {
     const user = await db.getAdminUserByLogin(login);
     if (!user || !user.active) {
+      void db.createAdminLoginLog({login:String(login).trim(),success:false,mode:'user',ip:req.ip,userAgent:req.get('user-agent'),details:{reason:'invalid_login'}}).catch(()=>{});
       return res.status(401).json({ error: 'Login ou senha incorretos.' });
     }
     const ok = await verifyPassword(password, user.passwordHash);
     if (!ok) {
+      void db.createAdminLoginLog({adminUserId:user.id,login:user.login,success:false,mode:'user',ip:req.ip,userAgent:req.get('user-agent'),details:{reason:'invalid_password'}}).catch(()=>{});
       return res.status(401).json({ error: 'Login ou senha incorretos.' });
     }
+    void db.createAdminLoginLog({adminUserId:user.id,login:user.login,success:true,mode:'user',ip:req.ip,userAgent:req.get('user-agent')}).catch(()=>{});
     res.json({
       token: issueToken(user.id),
       user: {
@@ -887,7 +907,7 @@ app.post('/api/admin/users/login', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Erro no login de usuário:', err);
+    logServerError('Erro no login de usuário:', err);
     res.status(500).json({ error: 'Não foi possível fazer login.' });
   }
 });
@@ -917,7 +937,7 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
     }
     res.json(users.map(publicAdminUser));
   } catch (err) {
-    console.error('Erro ao listar usuários:', err);
+    logServerError('Erro ao listar usuários:', err);
     res.status(500).json({ error: 'Não foi possível carregar os usuários.' });
   }
 });
@@ -958,13 +978,13 @@ app.post('/api/admin/users', requireAdmin, async (req, res) => {
     // "Não foi possível criar o usuário". Retornamos uma mensagem acionável
     // sem expor a chave, SQL ou detalhes internos do banco.
     if (err.code === '42P01' || /relation .*admin_users.* does not exist/i.test(String(err.message || ''))) {
-      console.error('Tabela admin_users ausente. Execute supabase/migrations/0012_admin_users.sql no Supabase.');
+      logServerError('Tabela admin_users ausente. Execute supabase/migrations/0012_admin_users.sql no Supabase.');
       return res.status(503).json({
         error: 'O banco ainda não está preparado para Usuários e Permissões. Execute a migração 0012_admin_users.sql no Supabase e faça um novo deploy.'
       });
     }
 
-    console.error('Erro ao criar usuário:', {
+    logServerError('Erro ao criar usuário:', {
       message: err?.message,
       code: err?.code,
       details: err?.details,
@@ -1008,12 +1028,20 @@ app.patch('/api/admin/users/:id', requireAdmin, async (req, res) => {
     const updated = await db.updateAdminUser(id, patch);
     res.json({ ok: true, user: publicAdminUser(updated) });
   } catch (err) {
-    console.error('Erro ao atualizar usuário:', err);
+    logServerError('Erro ao atualizar usuário:', err);
     res.status(500).json({ error: 'Não foi possível atualizar o usuário.' });
   }
 });
 
 // ---------- Rotas do admin (protegidas) ----------
+
+// Auditoria e manutenção
+app.get('/api/admin/logs/errors', requireAdmin, async (req,res)=>{ try{res.json({ok:true,logs:await db.listErrorLogs(100)});}catch(err){logServerError('Erro ao listar logs de erro',err);res.status(500).json({error:'Não foi possível carregar os logs de erro.'});} });
+app.delete('/api/admin/logs/errors/:id', requireAdmin, async (req,res)=>{if(!req.adminUser?.isMaster&&!hasPermission(req,'admin_gerenciar_usuarios'))return res.status(403).json({error:'Sem permissão para apagar logs.'});try{await db.deleteErrorLog(req.params.id);res.json({ok:true});}catch(err){logServerError('Erro ao excluir log de erro',err);res.status(500).json({error:'Não foi possível excluir o log.'});}});
+app.delete('/api/admin/logs/errors', requireAdmin, async (req,res)=>{ if(!req.adminUser?.isMaster&&!hasPermission(req,'admin_gerenciar_usuarios'))return res.status(403).json({error:'Sem permissão para apagar logs.'}); try{await db.clearErrorLogs();res.json({ok:true});}catch(err){logServerError('Erro ao limpar logs de erro',err);res.status(500).json({error:'Não foi possível limpar os logs de erro.'});} });
+app.get('/api/admin/logs/login', requireAdmin, async (req,res)=>{ try{res.json({ok:true,logs:await db.listAdminLoginLogs(100)});}catch(err){logServerError('Erro ao listar histórico de login',err);res.status(500).json({error:'Não foi possível carregar o histórico de login.'});} });
+app.delete('/api/admin/logs/login/:id', requireAdmin, async (req,res)=>{if(!req.adminUser?.isMaster&&!hasPermission(req,'admin_gerenciar_usuarios'))return res.status(403).json({error:'Sem permissão para apagar histórico.'});try{await db.deleteAdminLoginLog(req.params.id);res.json({ok:true});}catch(err){logServerError('Erro ao excluir histórico de login',err);res.status(500).json({error:'Não foi possível excluir o registro.'});}});
+app.delete('/api/admin/logs/login', requireAdmin, async (req,res)=>{ if(!req.adminUser?.isMaster&&!hasPermission(req,'admin_gerenciar_usuarios'))return res.status(403).json({error:'Sem permissão para apagar histórico.'}); try{await db.clearAdminLoginLogs();res.json({ok:true});}catch(err){logServerError('Erro ao limpar histórico de login',err);res.status(500).json({error:'Não foi possível limpar o histórico de login.'});} });
 
 // Lista TODOS os restaurantes (ativos e inativos) — usada pela barra de troca
 // do super-admin em /admin, que precisa continuar mostrando (e permitindo
@@ -1023,7 +1051,7 @@ app.get('/api/admin/restaurants', requireAdmin, async (req, res) => {
   try {
     res.json(await db.getRestaurantsAdmin());
   } catch (err) {
-    console.error('Erro ao listar restaurantes (admin):', err);
+    logServerError('Erro ao listar restaurantes (admin):', err);
     res.status(500).json({ error: 'Não foi possível carregar a lista de restaurantes.' });
   }
 });
@@ -1047,7 +1075,7 @@ app.patch(
     const updated = await db.setRestaurantActive(slug, active);
     res.json({ ok: true, restaurant: updated });
   } catch (err) {
-    console.error(`Erro ao alterar status ativo de ${slug}:`, err);
+    logServerError(`Erro ao alterar status ativo de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível alterar o status do restaurante.' });
   }
 });
@@ -1107,7 +1135,7 @@ app.post('/api/:slug/upload', requireAdmin, requireOwnRestaurant, (req, res) => 
         // Não deixa um arquivo recém-criado no Storage sem registro no
         // catálogo. Para Supabase Storage a remoção é segura e imediata.
         try { await removeStoredImage({ provider: stored.provider, bucket: stored.bucket, path: stored.path }); } catch (cleanupErr) {
-          console.error('Falha ao limpar mídia órfã:', cleanupErr?.message || cleanupErr);
+          logServerError('Falha ao limpar mídia órfã:', cleanupErr?.message || cleanupErr);
         }
         throw dbErr;
       }
@@ -1123,7 +1151,7 @@ app.post('/api/:slug/upload', requireAdmin, requireOwnRestaurant, (req, res) => 
         },
       });
     } catch (uploadErr) {
-      console.error(`Erro ao enviar imagem (${slug}):`, uploadErr);
+      logServerError(`Erro ao enviar imagem (${slug}):`, uploadErr);
       res.status(500).json({ error: 'Não foi possível salvar a imagem. Tente novamente.' });
     }
   });
@@ -1137,7 +1165,7 @@ app.get('/api/:slug/media', requireAdmin, requireOwnRestaurant, async (req, res)
     const kind = req.query.kind ? String(req.query.kind) : undefined;
     res.json({ ok: true, assets: await db.listMediaAssets(slug, { kind }) });
   } catch (err) {
-    console.error(`Erro ao listar mídia (${slug}):`, err);
+    logServerError(`Erro ao listar mídia (${slug}):`, err);
     res.status(500).json({ error: 'Não foi possível carregar a biblioteca de imagens.' });
   }
 });
@@ -1154,7 +1182,7 @@ app.delete('/api/:slug/media/:assetId', requireAdmin, requireOwnRestaurant, asyn
     const deleted = await db.deleteMediaAsset(slug, assetId);
     res.json({ ok: true, asset: deleted });
   } catch (err) {
-    console.error(`Erro ao remover mídia (${slug}/${assetId}):`, err);
+    logServerError(`Erro ao remover mídia (${slug}/${assetId}):`, err);
     res.status(500).json({ error: 'Não foi possível remover a imagem.' });
   }
 });
@@ -1168,7 +1196,7 @@ app.put('/api/:slug/menu-items', requireAdmin, requireOwnRestaurant, async (req,
     const saved = await db.updateMenuItems(slug, menuItems);
     res.json({ ok: true, menuItems: saved });
   } catch (err) {
-    console.error(`Erro ao salvar itens de ${slug}:`, err);
+    logServerError(`Erro ao salvar itens de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível salvar os itens.' });
   }
 });
@@ -1182,7 +1210,7 @@ app.put('/api/:slug/categories', requireAdmin, requireOwnRestaurant, async (req,
     const saved = await db.updateCategories(slug, categories);
     res.json({ ok: true, categories: saved });
   } catch (err) {
-    console.error(`Erro ao salvar categorias de ${slug}:`, err);
+    logServerError(`Erro ao salvar categorias de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível salvar as categorias.' });
   }
 });
@@ -1203,7 +1231,7 @@ app.get('/api/:slug/operational-status', async (req, res) => {
       operationalAdjustmentMinutes: restaurantConfig?.operationalAdjustmentMinutes || 0,
     });
   } catch (err) {
-    console.error(`Erro ao consultar status operacional de ${slug}:`, err);
+    logServerError(`Erro ao consultar status operacional de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível consultar o status operacional.' });
   }
 });
@@ -1222,7 +1250,7 @@ app.put('/api/:slug/config', requireAdmin, requireOwnRestaurant, async (req, res
     const merged = await db.updateConfig(slug, incoming);
     res.json({ ok: true, restaurantConfig: merged });
   } catch (err) {
-    console.error(`Erro ao salvar configuração de ${slug}:`, err);
+    logServerError(`Erro ao salvar configuração de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível salvar a configuração.' });
   }
 });
@@ -1237,7 +1265,7 @@ app.put('/api/admin/platform', requireAdmin, async (req, res) => {
     const merged = await db.updatePlatformSettings(incoming);
     res.json({ ok: true, platform: merged });
   } catch (err) {
-    console.error('Erro ao salvar configuração da vitrine:', err);
+    logServerError('Erro ao salvar configuração da vitrine:', err);
     res.status(500).json({ error: 'Não foi possível salvar a configuração da vitrine.' });
   }
 });
@@ -1249,10 +1277,14 @@ app.get('/api/:slug/orders', requireAdmin, requireOwnRestaurant, async (req, res
   try {
     res.json(await db.listOrders(slug));
   } catch (err) {
-    console.error(`Erro ao listar pedidos de ${slug}:`, err);
+    logServerError(`Erro ao listar pedidos de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível carregar os pedidos.' });
   }
 });
+
+// Exclusão consciente: somente histórico finalizado/cancelado.
+app.delete('/api/:slug/orders/:id', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug,id}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{const existing=await db.getOrder(slug,id);if(!existing)return res.status(404).json({error:'Pedido não encontrado.'});if(!['entregue','cancelado'].includes(existing.status))return res.status(409).json({error:'Só pedidos finalizados ou cancelados podem ser excluídos.'});const order=await db.deleteOrder(slug,id);res.json({ok:true,order});}catch(err){logServerError(`Erro ao excluir pedido ${slug}/${id}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível excluir o pedido.'});} });
+app.delete('/api/:slug/orders/history', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{const result=await db.clearFinishedOrders(slug);res.json({ok:true,...result});}catch(err){logServerError(`Erro ao limpar histórico ${slug}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível limpar o histórico.'});} });
 
 // Admin atualiza um pedido (status, entregador, etc)
 app.patch('/api/:slug/orders/:id', requireAdmin, requireOwnRestaurant, async (req, res) => {
@@ -1269,7 +1301,7 @@ app.patch('/api/:slug/orders/:id', requireAdmin, requireOwnRestaurant, async (re
     if (!order) return res.status(404).json({ error: 'Pedido não encontrado.' });
     res.json({ ok: true, order });
   } catch (err) {
-    console.error(`Erro ao atualizar pedido de ${slug}:`, err);
+    logServerError(`Erro ao atualizar pedido de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível atualizar o pedido.' });
   }
 });
