@@ -16,6 +16,7 @@ import { buildRestaurantContext, buildOrderContext } from './lib/aiContext.js';
 import { generateChatReply, generateCampaignSuggestion, generateSalesAnalysis, isAiConfigured } from './lib/aiAssistant.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const INSTANCE_ID = process.env.RENDER_INSTANCE_ID || crypto.randomUUID();
 const DATA_DIR = path.join(__dirname, 'data');
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
@@ -195,9 +196,13 @@ function removeOrderEventClient(slug, client) {
   if (!set.size) orderEventClients.delete(slug);
 }
 function deliverOrderEvent(slug,event){ const set=orderEventClients.get(slug); if(!set)return; const payload=`data: ${JSON.stringify(event)}\n\n`; for(const client of set){if(client.role==='customer'&&client.customerId!==event.customerId)continue;try{client.res.write(payload)}catch{removeOrderEventClient(slug,client)}} }
-function broadcastOrderEvent(slug, event) { deliverOrderEvent(slug,event); void db.appendRealtimeEvent(slug,event).catch(err=>logServerError(`Falha ao persistir realtime ${slug}`,err,{restaurantSlug:slug})); }
+function broadcastOrderEvent(slug, event) {
+  const payload = { ...event, originInstanceId: INSTANCE_ID };
+  deliverOrderEvent(slug, payload);
+  void db.appendRealtimeEvent(slug, payload).catch(err=>logServerError(`Falha ao persistir realtime ${slug}`,err,{restaurantSlug:slug,details:{requestId:event.requestId||null}}));
+}
 const realtimeCursors = new Map();
-setInterval(async()=>{ if(db.backendName!=='supabase')return; try{const restaurants=await db.getRestaurantsAdmin(); for(const r of restaurants||[]){const after=Number(realtimeCursors.get(r.slug)||0); const events=await db.listRealtimeEvents(r.slug,after); for(const e of events){realtimeCursors.set(r.slug,Math.max(Number(realtimeCursors.get(r.slug)||0),Number(e.id))); deliverOrderEvent(r.slug,e.payload||{});}}}catch(err){logServerError('Falha no relay realtime compartilhado',err)} },1500).unref();
+setInterval(async()=>{ if(db.backendName!=='supabase')return; try{const restaurants=await db.getRestaurantsAdmin(); for(const r of restaurants||[]){const after=Number(realtimeCursors.get(r.slug)||0); const events=await db.listRealtimeEvents(r.slug,after); for(const e of events){realtimeCursors.set(r.slug,Math.max(Number(realtimeCursors.get(r.slug)||0),Number(e.id))); const payload=e.payload||{}; if(payload.originInstanceId===INSTANCE_ID) continue; deliverOrderEvent(r.slug,payload);}}}catch(err){logServerError('Falha no relay realtime compartilhado',err)} },1500).unref();
 
 function publicSlug(name, fallback) {
   return String(name || fallback || '')
@@ -410,7 +415,7 @@ app.post('/api/:slug/orders', async (req, res) => {
     const session = getCustomerSession(bearerToken(req));
     order.customerId = session ? session.customerId : undefined;
     const saved = await db.createOrder(slug, order);
-    broadcastOrderEvent(slug, { type: 'created', orderId: saved.id, status: saved.status, updatedAt: saved.updatedAt || saved.createdAt, customerId: saved.customerId || null });
+    broadcastOrderEvent(slug, { type: 'created', orderId: saved.id, status: saved.status, updatedAt: saved.updatedAt || saved.createdAt, customerId: saved.customerId || null, requestId: req.requestId });
     res.status(201).json({ ok: true, order: saved });
   } catch (err) {
     logServerError(`Erro ao salvar pedido de ${slug}:`, err);
