@@ -253,21 +253,66 @@ export async function saveCategories(slug: string, token: string, categories: Ca
 // Envia uma foto (logo, banner, splash, prato, entregador) do computador do
 // restaurante para o backend, que sobe pro Cloudinary (produção) ou salva
 // localmente como fallback, e devolve a URL pública já pronta pra usar.
-export async function uploadImage(slug: string, token: string, file: File): Promise<string> {
+export interface MediaAsset {
+  id: string;
+  restaurantSlug?: string;
+  restaurantId?: string;
+  storageProvider: string;
+  bucket?: string;
+  storagePath?: string;
+  url: string;
+  kind: string;
+  entityType?: string;
+  entityId?: string;
+  originalName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  altText?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function uploadImage(
+  slug: string,
+  token: string,
+  file: File,
+  metadata: { kind?: string; entityType?: string; entityId?: string; altText?: string } = {}
+): Promise<string> {
   const formData = new FormData();
   formData.append('image', file);
+  if (metadata.kind) formData.append('kind', metadata.kind);
+  if (metadata.entityType) formData.append('entityType', metadata.entityType);
+  if (metadata.entityId) formData.append('entityId', metadata.entityId);
+  if (metadata.altText) formData.append('altText', metadata.altText);
   const res = await fetch(`${API_PREFIX}/${slug}/upload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` }, // sem Content-Type: o browser define o boundary do multipart
     body: formData,
   });
-  const data = await handleResponse<{ url: string }>(res);
+  const data = await handleResponse<{ url: string; asset?: MediaAsset }>(res);
   // URL do Cloudinary já vem absoluta (https://res.cloudinary.com/...) — só
   // o fallback local devolve um caminho relativo (/uploads/...), que aí sim
   // precisa do prefixo do backend quando front e back estão em domínios
   // separados (VITE_API_URL definido).
   const isAbsolute = /^https?:\/\//i.test(data.url);
   return isAbsolute ? data.url : new URL(data.url, API_BASE || window.location.origin).toString();
+}
+
+export async function listMediaAssets(slug: string, token: string, kind?: string): Promise<MediaAsset[]> {
+  const query = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+  const res = await fetch(`${API_PREFIX}/${slug}/media${query}`, { headers: authHeaders(token) });
+  const data = await handleResponse<{ assets: MediaAsset[] }>(res);
+  return data.assets || [];
+}
+
+export async function deleteMediaAsset(slug: string, token: string, assetId: string): Promise<MediaAsset | null> {
+  const res = await fetch(`${API_PREFIX}/${slug}/media/${encodeURIComponent(assetId)}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
+  const data = await handleResponse<{ asset: MediaAsset }>(res);
+  return data.asset || null;
 }
 
 export async function savePlatformSettings(token: string, settings: PlatformSettings): Promise<PlatformSettings> {
