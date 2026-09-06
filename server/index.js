@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { mkdir, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import * as db from './lib/db.js';
-import { isCloudinaryConfigured, uploadImageBuffer } from './lib/cloudinary.js';
+import { mediaStorageMode, saveImage, removeStoredImage } from './lib/mediaStorage.js';
 import { hashPassword, verifyPassword } from './lib/passwords.js';
 import { sanitizePermissions } from './lib/permissions.js';
 import { getVapidPublicKey, sendPushToMany } from './lib/webPush.js';
@@ -1052,10 +1052,9 @@ app.patch(
   }
 });
 
-// Admin envia uma foto (logo, banner, splash, prato ou entregador) do computador
-// do restaurante. Retorna a URL pública já pronta pra salvar no cardápio/config
-// — https permanente do Cloudinary quando configurado, ou /uploads/... local
-// como fallback (ver comentário acima do multer).
+// Admin envia uma foto e registra a mídia na biblioteca do restaurante.
+// Produção com Supabase: arquivo no Supabase Storage + metadata em media_assets.
+// Compatibilidade: Cloudinary e, por último, disco local continuam funcionando.
 app.post('/api/:slug/upload', requireAdmin, requireOwnRestaurant, (req, res) => {
   const { slug } = req.params;
   imageUpload.single('image')(req, res, async (err) => {
@@ -1071,35 +1070,93 @@ app.post('/api/:slug/upload', requireAdmin, requireOwnRestaurant, (req, res) => 
     if (!req.file) {
       return res.status(400).json({ error: 'Nenhuma imagem enviada.' });
     }
+
     try {
-      let url;
-      if (isCloudinaryConfigured()) {
-        try {
-          url = await uploadImageBuffer(req.file.buffer, slug);
-        } catch (cloudErr) {
-          // Cloudinary configurado mas falhou (chave errada, rede, cota
-          // excedida etc.) — cai pro disco local em vez de devolver erro pro
-          // admin. A foto salva mesmo assim; o problema real do Cloudinary
-          // fica só no log do servidor, pra quem administra o Render corrigir
-          // as variáveis de ambiente sem que isso trave o dia a dia da loja.
-          console.error(`Cloudinary falhou pra ${slug}, usando fallback local:`, cloudErr?.message || cloudErr);
-          url = await saveImageToDisk(req.file, slug);
-        }
-      } else {
-        url = await saveImageToDisk(req.file, slug);
-      }
-      // Se o fallback local estiver sendo usado, devolve uma URL absoluta.
-      // Assim o frontend funciona mesmo quando VITE_API_URL está apontando
-      // para outro domínio ou quando o build antigo ainda está em cache.
+      const stored = await saveImage(req.file, slug);
+      let url = stored.urlPath;
       if (url.startsWith('/uploads/')) {
         url = `${req.protocol}://${req.get('host')}${url}`;
       }
-      res.status(201).json({ ok: true, url });
+
+      const kind = String(req.body?.kind || 'other').slice(0, 40);
+      const entityType = req.body?.entityType ? String(req.body.entityType).slice(0, 60) : null;
+      const entityId = req.body?.entityId ? String(req.body.entityId).slice(0, 120) : null;
+      const altText = req.body?.altText ? String(req.body.altText).slice(0, 240) : null;
+
+      let asset;
+      try {
+        asset = await db.createMediaAsset({
+          restaurantSlug: slug,
+          storageProvider: stored.provider,
+          bucket: stored.bucket,
+          storagePath: stored.path,
+          url,
+          kind,
+          entityType,
+          entityId,
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          sizeBytes: req.file.size,
+          altText,
+          metadata: {
+            storageMode: mediaStorageMode(),
+            uploadSource: 'admin',
+          },
+        });
+      } catch (dbErr) {
+        // Não deixa um arquivo recém-criado no Storage sem registro no
+        // catálogo. Para Supabase Storage a remoção é segura e imediata.
+        try { await removeStoredImage({ provider: stored.provider, bucket: stored.bucket, path: stored.path }); } catch (cleanupErr) {
+          console.error('Falha ao limpar mídia órfã:', cleanupErr?.message || cleanupErr);
+        }
+        throw dbErr;
+      }
+
+      res.status(201).json({
+        ok: true,
+        url,
+        asset,
+        storage: {
+          provider: stored.provider,
+          bucket: stored.bucket || undefined,
+          path: stored.path || undefined,
+        },
+      });
     } catch (uploadErr) {
       console.error(`Erro ao enviar imagem (${slug}):`, uploadErr);
       res.status(500).json({ error: 'Não foi possível salvar a imagem. Tente novamente.' });
     }
   });
+});
+
+// Biblioteca de imagens do restaurante — nunca cruza o slug recebido na URL.
+app.get('/api/:slug/media', requireAdmin, requireOwnRestaurant, async (req, res) => {
+  const { slug } = req.params;
+  try {
+    if (!(await db.restaurantExists(slug))) return res.status(404).json({ error: 'Restaurante não encontrado.' });
+    const kind = req.query.kind ? String(req.query.kind) : undefined;
+    res.json({ ok: true, assets: await db.listMediaAssets(slug, { kind }) });
+  } catch (err) {
+    console.error(`Erro ao listar mídia (${slug}):`, err);
+    res.status(500).json({ error: 'Não foi possível carregar a biblioteca de imagens.' });
+  }
+});
+
+app.delete('/api/:slug/media/:assetId', requireAdmin, requireOwnRestaurant, async (req, res) => {
+  const { slug, assetId } = req.params;
+  try {
+    const asset = await db.getMediaAssetById(slug, assetId);
+    if (!asset) return res.status(404).json({ error: 'Imagem não encontrada.' });
+
+    // Remove primeiro o objeto do Supabase Storage quando aplicável. Se o
+    // storage falhar, não apagamos o registro do catálogo: evita mídia órfã.
+    await removeStoredImage(asset);
+    const deleted = await db.deleteMediaAsset(slug, assetId);
+    res.json({ ok: true, asset: deleted });
+  } catch (err) {
+    console.error(`Erro ao remover mídia (${slug}/${assetId}):`, err);
+    res.status(500).json({ error: 'Não foi possível remover a imagem.' });
+  }
 });
 
 app.put('/api/:slug/menu-items', requireAdmin, requireOwnRestaurant, async (req, res) => {
