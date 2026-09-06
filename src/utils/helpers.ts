@@ -363,11 +363,11 @@ export const getOrderStatusLabel = (status: Order['status']): { label: string; c
     case 'em_preparo':
       return { label: 'Em Preparação na Cozinha', color: 'bg-blue-100 text-blue-800 border-blue-200', step: 2 };
     case 'saiu_entrega':
-      return { label: 'Saiu para Entrega 🛵', color: 'bg-purple-100 text-purple-800 border-purple-200', step: 3 };
+      return { label: 'Saiu para Entrega 🛵', color: 'bg-purple-100 text-purple-800 border-purple-200', step: 4 };
     case 'pronto':
       return { label: 'Pronto para Retirada / Servir', color: 'bg-emerald-100 text-emerald-800 border-emerald-200', step: 3 };
     case 'entregue':
-      return { label: 'Entregue / Concluído', color: 'bg-emerald-600 text-white border-emerald-600', step: 4 };
+      return { label: 'Entregue / Concluído', color: 'bg-emerald-600 text-white border-emerald-600', step: 5 };
     case 'cancelado':
       return { label: 'Cancelado', color: 'bg-red-100 text-red-800 border-red-200', step: 0 };
     default:

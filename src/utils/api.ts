@@ -26,6 +26,7 @@ export interface RestaurantSummary {
   // fetchRestaurantsAdmin — a lista pública (fetchRestaurants) já vem
   // pré-filtrada só com os ativos.
   active?: boolean;
+  publicSlug?: string;
 }
 
 // Configuração global da vitrine multi-restaurantes "/" — título, subtítulo
@@ -60,11 +61,99 @@ function authHeaders(token: string): HeadersInit {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 }
 
+
+export function toPublicSlug(name: string): string {
+  return String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'restaurante';
+}
+
+export interface OrderRealtimeEvent {
+  type: 'created' | 'updated' | 'deleted' | 'history-cleared' | 'menu-updated' | 'config-updated' | 'print-job-created' | 'print-job-updated' | 'connected';
+  orderId?: string;
+  status?: string;
+  updatedAt?: string;
+  version?: number;
+}
+
+export function subscribeToOrderEvents(
+  slug: string,
+  token: string,
+  onEvent: (event: OrderRealtimeEvent) => void,
+  signal?: AbortSignal,
+  audience: 'admin' | 'customer' = 'admin',
+  onState?: (state: 'connecting' | 'online' | 'reconnecting' | 'offline') => void
+): () => void {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  let stopped = false;
+  const run = async () => {
+    let retry = 1000;
+    onState?.('connecting');
+    while (!stopped && !controller.signal.aborted) {
+      try {
+        const res = await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/order-events?audience=${audience}`, {
+          headers: authHeaders(token), signal: controller.signal, cache: 'no-store'
+        });
+        if (!res.ok || !res.body) {
+          if (res.status === 401 || res.status === 403) break;
+          throw new Error(`SSE ${res.status}`);
+        }
+        retry = 1000;
+        onState?.('online');
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (!stopped && !controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const chunks = buffer.split('\n\n');
+          buffer = chunks.pop() || '';
+          for (const chunk of chunks) {
+            const line = chunk.split('\n').find(x => x.startsWith('data:'));
+            if (!line) continue;
+            try { onEvent(JSON.parse(line.slice(5).trim())); } catch {}
+          }
+        }
+      } catch (err) {
+        if (controller.signal.aborted || stopped) break;
+      }
+      if (!stopped && !controller.signal.aborted) {
+        onState?.('reconnecting');
+        await new Promise(r => setTimeout(r, retry));
+        retry = Math.min(retry * 2, 8000);
+      }
+    }
+  };
+  void run();
+  return () => { stopped = true; controller.abort(); onState?.('offline'); signal?.removeEventListener('abort', abort); };
+}
+
 // ---------- Público ----------
 
 export async function fetchRestaurants(): Promise<RestaurantSummary[]> {
   const res = await fetch(`${API_PREFIX}/restaurants`);
   return handleResponse<RestaurantSummary[]>(res);
+}
+
+
+export interface RestaurantHealth {
+  ok: boolean;
+  status: 'healthy' | 'attention' | 'unhealthy';
+  restaurant: { slug: string; name: string; active: boolean; operationalStatus: string };
+  metrics: { products: number; categories: number; totalOrders: number; activeOrders: number; productsWithoutImages: number; realtimeClients: number };
+  capabilities: { dataBackend: string; storageMode: string; pushConfigured: boolean; aiConfigured: boolean };
+  issues: { key: string; severity: 'error' | 'warning' | 'info'; message: string }[];
+  latencyMs?: number;
+  timestamp?: string;
+}
+
+export async function fetchRestaurantHealth(slug: string, token: string): Promise<RestaurantHealth> {
+  const res = await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/health`, { headers: authHeaders(token), cache: 'no-store' });
+  return handleResponse<RestaurantHealth>(res);
 }
 
 export async function fetchPlatformSettings(): Promise<PlatformSettings> {
@@ -166,6 +255,10 @@ export async function adminUserLogin(
   return handleResponse(res);
 }
 
+export interface CustomerAdmin { id:string; name:string; phone:string; email?:string|null; createdAt?:string; updatedAt?:string; }
+export async function fetchAdminCustomers(token:string):Promise<CustomerAdmin[]>{const res=await fetch(`${API_PREFIX}/admin/customers`,{headers:authHeaders(token)});return handleResponse(res);}
+export async function deleteAdminCustomer(token:string,id:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/customers/${id}`,{method:'DELETE',headers:authHeaders(token)}));}
+
 export async function fetchAdminUsers(token: string): Promise<AdminUser[]> {
   const res = await fetch(`${API_PREFIX}/admin/users`, { headers: authHeaders(token) });
   return handleResponse<AdminUser[]>(res);
@@ -212,6 +305,11 @@ export async function updateAdminUser(
   return result.user;
 }
 
+export interface PrintJob { id:string; restaurantSlug:string; orderId:string; orderNumber?:string|null; variant:'kitchen'|'delivery'|'customer'; status:'pendente'|'imprimindo'|'impresso'|'erro'|'cancelado'; attempts:number; createdAt:string; updatedAt:string; error?:string|null }
+export async function fetchPrintJobs(slug:string, token:string):Promise<PrintJob[]>{const res=await fetch(`${API_PREFIX}/${slug}/print-jobs`,{headers:authHeaders(token)});return (await handleResponse<{jobs:PrintJob[]}>(res)).jobs;}
+export async function createPrintJob(slug:string,token:string,orderId:string,orderNumber?:string,variant:'kitchen'|'delivery'|'customer'='customer'):Promise<PrintJob>{const res=await fetch(`${API_PREFIX}/${slug}/print-jobs`,{method:'POST',headers:authHeaders(token),body:JSON.stringify({orderId,orderNumber,variant})});return (await handleResponse<{job:PrintJob}>(res)).job;}
+export async function updatePrintJob(slug:string,token:string,id:string,patch:Partial<Pick<PrintJob,'status'|'attempts'|'error'>>):Promise<PrintJob>{const res=await fetch(`${API_PREFIX}/${slug}/print-jobs/${id}`,{method:'PATCH',headers:authHeaders(token),body:JSON.stringify(patch)});return (await handleResponse<{job:PrintJob}>(res)).job;}
+
 export async function fetchOrdersAdmin(slug: string, token: string): Promise<Order[]> {
   const res = await fetch(`${API_PREFIX}/${slug}/orders`, { headers: authHeaders(token) });
   return handleResponse<Order[]>(res);
@@ -232,12 +330,13 @@ export async function updateOrderAdmin(
   slug: string,
   token: string,
   orderId: string,
-  patch: Partial<Order>
+  patch: Partial<Order>,
+  expectedUpdatedAt?: string
 ): Promise<Order> {
   const res = await fetch(`${API_PREFIX}/${slug}/orders/${orderId}`, {
     method: 'PATCH',
     headers: authHeaders(token),
-    body: JSON.stringify(patch),
+    body: JSON.stringify({ ...patch, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) }),
   });
   const data = await handleResponse<{ order: Order }>(res);
   return data.order;
@@ -444,3 +543,10 @@ export async function fetchCustomerOrders(
   const res = await fetch(`${API_PREFIX}/customers/me/orders`, { headers: customerAuthHeaders(token) });
   return handleResponse(res);
 }
+
+export async function fetchPrintJobs(slug:string, token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/print-jobs`,{headers:authHeaders(token),cache:'no-store'});return handleResponse<{jobs:any[]}>(res);}
+export async function createPrintJob(slug:string,token:string,orderId:string,variant='customer'){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/print-jobs`,{method:'POST',headers:authHeaders(token),body:JSON.stringify({orderId,variant})});return handleResponse(res);}
+export async function fetchDrivers(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/drivers`,{headers:authHeaders(token)});return handleResponse<{drivers:any[]}>(res);}
+export async function fetchBackups(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/backups`,{headers:authHeaders(token)});return handleResponse<{backups:any[]}>(res);}
+export async function createBackup(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/backup`,{headers:authHeaders(token)});return handleResponse(res);}
+export async function restoreBackup(slug:string,token:string,id:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/backups/${id}/restore`,{method:'POST',headers:authHeaders(token)});return handleResponse(res);}
