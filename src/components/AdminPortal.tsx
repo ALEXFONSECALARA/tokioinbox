@@ -443,8 +443,10 @@ export const AdminPortal: React.FC = () => {
     };
     const onManualRefresh = () => refreshOrders();
     window.addEventListener('tokio:admin-refresh-orders', onManualRefresh);
-    const interval = setInterval(refreshOrders, 4000);
-    return () => { clearInterval(interval); window.removeEventListener('tokio:admin-refresh-orders', onManualRefresh); };
+    const interval = setInterval(refreshOrders, 2500);
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshOrders(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(interval); window.removeEventListener('tokio:admin-refresh-orders', onManualRefresh); document.removeEventListener('visibilitychange', onVisible); };
   }, [token, selectedSlug, soundEnabled]);
 
   // Canal em tempo real: todos os painéis conectados ao mesmo restaurante recebem
