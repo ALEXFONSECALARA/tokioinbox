@@ -427,19 +427,24 @@ export const AdminPortal: React.FC = () => {
   useEffect(() => {
     if (!token || !selectedSlug) return;
     const slugAtScheduleTime = selectedSlug;
-    const interval = setInterval(() => {
-      fetchOrdersAdmin(slugAtScheduleTime, token)
-        .then((list) => {
-          if (latestRequestedSlugRef.current !== slugAtScheduleTime) return;
-          const known = knownOrderIdsRef.current;
-          const newOnes = known ? list.filter((o) => !known.has(o.id)) : [];
-          if (newOnes.length > 0) { newOnes.filter(o=>o.status==='recebido').forEach(o=>pendingAlertIdsRef.current.add(o.id)); if(soundEnabled) playOrderAlertSound(); try{navigator.vibrate?.([250,120,250])}catch{} }
-          list.forEach(o=>{if(o.status!=='recebido')pendingAlertIdsRef.current.delete(o.id)});
-          knownOrderIdsRef.current = new Set(list.map(o=>o.id)); setOrders(list);
-        })
-        .catch(() => {});
-    }, 8000);
-  return () => clearInterval(interval);
+    const refreshOrders = () => {
+      fetchOrdersAdmin(slugAtScheduleTime, token).then((list) => {
+        if (latestRequestedSlugRef.current !== slugAtScheduleTime) return;
+        const known = knownOrderIdsRef.current;
+        const newOnes = known ? list.filter((o) => !known.has(o.id)) : [];
+        if (newOnes.length > 0) {
+          newOnes.filter(o => o.status === 'recebido').forEach(o => pendingAlertIdsRef.current.add(o.id));
+          if (soundEnabled) { playOrderAlertSound(); try { navigator.vibrate?.([250,120,250]); } catch {} }
+        }
+        list.forEach(o => { if (o.status !== 'recebido') pendingAlertIdsRef.current.delete(o.id); });
+        knownOrderIdsRef.current = new Set(list.map(o => o.id));
+        setOrders(list);
+      }).catch(() => {});
+    };
+    const onManualRefresh = () => refreshOrders();
+    window.addEventListener('tokio:admin-refresh-orders', onManualRefresh);
+    const interval = setInterval(refreshOrders, 4000);
+    return () => { clearInterval(interval); window.removeEventListener('tokio:admin-refresh-orders', onManualRefresh); };
   }, [token, selectedSlug, soundEnabled]);
 
   // Canal em tempo real: todos os painéis conectados ao mesmo restaurante recebem
@@ -459,7 +464,7 @@ export const AdminPortal: React.FC = () => {
       }).catch(() => {});
     }, undefined, 'admin', setRealtimeState);
     return stop;
-  }, [token, selectedSlug]);
+  }, [token, selectedSlug, soundEnabled]);
 
   useEffect(()=>{if(!token||!selectedSlug||!soundEnabled)return;const tick=()=>{const ids=[...pendingAlertIdsRef.current];if(!ids.length)return;playOrderAlertSound();try{navigator.vibrate?.([300,120,300])}catch{}const now=Date.now();ids.forEach(id=>{const last=lastVoiceAlertAtRef.current[id]||0;if(now-last>12000&&'speechSynthesis' in window){const o=orders.find(x=>x.id===id);if(o){const u=new SpeechSynthesisUtterance(`Novo pedido ${o.orderNumber}. Toque para aceitar.`);u.lang='pt-BR';u.rate=1.05;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);lastVoiceAlertAtRef.current[id]=now}}})};const t=setInterval(tick,4500);return()=>clearInterval(t)},[token,selectedSlug,soundEnabled,orders]);
 
@@ -478,6 +483,12 @@ export const AdminPortal: React.FC = () => {
     }
   }, [pendingAlerts, selectedSlug, token]);
   const handleClearHistory = useCallback(async()=>{if(!selectedSlug||!token)return false;try{const removed=await clearOrderHistory(selectedSlug,token);setOrders(prev=>prev.filter(o=>!['entregue','cancelado'].includes(o.status)));alert(`${removed} pedido(s) removido(s) do histórico.`);return true}catch(err:any){alert(err?.message||'Não foi possível limpar o histórico.');return false}},[selectedSlug,token]);
+  const handleInjectDemoOrder = useCallback((order: Order) => {
+    if (!selectedSlug) return;
+    setOrders(prev => [order, ...prev.filter(o => o.id !== order.id)]);
+    knownOrderIdsRef.current = new Set([order.id, ...(knownOrderIdsRef.current ? [...knownOrderIdsRef.current] : [])]);
+    pendingAlertIdsRef.current.add(order.id);
+  }, [selectedSlug]);
 
   if (!token) {
     return <LoginScreen onLoggedIn={setToken} />;
@@ -705,6 +716,7 @@ export const AdminPortal: React.FC = () => {
         onUpdateMenuItem={handleUpdateMenuItem}
         onDeleteMenuItem={handleDeleteMenuItem}
         onToggleAvailability={handleToggleAvailability}
+        onInjectDemoOrder={handleInjectDemoOrder}
         onUpdateMenuItems={persistMenuItems}
         onUpdateCategories={persistCategories}
         restaurantConfig={restaurantConfig}

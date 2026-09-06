@@ -111,7 +111,7 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
   const [drivers,setDrivers]=useState<any[]>([]); const [backups,setBackups]=useState<any[]>([]);
   const loadOps=async()=>{if(!token||!slug)return;try{const [{drivers:d},{backups:b}]=await Promise.all([fetchDrivers(slug,token),fetchBackups(slug,token)]);setDrivers(d);setBackups(b)}catch(err:any){alert(err?.message||'Não foi possível carregar a operação.')}};
   useEffect(()=>{if(['drivers','production','backup_export'].includes(activeSubTool))loadOps()},[activeSubTool,token,slug]);
-  const doBackup=async()=>{if(!token||!slug)return;try{await createBackup(slug,token);await loadOps();setExportSuccess('Backup persistente criado com sucesso.')}catch(err:any){alert(err?.message||'Falha no backup.')}};
+  const doBackup=async()=>{if(!token||!slug)return;try{await createBackup(slug,token);await loadOps();setExportSuccess('Backup persistente criado com sucesso para este restaurante.')}catch(err:any){alert(err?.message||'Falha no backup.')}};
 
   const handleExportCSV = () => {
     if (orders.length === 0) {
@@ -302,7 +302,7 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
     setTimeout(() => setExportSuccess(null), 3000);
   };
 
-  const productionCards = activeSubTool==='production' ? <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"><div className="rounded-2xl border p-4"><ShieldCheck size={20}/><b>Segurança</b><p className="text-sm opacity-70 mt-1">Rate limit, CORS e sessões protegidas.</p></div><div className="rounded-2xl border p-4"><ArchiveRestore size={20}/><b>Backups</b><p className="text-sm opacity-70 mt-1">{backups.length} backup(s) persistente(s).</p><button onClick={doBackup} className="mt-3 px-3 py-2 rounded-xl bg-black text-white">Criar backup agora</button></div><div className="rounded-2xl border p-4"><Printer size={20}/><b>Impressão</b><p className="text-sm opacity-70 mt-1">Fila persistente + Print Bridge V14.</p></div></div> : null;
+  const productionCards = activeSubTool==='production' ? <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"><div className="rounded-2xl border p-4"><ShieldCheck size={20}/><b>Segurança</b><p className="text-sm opacity-70 mt-1">Rate limit, CORS obrigatório em produção, correlação de requisições e proteção de sessão.</p></div><div className="rounded-2xl border p-4"><ArchiveRestore size={20}/><b>Backups</b><p className="text-sm opacity-70 mt-1">{backups.length} backup(s) persistente(s).</p><button onClick={doBackup} className="mt-3 px-3 py-2 rounded-xl bg-black text-white">Criar backup agora</button></div><div className="rounded-2xl border p-4"><Printer size={20}/><b>Impressão</b><p className="text-sm opacity-70 mt-1">Fila persistente + Print Bridge com fila e recuperação de jobs.</p></div></div> : null;
   const driverCards = activeSubTool==='drivers' ? <div className="rounded-2xl border p-4 mb-6"><div className="flex items-center gap-2 mb-3"><UsersRound size={20}/><b>Entregadores</b></div><div className="grid gap-2">{drivers.map(d=><div key={d.id} className="flex justify-between border rounded-xl p-3"><span>{d.name} · {d.phone}</span><span>{d.status}</span></div>)}{!drivers.length&&<p className="text-sm opacity-60">Nenhum entregador cadastrado.</p>}</div></div> : null;
   return (
     <div className="space-y-6">
@@ -315,7 +315,7 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
           </div>
           <div>
             <h2 className="text-base sm:text-lg font-black text-stone-900">
-              Central de Ferramentas & Engenharia do Restaurante
+              Central de Ferramentas do Restaurante
             </h2>
             <p className="text-xs text-stone-500">
               Utilitários para impressão, cálculo de lucratividade (CMV), materiais promocionais e gestão de dados
@@ -380,11 +380,11 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
           <span>Simulador de Pedidos (Testes)</span>
         </button>
 
-        <button onClick={() => setActiveSubTool('diagnostics')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='diagnostics'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Activity className="w-4 h-4"/><span>Diagnóstico V8</span></button>
+        <button onClick={() => setActiveSubTool('diagnostics')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='diagnostics'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Activity className="w-4 h-4"/><span>Diagnóstico V19</span></button>
 
         <button onClick={() => setActiveSubTool('maintenance')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='maintenance'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Wrench className="w-4 h-4"/><span>Históricos & Logs</span></button>
 
-        <button onClick={() => setActiveSubTool('production')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='production'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><ShieldCheck className="w-4 h-4"/><span>Produção V18</span></button>
+        <button onClick={() => setActiveSubTool('production')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='production'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><ShieldCheck className="w-4 h-4"/><span>Produção V19</span></button>
         <button onClick={() => setActiveSubTool('drivers')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='drivers'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><UsersRound className="w-4 h-4"/><span>Entregadores</span></button>
         <button
           onClick={() => setActiveSubTool('backup_export')}

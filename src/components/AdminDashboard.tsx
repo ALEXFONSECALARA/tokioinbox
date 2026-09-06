@@ -1282,7 +1282,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {activeTab === 'orders' && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-              <div>
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[.18em] font-black text-amber-700 truncate">{localConfig.name || 'Restaurante'}</p>
                 <h2 className="text-lg font-black text-stone-900 flex items-center gap-2">
                   <span>Kanban de Pedidos Delivery</span>
                   <span className="text-xs bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full font-bold">
@@ -1293,6 +1294,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   Gerencie todo o fluxo desde a chegada até a entrega com motoboy
                 </p>
               </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('tokio:admin-refresh-orders'))}
+                className="px-3 py-1.5 bg-white border border-stone-300 hover:bg-stone-50 rounded-xl text-xs font-semibold text-stone-700 flex items-center gap-1 shadow-2xs"
+                title="Atualizar pedidos agora"
+              >↻ <span>Atualizar</span></button>
               <button
                 id="test-sound-bell-btn"
                 onClick={() => playSoundEffect('bell')}
@@ -1301,6 +1309,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <Volume2 className="w-3.5 h-3.5 text-amber-500" />
                 <span>Testar Sinal Sonoro</span>
               </button>
+              </div>
             </div>
 
             {/* Cancelamento em massa / cancelar todos / ver cancelados (Fase 4, itens 24-26) */}
