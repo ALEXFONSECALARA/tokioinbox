@@ -70,3 +70,40 @@
     size: auto;
   }
 }
+
+
+/* ================================================================
+   JAPANESE DELIVERY — PREMIUM + MODERN
+   A identidade pública do restaurante é deliberadamente independente.
+   ================================================================ */
+.jpn-premium {
+  --jpn-ink: #070908;
+  --jpn-surface: #0d1212;
+  --jpn-surface-2: #121919;
+  --jpn-line: rgba(201,162,39,.20);
+  --jpn-gold: #c9a227;
+  --jpn-gold-soft: #e2c55d;
+  --jpn-cream: #f4f0e5;
+  --jpn-muted: #a8aaa2;
+  background:
+    radial-gradient(circle at 80% 0%, rgba(24,64,62,.22), transparent 28%),
+    linear-gradient(180deg, #070908 0%, #0a0d0d 38%, #080a0a 100%);
+  color: var(--jpn-cream);
+}
+.jpn-display { font-family: Georgia, 'Times New Roman', serif; letter-spacing: .02em; }
+.jpn-no-scrollbar::-webkit-scrollbar { display:none; }
+.jpn-no-scrollbar { scrollbar-width:none; -ms-overflow-style:none; }
+.jpn-glass {
+  background: rgba(10,14,14,.76);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.jpn-gold-line { border-color: var(--jpn-line); }
+@keyframes jpn-fade-up { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+.jpn-reveal { animation:jpn-fade-up .55s ease both; }
+@media (prefers-reduced-motion: reduce) { .jpn-reveal { animation:none; } }
+
+@media (max-width:767px){.admin-kanban{display:flex!important;overflow-x:auto;scroll-snap-type:x mandatory;gap:.75rem;padding-bottom:.35rem;-webkit-overflow-scrolling:touch}.admin-kanban>*{flex:0 0 88vw;max-width:88vw;min-width:88vw;scroll-snap-align:start;min-height:58vh}button,[role="button"]{touch-action:manipulation}}
+
+@media (max-width:767px){.admin-kanban{scrollbar-width:none}.admin-kanban>*{min-height:520px}.admin-kanban .space-y-3{overflow:visible!important;max-height:none}.admin-kanban button{min-height:44px}.admin-kanban .p-3\.5{padding:1rem}}

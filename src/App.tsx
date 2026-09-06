@@ -30,6 +30,7 @@ import { DeliveryAddressModal } from './components/DeliveryAddressModal';
 import { FavoritesModal } from './components/FavoritesModal';
 import { CustomerAccountModal } from './components/CustomerAccountModal';
 import { AssistantChat } from './components/AssistantChat';
+import { InstallPrompt } from './components/InstallPrompt';
 import { 
   ShoppingBag, 
   Bike,
@@ -286,6 +287,20 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
     })();
     return () => { cancelled = true; };
   }, [restaurantSlug]);
+
+  useEffect(() => {
+    if (isMenuLoading || !restaurantConfig?.name) return;
+    // Instalação por restaurante: o manifesto aponta para /r/:slug, então o
+    // app instalado abre diretamente aquela loja e não a vitrine multi-restaurantes.
+    let link = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
+    if (!link) { link=document.createElement('link'); link.rel='manifest'; document.head.appendChild(link); }
+    link.href=`/api/pwa/manifest?slug=${encodeURIComponent(restaurantSlug)}`;
+    document.title=`${restaurantConfig.name} • Delivery`;
+    let apple=document.querySelector('link[rel="apple-touch-icon"]') as HTMLLinkElement | null;
+    if(!apple){apple=document.createElement('link');apple.rel='apple-touch-icon';document.head.appendChild(apple)}
+    if(restaurantConfig.logo) apple.href=restaurantConfig.logo;
+    if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  }, [isMenuLoading, restaurantSlug, restaurantConfig?.name, restaurantConfig?.logo]);
 
   // Decide se mostra a splash screen: só se o admin ativou e cadastrou fotos,
   // e só uma vez por sessão do navegador (não repete a cada nova aba/recarregar
@@ -571,34 +586,26 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
         <span className="text-4xl">😴</span>
         <p className="font-semibold text-stone-800 text-lg">{restaurantConfig.name || 'Este restaurante'} está temporariamente indisponível</p>
         <p className="text-sm text-stone-500 max-w-xs">Não estamos recebendo pedidos por aqui no momento. Volte mais tarde.</p>
-        <a href="/" className="mt-2 text-sm font-medium text-orange-600 hover:underline">
-          ← Ver outros restaurantes
-        </a>
+        <button onClick={() => window.location.reload()} className="mt-2 text-sm font-semibold text-[#c9a227] hover:text-[#e2c55d]">
+          Tentar novamente
+        </button>
       </div>
     );
   }
 
   // Customer Delivery View
   return (
-    <div className="min-h-screen bg-stone-100 text-stone-900 flex flex-col font-sans" style={getThemeStyle(restaurantSlug, restaurantConfig)}>
+    <div className={`min-h-screen text-[#f4f0e5] flex flex-col font-sans ${restaurantSlug === 'japones' ? 'jpn-premium' : 'bg-stone-100 text-stone-900'}`} style={getThemeStyle(restaurantSlug, restaurantConfig)}>
       {showSplash && (
         <SplashScreen config={restaurantConfig} onFinish={() => setShowSplash(false)} />
       )}
+      <InstallPrompt config={restaurantConfig} />
       {menuLoadError && (
         <div className="bg-amber-100 text-amber-800 text-sm text-center py-1.5 px-4">
           {menuLoadError}
         </div>
       )}
-      {onExit && (
-        <button
-          onClick={onExit}
-          className="text-xs text-stone-500 hover:text-stone-800 underline px-4 py-1.5 text-left w-fit"
-        >
-          ← Trocar de restaurante
-        </button>
-      )}
-
-      <div className="flex-1 flex flex-col mx-auto w-full max-w-full bg-white">
+      <div className={`flex-1 flex flex-col mx-auto w-full max-w-full ${restaurantSlug === 'japones' ? 'bg-transparent' : 'bg-white'}`}>
         {/* Restaurant Header */}
         <Header
           config={restaurantConfig}
@@ -616,6 +623,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
           onOpenAccount={() => setIsAccountModalOpen(true)}
           isPushOn={isPushOn}
           onTogglePush={handleTogglePush}
+          onScrollToMenu={() => document.getElementById('menu-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
         />
 
         {/* "Você possui um pedido em andamento" — reaparece se o cliente
@@ -630,8 +638,8 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
             saiu_entrega: 'Saiu para entrega',
           };
           return (
-            <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4">
-              <div className="bg-slate-900 text-white rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
+            <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-5">
+              <div className="bg-[#0d1212] text-white rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl border border-white/10">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-[var(--brand)] text-slate-950 flex items-center justify-center flex-shrink-0">
                     <ShoppingBag className="w-4 h-4" />
@@ -676,11 +684,11 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
             Restaurante), sem nenhum texto fixo. Some completamente se o
             restaurante não cadastrar nenhuma promoção. */}
         {(restaurantConfig.promoBadges || []).length > 0 && (
-          <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4 space-y-2">
+          <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-5 space-y-2">
             {(restaurantConfig.promoBadges || []).map((badge) => (
               <div
                 key={badge.id}
-                className="bg-gradient-to-r from-[var(--brand)] via-[var(--brand-light)] to-[var(--brand)] rounded-2xl p-3 sm:p-4 text-slate-950 flex flex-wrap items-center justify-between gap-3 shadow-xs border border-[var(--brand-light)]"
+                className={`${restaurantSlug === 'japones' ? 'bg-[#101716] text-[#f4f0e5] border-[#c9a227]/20' : 'bg-gradient-to-r from-[var(--brand)] via-[var(--brand-light)] to-[var(--brand)] text-slate-950 border-[var(--brand-light)]'} rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg border`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-slate-950 text-[var(--brand-light)] flex items-center justify-center flex-shrink-0 text-lg">
@@ -709,11 +717,11 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
         )}
 
         {/* Main Menu Grid Content */}
-        <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 flex-1 space-y-6">
+        <main id="menu-content" className={`max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 sm:py-10 flex-1 space-y-8 ${restaurantSlug === 'japones' ? 'jpn-reveal' : ''}`}>
           {/* Active Filter indicator */}
           {(searchQuery || selectedTag || activeCategoryId !== 'all') && (
             <div className="flex items-center justify-between bg-stone-50 p-3 rounded-2xl border border-stone-200 text-xs">
-              <span className="text-stone-600 font-medium">
+              <span className="text-[#a8aaa2] font-medium">
                 Exibindo resultados para:{' '}
                 <strong>
                   {searchQuery ? `"${searchQuery}"` : ''}
@@ -731,7 +739,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
                   setSelectedTag(null);
                   setActiveCategoryId('all');
                 }}
-                className="text-amber-700 hover:text-amber-800 font-bold underline"
+                className="text-[#e2c55d] hover:text-white font-bold underline"
               >
                 Limpar filtros
               </button>
@@ -747,21 +755,21 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
 
                 return (
                   <section key={cat.id} id={`category-section-${cat.id}`} className="space-y-3">
-                    <div className="border-b border-stone-200 pb-2 flex items-center justify-between">
+                    <div className="border-b border-white/10 pb-3 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <h2 className="text-lg sm:text-xl font-black text-stone-900 tracking-tight">
+                        <h2 className={`${restaurantSlug === 'japones' ? 'jpn-display text-[#f4f0e5]' : 'text-stone-900'} text-xl sm:text-2xl font-semibold tracking-wide`}>
                           {cat.name}
                         </h2>
-                        <span className="text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded-full font-bold">
+                        <span className="text-xs bg-white/5 border border-white/10 text-[#a8aaa2] px-2 py-0.5 rounded-full font-bold">
                           {itemsInCat.length}
                         </span>
                       </div>
                       {cat.description && (
-                        <p className="text-xs text-stone-500 hidden sm:block">{cat.description}</p>
+                        <p className="text-xs text-[#7f847d] hidden sm:block">{cat.description}</p>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                       {itemsInCat.map((item) => (
                         <ProductCard
                           key={item.id}
@@ -800,7 +808,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                   {filteredMenuItems.map((item) => (
                     <ProductCard
                       key={item.id}
@@ -839,13 +847,13 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
         )}
 
         {/* Delivery Footer */}
-        <footer className="bg-stone-900 text-stone-400 text-xs py-8 px-4 sm:px-6 border-t border-stone-800 mt-12">
+        <footer className={`${restaurantSlug === 'japones' ? 'bg-[#050707] text-[#858a83] border-white/5' : 'bg-stone-900 text-stone-400 border-stone-800'} text-xs py-10 px-4 sm:px-6 border-t mt-14`}>
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
             <div>
-              <p className="font-extrabold text-white text-sm flex items-center justify-center sm:justify-start gap-2">
+              <p className="jpn-display font-semibold text-[#f4f0e5] text-base flex items-center justify-center sm:justify-start gap-2">
                 <span>{restaurantConfig.name}</span>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                  🛵 Delivery Exclusivo
+                <span className="text-[9px] uppercase tracking-[.16em] text-[#c9a227] border border-[#c9a227]/20 px-2 py-1 rounded-full">
+                  Delivery
                 </span>
               </p>
               <p className="text-[11px] text-stone-400 mt-0.5">{restaurantConfig.address}</p>
@@ -862,13 +870,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
                 <MapPin className="w-3.5 h-3.5 text-[var(--brand)]" />
                 <span>Trocar Endereço</span>
               </button>
-              <a
-                href="/admin"
-                className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-[var(--brand-light)] text-xs font-semibold flex items-center gap-1"
-              >
-                <ChefHat className="w-3.5 h-3.5" />
-                <span>Acesso Restaurante</span>
-              </a>
+
             </div>
           </div>
         </footer>

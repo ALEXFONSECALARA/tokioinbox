@@ -18,6 +18,11 @@ export const Router: React.FC = () => {
     return <AdminPortal />;
   }
 
+  if (path.startsWith('/r/')) {
+    const slug = path.split('/').filter(Boolean)[1];
+    return <App restaurantSlug={slug} onExit={() => (window.location.href = '/')} />;
+  }
+
   // Qualquer outro caminho: primeiro segmento é o slug do restaurante (ex: /japones)
   const slug = path.split('/').filter(Boolean)[0];
   return <App restaurantSlug={slug} onExit={() => (window.location.href = '/')} />;
