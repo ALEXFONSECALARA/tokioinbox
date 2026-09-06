@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "20.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -10,7 +10,9 @@
     "start": "node server/index.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:server": "node --test tests/server/*.test.mjs",
+    "smoke": "node tests/server/smoke.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
