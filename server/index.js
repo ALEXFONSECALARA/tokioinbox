@@ -30,7 +30,10 @@ async function logServerError(context, err, meta = {}) {
 
 // Senha única do super-admin. Em produção, defina ADMIN_PASSWORD nas variáveis
 // de ambiente do Render. Em desenvolvimento local, usa "admin123" por padrão.
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'admin123');
+if (process.env.NODE_ENV === 'production' && !ADMIN_PASSWORD) {
+  throw new Error('ADMIN_PASSWORD é obrigatório em produção.');
+}
 
 // Tokens de sessão do admin ficam em memória (somem se o servidor reiniciar,
 // então o admin só precisa logar de novo — nada grave).
@@ -170,7 +173,38 @@ function publicCustomer(customer) {
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(cors());
+const allowedOrigins = String(process.env.CORS_ORIGINS || '').split(',').map(x=>x.trim()).filter(Boolean);
+if (process.env.NODE_ENV === 'production' && !allowedOrigins.length) { throw new Error('CORS_ORIGINS é obrigatório em produção.'); }
+app.use(cors(allowedOrigins.length ? { origin: (origin, cb) => !origin || allowedOrigins.includes(origin) ? cb(null,true) : cb(new Error('Origin não permitida.')) } : undefined));
+const rateBuckets = new Map();
+function rateLimit({windowMs=60000,max=120,key='global'}={}) { return (req,res,next)=>{ const k=`${key}:${req.ip}`; const now=Date.now(); let b=rateBuckets.get(k); if(!b || now-b.start>windowMs){b={start:now,count:0};rateBuckets.set(k,b)} b.count++; if(b.count>max)return res.status(429).json({error:'Muitas tentativas. Aguarde alguns segundos e tente novamente.'}); next(); }; }
+setInterval(()=>{const now=Date.now();for(const [k,b] of rateBuckets)if(now-b.start>300000)rateBuckets.delete(k)},60000).unref();
+app.use(rateLimit({windowMs:60000,max:300,key:'api'}));
+
+// Realtime de pedidos por restaurante. O payload é mínimo (sem dados pessoais);
+// cada consumidor autenticado busca o pedido completo somente se necessário.
+const orderEventClients = new Map();
+function addOrderEventClient(slug, client) {
+  if (!orderEventClients.has(slug)) orderEventClients.set(slug, new Set());
+  orderEventClients.get(slug).add(client);
+}
+function removeOrderEventClient(slug, client) {
+  const set = orderEventClients.get(slug);
+  if (!set) return;
+  set.delete(client);
+  if (!set.size) orderEventClients.delete(slug);
+}
+function deliverOrderEvent(slug,event){ const set=orderEventClients.get(slug); if(!set)return; const payload=`data: ${JSON.stringify(event)}\n\n`; for(const client of set){if(client.role==='customer'&&client.customerId!==event.customerId)continue;try{client.res.write(payload)}catch{removeOrderEventClient(slug,client)}} }
+function broadcastOrderEvent(slug, event) { deliverOrderEvent(slug,event); void db.appendRealtimeEvent(slug,event).catch(err=>logServerError(`Falha ao persistir realtime ${slug}`,err,{restaurantSlug:slug})); }
+const realtimeCursors = new Map();
+setInterval(async()=>{ if(db.backendName!=='supabase')return; try{const restaurants=await db.getRestaurantsAdmin(); for(const r of restaurants||[]){const after=Number(realtimeCursors.get(r.slug)||0); const events=await db.listRealtimeEvents(r.slug,after); for(const e of events){realtimeCursors.set(r.slug,Math.max(Number(realtimeCursors.get(r.slug)||0),Number(e.id))); deliverOrderEvent(r.slug,e.payload||{});}}}catch(err){logServerError('Falha no relay realtime compartilhado',err)} },1500).unref();
+
+function publicSlug(name, fallback) {
+  return String(name || fallback || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || fallback;
+}
+
 
 // Compatibilidade com builds antigos que receberam VITE_API_URL já terminado
 // em /api e, por isso, ainda podem chamar /api/api/... durante uma transição
@@ -182,6 +216,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '5mb' }));
+app.use((req,res,next)=>{ req.requestId=req.get('x-request-id')||crypto.randomUUID(); res.set('X-Request-ID',req.requestId); next(); });
 
 // ---------- Upload de fotos (logo, banner, splash, pratos, entregadores) ----------
 // Fica em memória (multer.memoryStorage) em vez de ir direto pro disco — o
@@ -227,9 +262,56 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // ---------- Rotas públicas ----------
 
 app.post('/api/client-errors', async (req,res)=>{try{const message=String(req.body?.message||'Erro de cliente').slice(0,1000);await db.createErrorLog({level:'client',context:'frontend',message,details:req.body?.details||{}});res.status(204).end()}catch{res.status(204).end()}});
-app.get('/api/pwa/manifest', async (req,res)=>{ try{const slug=String(req.query.slug||'').trim();if(!slug||!(await db.restaurantExists(slug)))return res.status(404).json({error:'Restaurante não encontrado.'});const data=await db.readRestaurantData(slug);const cfg=data.restaurantConfig||{};res.set('Cache-Control','no-store');res.json({name:cfg.name||slug,short_name:cfg.name||slug,start_url:`/r/${slug}`,scope:`/r/${slug}/`,display:'standalone',background_color:'#070908',theme_color:cfg.color||'#c9a227',description:cfg.tagline||'Delivery',icons:[{src:cfg.logo||'/tokioinbox-mark.svg',sizes:'512x512',type:cfg.logo?'image/png':'image/svg+xml',purpose:'any maskable'}]});}catch(err){logServerError('Erro ao gerar manifesto PWA',err);res.status(500).json({error:'Não foi possível gerar o aplicativo.'})} });
+app.get('/api/pwa/manifest', async (req,res)=>{ try{const slug=String(req.query.slug||'').trim();if(!slug||!(await db.restaurantExists(slug)))return res.status(404).json({error:'Restaurante não encontrado.'});const data=await db.readRestaurantData(slug);const cfg=data.restaurantConfig||{};res.set('Cache-Control','no-store');res.json({name:cfg.name||slug,short_name:cfg.name||slug,start_url:`/r/${publicSlug(cfg.name,slug)}`,scope:`/r/${publicSlug(cfg.name,slug)}/`,display:'standalone',background_color:'#070908',theme_color:cfg.color||'#c9a227',description:cfg.tagline||'Delivery',icons:[{src:cfg.logo||'/tokioinbox-mark.svg',sizes:'512x512',type:cfg.logo?'image/png':'image/svg+xml',purpose:'any maskable'}]});}catch(err){logServerError('Erro ao gerar manifesto PWA',err);res.status(500).json({error:'Não foi possível gerar o aplicativo.'})} });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, dataBackend: db.backendName }));
+app.get('/api/version', (req, res) => {
+  res.json({ ok: true, version: '19.0.0', release: 'V19', features: ['print-bridge-claim','durable-print-jobs','shared-realtime-per-restaurant','backup-safety-restore','production-security','payment-conflict-control','request-correlation','error-observability'] });
+});
+
+app.get('/api/health', async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    const restaurants = await db.getRestaurants();
+    res.json({ ok: true, status: 'healthy', dataBackend: db.backendName, restaurants: restaurants.length, uptimeSeconds: Math.floor(process.uptime()), latencyMs: Date.now() - startedAt, realtimeClients: [...orderEventClients.values()].reduce((n, set) => n + set.size, 0), storageMode: mediaStorageMode(), pushConfigured: Boolean(getVapidPublicKey()), aiConfigured: isAiConfigured(), timestamp: new Date().toISOString() });
+  } catch (err) {
+    logServerError('Health check falhou', err);
+    res.status(503).json({ ok: false, status: 'unhealthy', dataBackend: db.backendName, error: 'Backend indisponível.', latencyMs: Date.now() - startedAt, timestamp: new Date().toISOString() });
+  }
+});
+
+app.get('/api/health/ready', async (req, res) => {
+  try {
+    const restaurants = await db.getRestaurants();
+    res.json({ ok: true, ready: true, dataBackend: db.backendName, restaurants: restaurants.length, timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(503).json({ ok: false, ready: false, dataBackend: db.backendName, timestamp: new Date().toISOString() });
+  }
+});
+
+app.get('/api/:slug/health', requireAdmin, requireOwnRestaurant, async (req, res) => {
+  const { slug } = req.params;
+  const startedAt = Date.now();
+  try {
+    if (!(await db.restaurantExists(slug))) return res.status(404).json({ error: 'Restaurante não encontrado.' });
+    const [data, orders] = await Promise.all([db.readRestaurantData(slug), db.listOrders(slug)]);
+    const config = data?.restaurantConfig || {};
+    const menuItems = Array.isArray(data?.menuItems) ? data.menuItems : [];
+    const categories = Array.isArray(data?.categories) ? data.categories : [];
+    const activeOrders = orders.filter(o => !['entregue','cancelado'].includes(o.status)).length;
+    const missingImages = menuItems.filter(i => !i.image).length;
+    const issues = [];
+    if (!config.name) issues.push({ key:'identity', severity:'error', message:'Nome do restaurante não configurado.' });
+    if (!config.whatsapp) issues.push({ key:'whatsapp', severity:'warning', message:'WhatsApp do restaurante não configurado.' });
+    if (!menuItems.length) issues.push({ key:'menu', severity:'error', message:'Cardápio sem produtos.' });
+    if (!categories.length) issues.push({ key:'categories', severity:'warning', message:'Nenhuma categoria cadastrada.' });
+    if (missingImages > 0) issues.push({ key:'images', severity:'info', message:`${missingImages} produto(s) sem foto.` });
+    if (!['normal','lotado','pausado'].includes(config.operationalStatus || 'normal')) issues.push({ key:'operational', severity:'warning', message:'Status operacional desconhecido.' });
+    res.json({ ok:true, status: issues.some(i=>i.severity==='error') ? 'attention' : 'healthy', restaurant:{ slug, name:config.name || slug, active:await db.restaurantIsActive(slug), operationalStatus:config.operationalStatus || 'normal' }, metrics:{ products:menuItems.length, categories:categories.length, totalOrders:orders.length, activeOrders, productsWithoutImages:missingImages, realtimeClients:orderEventClients.get(slug)?.size || 0 }, capabilities:{ dataBackend:db.backendName, storageMode:mediaStorageMode(), pushConfigured:Boolean(getVapidPublicKey()), aiConfigured:isAiConfigured() }, issues, latencyMs:Date.now()-startedAt, timestamp:new Date().toISOString() });
+  } catch (err) {
+    logServerError(`Health check do restaurante ${slug} falhou`, err, { restaurantSlug: slug });
+    res.status(503).json({ ok:false, status:'unhealthy', error:'Não foi possível diagnosticar o restaurante.', latencyMs:Date.now()-startedAt, timestamp:new Date().toISOString() });
+  }
+});
 
 // Lista os restaurantes disponíveis (pra tela inicial de escolha) — só os
 // ATIVOS. Restaurante desativado não aparece aqui (mas continua no banco e
@@ -272,6 +354,38 @@ app.get('/api/:slug/menu', async (req, res) => {
   }
 });
 
+// Canal de atualização simultânea. Admin usa sua sessão; cliente usa a conta global.
+app.get('/api/:slug/order-events', async (req, res, next) => {
+  const { slug } = req.params;
+  if (!(await db.restaurantExists(slug))) return res.status(404).json({ error: 'Restaurante não encontrado.' });
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  const adminSession = getTokenSession(token);
+  const customerSession = getCustomerSession(token);
+  let role = null; let customerId = null;
+  if (adminSession) {
+    try {
+      if (adminSession.userId !== null) {
+        const user = await db.getAdminUserById(adminSession.userId);
+        if (!user || !user.active) return res.status(401).json({ error: 'Sessão administrativa expirada.' });
+        if (user.restaurantSlug && user.restaurantSlug !== slug && !user.permissions?.admin_gerenciar_restaurantes) return res.status(403).json({ error: 'Sem acesso a este restaurante.' });
+      }
+      role = 'admin';
+    } catch (err) { return next(err); }
+  } else if (customerSession) {
+    role = 'customer'; customerId = customerSession.customerId;
+  } else {
+    return res.status(401).json({ error: 'Faça login para receber atualizações em tempo real.' });
+  }
+  res.status(200); res.set({ 'Content-Type':'text/event-stream; charset=utf-8', 'Cache-Control':'no-cache, no-transform', 'Connection':'keep-alive', 'X-Accel-Buffering':'no' });
+  res.flushHeaders?.();
+  res.write(`data: ${JSON.stringify({type:'connected'})}\n\n`);
+  const client = { res, role, customerId };
+  addOrderEventClient(slug, client);
+  const heartbeat = setInterval(() => { try { res.write(': heartbeat\n\n'); } catch {} }, 25000);
+  req.on('close', () => { clearInterval(heartbeat); removeOrderEventClient(slug, client); });
+});
+
 // Cliente cria um pedido (não precisa de login)
 app.post('/api/:slug/orders', async (req, res) => {
   const { slug } = req.params;
@@ -296,6 +410,7 @@ app.post('/api/:slug/orders', async (req, res) => {
     const session = getCustomerSession(bearerToken(req));
     order.customerId = session ? session.customerId : undefined;
     const saved = await db.createOrder(slug, order);
+    broadcastOrderEvent(slug, { type: 'created', orderId: saved.id, status: saved.status, updatedAt: saved.updatedAt || saved.createdAt, customerId: saved.customerId || null });
     res.status(201).json({ ok: true, order: saved });
   } catch (err) {
     logServerError(`Erro ao salvar pedido de ${slug}:`, err);
@@ -305,13 +420,17 @@ app.post('/api/:slug/orders', async (req, res) => {
 
 // ---------- Contas de cliente + endereços salvos (Fase 4, itens 20-22) ----------
 
-app.post('/api/customers/register', async (req, res) => {
+app.post('/api/customers/register', rateLimit({windowMs:60000,max:6,key:'customer-register'}), async (req, res) => {
   const { name, phone, email, password } = req.body || {};
   const cleanPhone = String(phone || '').replace(/\D/g, '');
   const cleanEmail = email ? String(email).trim().toLowerCase() : null;
   if (!name || !cleanPhone || !password) {
     return res.status(400).json({ error: 'Nome, telefone e senha são obrigatórios.' });
   }
+  if (String(name).trim().length < 2) return res.status(400).json({ error: 'Informe seu nome completo.' });
+  if (cleanPhone.length < 10 || cleanPhone.length > 13) return res.status(400).json({ error: 'Informe um telefone válido com DDD.' });
+  if (String(password).length < 6) return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres.' });
+  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ error: 'Informe um e-mail válido ou deixe o campo vazio.' });
   try {
     const passwordHash = await hashPassword(password);
     const customer = await db.createCustomer({ name: String(name).trim(), phone: cleanPhone, email: cleanEmail, passwordHash });
@@ -326,7 +445,7 @@ app.post('/api/customers/register', async (req, res) => {
   }
 });
 
-app.post('/api/customers/login', async (req, res) => {
+app.post('/api/customers/login', rateLimit({windowMs:60000,max:10,key:'customer-login'}), async (req, res) => {
   const { phone, password } = req.body || {};
   const cleanPhone = String(phone || '').replace(/\D/g, '');
   if (!cleanPhone || !password) {
@@ -864,7 +983,7 @@ app.get('/api/:slug/orders/:id', async (req, res) => {
 
 // ---------- Login do super-admin ----------
 
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', rateLimit({windowMs:60000,max:10,key:'admin-login'}), (req, res) => {
   const { password } = req.body || {};
   if (password !== ADMIN_PASSWORD) {
     void db.createAdminLoginLog({login:'master',success:false,mode:'master',ip:req.ip,userAgent:req.get('user-agent'),details:{reason:'invalid_password'}}).catch(()=>{});
@@ -878,7 +997,7 @@ app.post('/api/admin/login', (req, res) => {
 // pelo super-admin em /api/admin/users. Convive com o login mestre acima
 // sem substituí-lo: a tela de login do painel pode continuar usando a senha
 // única, ou usar login+senha de um usuário específico.
-app.post('/api/admin/users/login', async (req, res) => {
+app.post('/api/admin/users/login', rateLimit({windowMs:60000,max:10,key:'admin-user-login'}), async (req, res) => {
   const { login, password } = req.body || {};
   if (!login || !password) {
     return res.status(400).json({ error: 'Informe login e senha.' });
@@ -925,6 +1044,22 @@ function publicAdminUser(user) {
   const { passwordHash, ...rest } = user;
   return rest;
 }
+
+app.get('/api/admin/customers', requireAdmin, async (req, res) => {
+  if (!req.adminUser?.isMaster) return res.status(403).json({ error: 'Somente o super-admin pode gerenciar contas de clientes.' });
+  try {
+    const customers = await db.listCustomers();
+    res.json(customers.map(({ passwordHash, ...safe }) => safe));
+  } catch (err) { logServerError('Erro ao listar clientes:', err); res.status(500).json({ error: 'Não foi possível carregar os clientes.' }); }
+});
+app.delete('/api/admin/customers/:id', requireAdmin, async (req, res) => {
+  if (!req.adminUser?.isMaster) return res.status(403).json({ error: 'Somente o super-admin pode excluir contas de clientes.' });
+  try {
+    const deleted = await db.deleteCustomer(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    res.json({ ok: true, customer: { id: deleted.id, name: deleted.name, phone: deleted.phone } });
+  } catch (err) { logServerError('Erro ao excluir cliente:', err); res.status(500).json({ error: 'Não foi possível excluir a conta do cliente.' }); }
+});
 
 app.get('/api/admin/users', requireAdmin, async (req, res) => {
   if (!canManageUsers(req)) return res.status(403).json({ error: 'Você não tem permissão para ver usuários.' });
@@ -1194,6 +1329,7 @@ app.put('/api/:slug/menu-items', requireAdmin, requireOwnRestaurant, async (req,
   if (!Array.isArray(menuItems)) return res.status(400).json({ error: 'Corpo deve ser um array de itens.' });
   try {
     const saved = await db.updateMenuItems(slug, menuItems);
+    broadcastOrderEvent(slug, { type: 'menu-updated', updatedAt: new Date().toISOString() });
     res.json({ ok: true, menuItems: saved });
   } catch (err) {
     logServerError(`Erro ao salvar itens de ${slug}:`, err);
@@ -1208,6 +1344,7 @@ app.put('/api/:slug/categories', requireAdmin, requireOwnRestaurant, async (req,
   if (!Array.isArray(categories)) return res.status(400).json({ error: 'Corpo deve ser um array de categorias.' });
   try {
     const saved = await db.updateCategories(slug, categories);
+    broadcastOrderEvent(slug, { type: 'menu-updated', updatedAt: new Date().toISOString() });
     res.json({ ok: true, categories: saved });
   } catch (err) {
     logServerError(`Erro ao salvar categorias de ${slug}:`, err);
@@ -1248,6 +1385,7 @@ app.put('/api/:slug/config', requireAdmin, requireOwnRestaurant, async (req, res
     // (tanto no backend JSON quanto no Supabase), em vez de substituir tudo —
     // um payload incompleto nunca apaga silenciosamente campos que não vieram.
     const merged = await db.updateConfig(slug, incoming);
+    broadcastOrderEvent(slug, { type: 'config-updated', updatedAt: new Date().toISOString() });
     res.json({ ok: true, restaurantConfig: merged });
   } catch (err) {
     logServerError(`Erro ao salvar configuração de ${slug}:`, err);
@@ -1282,29 +1420,77 @@ app.get('/api/:slug/orders', requireAdmin, requireOwnRestaurant, async (req, res
   }
 });
 
+// Fila persistente de impressão V13. O navegador continua sendo quem imprime,
+// mas o pedido de impressão deixa de depender apenas do localStorage do dispositivo.
+app.get('/api/:slug/print-jobs', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug}=req.params; try{res.json({jobs:await db.listPrintJobs(slug, Number(req.query.limit)||100)});}catch(err){logServerError(`Erro ao listar fila de impressão ${slug}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível carregar a fila de impressão.'});} });
+app.post('/api/:slug/print-jobs', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug}=req.params; const {orderId,orderNumber,variant}=req.body||{}; if(!orderId)return res.status(400).json({error:'orderId é obrigatório.'}); try{const order=await db.getOrder(slug,orderId);if(!order)return res.status(404).json({error:'Pedido não encontrado.'});const job=await db.createPrintJob(slug,{orderId,orderNumber:orderNumber||order.orderNumber,variant:variant||'customer'});broadcastOrderEvent(slug,{type:'print-job-created',orderId,printJobId:job.id,updatedAt:job.updatedAt});res.status(201).json({job});}catch(err){logServerError(`Erro ao criar trabalho de impressão ${slug}/${orderId}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível registrar a impressão.'});} });
+app.patch('/api/:slug/print-jobs/:id', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug,id}=req.params; const allowed=['pendente','imprimindo','impresso','erro','cancelado']; const status=req.body?.status; const patch={}; if(status&&allowed.includes(status))patch.status=status; if(req.body?.error!==undefined)patch.error=String(req.body.error||'').slice(0,1000); if(req.body?.attempts!==undefined)patch.attempts=Math.max(0,Number(req.body.attempts)||0); if(req.body?.workerId!==undefined)patch.workerId=String(req.body.workerId).slice(0,128); if(req.body?.leaseUntil!==undefined)patch.leaseUntil=req.body.leaseUntil; if(!Object.keys(patch).length)return res.status(400).json({error:'Nenhuma alteração válida.'}); try{const job=await db.updatePrintJob(slug,id,patch);if(!job)return res.status(404).json({error:'Trabalho de impressão não encontrado.'});broadcastOrderEvent(slug,{type:'print-job-updated',orderId:job.orderId,printJobId:job.id,status:job.status,updatedAt:job.updatedAt});res.json({job});}catch(err){logServerError(`Erro ao atualizar trabalho de impressão ${slug}/${id}`,err,{restaurantSlug:slug,details:{requestId:req.requestId}});res.status(500).json({error:'Não foi possível atualizar a fila de impressão.'});} });
+app.post('/api/:slug/print-jobs/claim', requireAdmin, requireOwnRestaurant, async (req,res)=>{ try { const job=await db.claimNextPrintJob(req.params.slug,String(req.body?.workerId||'bridge').slice(0,128)); if(!job)return res.status(204).end(); broadcastOrderEvent(req.params.slug,{type:'print-job-updated',orderId:job.orderId,printJobId:job.id,status:job.status,updatedAt:job.updatedAt}); res.json({job}); } catch(err){ logServerError(`Erro ao reservar trabalho de impressão ${req.params.slug}`,err,{restaurantSlug:req.params.slug,details:{requestId:req.requestId}}); res.status(500).json({error:'Não foi possível reservar a impressão.'}); }});
+
 // Exclusão consciente: somente histórico finalizado/cancelado.
-app.delete('/api/:slug/orders/:id', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug,id}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{const existing=await db.getOrder(slug,id);if(!existing)return res.status(404).json({error:'Pedido não encontrado.'});if(!['entregue','cancelado'].includes(existing.status))return res.status(409).json({error:'Só pedidos finalizados ou cancelados podem ser excluídos.'});const order=await db.deleteOrder(slug,id);res.json({ok:true,order});}catch(err){logServerError(`Erro ao excluir pedido ${slug}/${id}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível excluir o pedido.'});} });
-app.delete('/api/:slug/orders/history', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{const result=await db.clearFinishedOrders(slug);res.json({ok:true,...result});}catch(err){logServerError(`Erro ao limpar histórico ${slug}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível limpar o histórico.'});} });
+app.delete('/api/:slug/orders/:id', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug,id}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{const existing=await db.getOrder(slug,id);if(!existing)return res.status(404).json({error:'Pedido não encontrado.'});if(!['entregue','cancelado'].includes(existing.status))return res.status(409).json({error:'Só pedidos finalizados ou cancelados podem ser excluídos.'});const order=await db.deleteOrder(slug,id);broadcastOrderEvent(slug,{type:'deleted',orderId:id,updatedAt:new Date().toISOString(),customerId:order?.customerId||null});res.json({ok:true,order});}catch(err){logServerError(`Erro ao excluir pedido ${slug}/${id}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível excluir o pedido.'});} });
+app.delete('/api/:slug/orders/history', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{const result=await db.clearFinishedOrders(slug);broadcastOrderEvent(slug,{type:'history-cleared',updatedAt:new Date().toISOString()});res.json({ok:true,...result});}catch(err){logServerError(`Erro ao limpar histórico ${slug}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível limpar o histórico.'});} });
+
+// Fluxo operacional V7: o pedido só avança pela sequência oficial.
+// Cancelamento continua sendo uma ação paralela, protegida pela permissão própria.
+const ORDER_FLOW = {
+  recebido: ['em_preparo', 'cancelado'],
+  em_preparo: ['pronto', 'cancelado'],
+  pronto: ['saiu_entrega', 'cancelado'],
+  saiu_entrega: ['entregue', 'cancelado'],
+  entregue: [],
+  cancelado: [],
+};
 
 // Admin atualiza um pedido (status, entregador, etc)
 app.patch('/api/:slug/orders/:id', requireAdmin, requireOwnRestaurant, async (req, res) => {
   const { slug, id } = req.params;
   if (!(await db.restaurantExists(slug))) return res.status(404).json({ error: 'Restaurante não encontrado.' });
-  // Cancelamento é uma ação sensível (item 18/23-25): exige a permissão
-  // específica, mesmo que o usuário já tenha acesso de escrita ao pedido.
-  // Login mestre continua com acesso total, sem mudança de comportamento.
+  // Cancelamento é uma ação sensível: exige a permissão específica.
   if (req.body?.status === 'cancelado' && !hasPermission(req, 'cancelar_pedido')) {
     return res.status(403).json({ error: 'Você não tem permissão para cancelar pedidos.' });
   }
   try {
-    const order = await db.updateOrder(slug, id, req.body);
+    const { expectedUpdatedAt, ...incomingPatch } = req.body || {};
+    const current = await db.getOrder(slug, id);
+    if (!current) return res.status(404).json({ error: 'Pedido não encontrado.' });
+
+    if (incomingPatch.status && incomingPatch.status !== current.status) {
+      const allowed = ORDER_FLOW[current.status] || [];
+      if (!allowed.includes(incomingPatch.status)) {
+        return res.status(409).json({
+          error: `Transição inválida: ${current.status} → ${incomingPatch.status}. Siga o fluxo operacional do pedido.`,
+          order: current,
+          code: 'INVALID_ORDER_TRANSITION',
+        });
+      }
+      incomingPatch.statusHistory = [
+        ...(Array.isArray(current.statusHistory) ? current.statusHistory : []),
+        { status: incomingPatch.status, timestamp: new Date().toISOString(), note: incomingPatch.status === 'cancelado' ? (incomingPatch.cancelReason || 'Cancelado pelo restaurante') : undefined },
+      ];
+    }
+    const order = await db.updateOrder(slug, id, incomingPatch, expectedUpdatedAt);
     if (!order) return res.status(404).json({ error: 'Pedido não encontrado.' });
+    broadcastOrderEvent(slug, { type: 'updated', orderId: order.id, status: order.status, updatedAt: order.updatedAt || new Date().toISOString(), customerId: order.customerId || null });
     res.json({ ok: true, order });
   } catch (err) {
+    if (err?.code === 'ORDER_CONFLICT') return res.status(409).json({ error: err.message, order: err.currentOrder });
     logServerError(`Erro ao atualizar pedido de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível atualizar o pedido.' });
   }
 });
+
+// V14-V18: backup/restore, entregadores e conciliação de pagamento
+app.get('/api/:slug/backup', requireAdmin, requireOwnRestaurant, async (req,res)=>{try{const [data,orders,media]=await Promise.all([db.readRestaurantData(req.params.slug),db.listOrders(req.params.slug),db.listMediaAssets(req.params.slug)]);const payload={restaurantConfig:data.restaurantConfig,categories:data.categories||[],menuItems:data.menuItems||[],orders,media,exportedAt:new Date().toISOString()};const saved=await db.createRestaurantBackup(req.params.slug,payload,req.adminUser?.id||'master');res.json({ok:true,backup:saved});}catch(e){logServerError('Backup falhou',e,{restaurantSlug:req.params.slug});res.status(500).json({error:'Não foi possível gerar o backup.'})}});
+app.get('/api/:slug/backups', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{res.json({backups:await db.listRestaurantBackups(req.params.slug)})}catch(e){res.status(500).json({error:'Não foi possível listar backups.'})}});
+app.post('/api/:slug/backups/:id/restore', requireAdmin, requireOwnRestaurant, async(req,res)=>{let safety=null;try{const slug=req.params.slug;const b=await db.getRestaurantBackup(slug,req.params.id);if(!b)return res.status(404).json({error:'Backup não encontrado.'});const [data]=await Promise.all([db.readRestaurantData(slug)]);safety=await db.createRestaurantBackup(slug,{restaurantConfig:data.restaurantConfig,categories:data.categories||[],menuItems:data.menuItems||[],orders:[],media:[],exportedAt:new Date().toISOString(),safetyBackup:true},req.adminUser?.id||'master');const p=b.payload||{};if(p.restaurantConfig)await db.updateConfig(slug,p.restaurantConfig);if(Array.isArray(p.categories))await db.updateCategories(slug,p.categories);if(Array.isArray(p.menuItems))await db.updateMenuItems(slug,p.menuItems);broadcastOrderEvent(slug,{type:'config-updated',updatedAt:new Date().toISOString()});broadcastOrderEvent(slug,{type:'menu-updated',updatedAt:new Date().toISOString()});res.json({ok:true,safetyBackupId:safety?.id||null,message:'Configuração e cardápio restaurados com backup de segurança criado antes da operação.'})}catch(e){logServerError('Restore falhou',e,{restaurantSlug:req.params.slug,details:{requestId:req.requestId,safetyBackupId:safety?.id||null}});res.status(500).json({error:'Não foi possível restaurar o backup.',safetyBackupId:safety?.id||null})}});
+app.get('/api/:slug/drivers', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const d=(await db.readRestaurantData(req.params.slug)).restaurantConfig?.drivers||[];res.json({drivers:d})}catch(e){res.status(500).json({error:'Não foi possível carregar entregadores.'})}});
+app.post('/api/:slug/drivers', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const cfg=data.restaurantConfig||{};const d={id:crypto.randomUUID(),name:String(req.body?.name||'').trim(),phone:String(req.body?.phone||'').trim(),vehicle:String(req.body?.vehicle||'moto'),plate:String(req.body?.plate||'').trim(),photo:req.body?.photo||'',status:['available','busy','offline'].includes(req.body?.status)?req.body.status:'offline',rating:Number(req.body?.rating)||0};if(!d.name||!d.phone)return res.status(400).json({error:'Nome e telefone são obrigatórios.'});cfg.drivers=[...(cfg.drivers||[]),d];await db.updateConfig(req.params.slug,{drivers:cfg.drivers});res.status(201).json({driver:d})}catch(e){res.status(500).json({error:'Não foi possível criar entregador.'})}});
+app.patch('/api/:slug/drivers/:id', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const list=data.restaurantConfig?.drivers||[];const i=list.findIndex(x=>x.id===req.params.id);if(i<0)return res.status(404).json({error:'Entregador não encontrado.'});list[i]={...list[i],...req.body,id:list[i].id};await db.updateConfig(req.params.slug,{drivers:list});res.json({driver:list[i]})}catch(e){res.status(500).json({error:'Não foi possível atualizar entregador.'})}});
+app.delete('/api/:slug/drivers/:id', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const list=data.restaurantConfig?.drivers||[];const next=list.filter(x=>x.id!==req.params.id);if(next.length===list.length)return res.status(404).json({error:'Entregador não encontrado.'});await db.updateConfig(req.params.slug,{drivers:next});res.json({ok:true})}catch(e){res.status(500).json({error:'Não foi possível remover entregador.'})}});
+app.patch('/api/:slug/orders/:id/payment', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const order=await db.getOrder(req.params.slug,req.params.id);if(!order)return res.status(404).json({error:'Pedido não encontrado.'});const status=['pendente','confirmado','recusado','reembolsado'].includes(req.body?.paymentStatus)?req.body.paymentStatus:null;if(!status)return res.status(400).json({error:'Status de pagamento inválido.'});const expectedUpdatedAt=req.body?.expectedUpdatedAt;const updated=await db.updateOrder(req.params.slug,req.params.id,{paymentStatus:status,paymentConfirmedAt:status==='confirmado'?new Date().toISOString():order.paymentConfirmedAt},expectedUpdatedAt);broadcastOrderEvent(req.params.slug,{type:'updated',orderId:updated.id,updatedAt:updated.updatedAt,customerId:updated.customerId||null});res.json({ok:true,order:updated})}catch(e){if(e?.code==='ORDER_CONFLICT')return res.status(409).json({error:e.message,order:e.currentOrder,code:e.code});logServerError('Erro ao atualizar pagamento',e,{restaurantSlug:req.params.slug,details:{requestId:req.requestId}});res.status(500).json({error:'Não foi possível atualizar o pagamento.'})}});
+app.post('/api/admin/logout',(req,res)=>{const t=bearerToken(req);if(t)adminTokens.delete(t);res.json({ok:true})});
+app.post('/api/customers/logout',(req,res)=>{const t=bearerToken(req);if(t)customerTokens.delete(t);res.json({ok:true})});
 
 // Em produção, o mesmo processo também serve os arquivos estáticos de dist/
 if (existsSync(DIST_DIR)) {
