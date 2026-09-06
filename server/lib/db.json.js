@@ -501,3 +501,34 @@ export async function listAiMessages(conversationId) {
   const messages = await readJson(AI_MESSAGES_FILE, []);
   return messages.filter((m) => m.conversationId === conversationId);
 }
+
+// ---------- Biblioteca de imagens ----------
+const MEDIA_FILE = path.join(DATA_DIR, 'media-library.json');
+
+export async function createMediaAsset(asset) {
+  const list = await readJson(MEDIA_FILE, []);
+  const now = new Date().toISOString();
+  const row = { id: asset.id || randomUUID(), ...asset, createdAt: asset.createdAt || now, updatedAt: now };
+  list.unshift(row);
+  await writeJson(MEDIA_FILE, list);
+  return row;
+}
+
+export async function listMediaAssets(slug, options = {}) {
+  const list = await readJson(MEDIA_FILE, []);
+  return list.filter((a) => a.restaurantSlug === slug && (!options.kind || a.kind === options.kind));
+}
+
+export async function getMediaAssetById(slug, id) {
+  const list = await readJson(MEDIA_FILE, []);
+  return list.find((a) => a.restaurantSlug === slug && a.id === id) || null;
+}
+
+export async function deleteMediaAsset(slug, id) {
+  const list = await readJson(MEDIA_FILE, []);
+  const idx = list.findIndex((a) => a.restaurantSlug === slug && a.id === id);
+  if (idx === -1) return null;
+  const [removed] = list.splice(idx, 1);
+  await writeJson(MEDIA_FILE, list);
+  return removed;
+}

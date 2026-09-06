@@ -64,3 +64,8 @@ export const listAiConversations = impl.listAiConversations;
 export const updateAiConversationStatus = impl.updateAiConversationStatus;
 export const addAiMessage = impl.addAiMessage;
 export const listAiMessages = impl.listAiMessages;
+// Biblioteca de imagens por restaurante
+export const createMediaAsset = impl.createMediaAsset;
+export const listMediaAssets = impl.listMediaAssets;
+export const getMediaAssetById = impl.getMediaAssetById;
+export const deleteMediaAsset = impl.deleteMediaAsset;

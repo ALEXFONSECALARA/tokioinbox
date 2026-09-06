@@ -1071,3 +1071,78 @@ export async function listAiMessages(conversationId) {
   if (error) throw error;
   return (data || []).map(aiMessageRowToApi);
 }
+
+// ---------- Biblioteca de imagens ----------
+function mediaRowToApi(row) {
+  return {
+    id: row.id,
+    restaurantSlug: row.restaurants?.slug,
+    restaurantId: row.restaurant_id,
+    storageProvider: row.storage_provider,
+    bucket: row.bucket,
+    storagePath: row.storage_path,
+    url: row.url,
+    kind: row.kind,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    originalName: row.original_name,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes != null ? Number(row.size_bytes) : undefined,
+    altText: row.alt_text,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function createMediaAsset(asset) {
+  const restaurantId = asset.restaurantId || await resolveRestaurantId(asset.restaurantSlug);
+  if (!restaurantId) throw new Error('Restaurante não encontrado.');
+  const row = {
+    id: asset.id,
+    restaurant_id: restaurantId,
+    storage_provider: asset.storageProvider,
+    bucket: asset.bucket || null,
+    storage_path: asset.storagePath || null,
+    url: asset.url,
+    kind: asset.kind || 'other',
+    entity_type: asset.entityType || null,
+    entity_id: asset.entityId || null,
+    original_name: asset.originalName || null,
+    mime_type: asset.mimeType || null,
+    size_bytes: asset.sizeBytes ?? null,
+    alt_text: asset.altText || null,
+    metadata: asset.metadata || {},
+  };
+  const { data, error } = await supabase.from('media_assets').insert(row).select('*').single();
+  if (error) throw error;
+  return mediaRowToApi(data);
+}
+
+export async function listMediaAssets(slug, options = {}) {
+  const restaurantId = await resolveRestaurantId(slug);
+  if (!restaurantId) return [];
+  let query = supabase.from('media_assets').select('*').eq('restaurant_id', restaurantId).order('created_at', { ascending: false });
+  if (options.kind) query = query.eq('kind', options.kind);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).map(mediaRowToApi);
+}
+
+export async function getMediaAssetById(slug, id) {
+  const restaurantId = await resolveRestaurantId(slug);
+  if (!restaurantId) return null;
+  const { data, error } = await supabase.from('media_assets').select('*').eq('restaurant_id', restaurantId).eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data ? mediaRowToApi(data) : null;
+}
+
+export async function deleteMediaAsset(slug, id) {
+  const restaurantId = await resolveRestaurantId(slug);
+  if (!restaurantId) return null;
+  const existing = await getMediaAssetById(slug, id);
+  if (!existing) return null;
+  const { error } = await supabase.from('media_assets').delete().eq('restaurant_id', restaurantId).eq('id', id);
+  if (error) throw error;
+  return existing;
+}
