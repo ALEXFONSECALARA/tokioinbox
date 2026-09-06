@@ -9,6 +9,9 @@ interface ImageUploadFieldProps {
   value: string;
   onChange: (url: string) => void;
   aspect?: 'square' | 'wide';
+  mediaKind?: string;
+  entityType?: string;
+  entityId?: string;
   // Avisa o formulário-pai quando um upload está em andamento, pra ele poder
   // desabilitar o botão de Salvar enquanto isso — sem isso, clicar em Salvar
   // durante o envio da foto salvava o item com a foto ANTIGA (a nova só
@@ -27,6 +30,9 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
   value,
   onChange,
   aspect = 'wide',
+  mediaKind = 'other',
+  entityType,
+  entityId,
   onUploadingChange,
 }) => {
   const inputId = useId();
@@ -62,7 +68,7 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
     setUploading(true);
     onUploadingChange?.(true);
     try {
-      const url = await uploadImage(slug, token, file);
+      const url = await uploadImage(slug, token, file, { kind: mediaKind, entityType, entityId, altText: label });
       if (!url) {
         throw new Error('O servidor não retornou a URL da imagem enviada.');
       }
