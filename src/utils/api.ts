@@ -177,15 +177,27 @@ export async function fetchMenu(slug: string): Promise<MenuData> {
 }
 
 export async function createOrder(slug: string, order: Order, customerToken?: string): Promise<void> {
-  const res = await fetch(`${API_PREFIX}/${slug}/orders`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(customerToken ? { Authorization: `Bearer ${customerToken}` } : {}),
-    },
-    body: JSON.stringify(order),
-  });
-  await handleResponse(res);
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(customerToken ? { Authorization: `Bearer ${customerToken}` } : {}),
+          'X-Request-ID': order.id,
+        },
+        cache: 'no-store',
+        body: JSON.stringify(order),
+      });
+      await handleResponse(res);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Não foi possível enviar o pedido ao restaurante.');
 }
 
 export async function fetchOrder(slug: string, orderId: string): Promise<Order> {
@@ -311,7 +323,7 @@ export async function createPrintJob(slug:string,token:string,orderId:string,ord
 export async function updatePrintJob(slug:string,token:string,id:string,patch:Partial<Pick<PrintJob,'status'|'attempts'|'error'>>):Promise<PrintJob>{const res=await fetch(`${API_PREFIX}/${slug}/print-jobs/${id}`,{method:'PATCH',headers:authHeaders(token),body:JSON.stringify(patch)});return (await handleResponse<{job:PrintJob}>(res)).job;}
 
 export async function fetchOrdersAdmin(slug: string, token: string): Promise<Order[]> {
-  const res = await fetch(`${API_PREFIX}/${slug}/orders`, { headers: authHeaders(token) });
+  const res = await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/orders`, { headers: authHeaders(token), cache: 'no-store' });
   return handleResponse<Order[]>(res);
 }
 
@@ -544,8 +556,6 @@ export async function fetchCustomerOrders(
   return handleResponse(res);
 }
 
-export async function fetchPrintJobs(slug:string, token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/print-jobs`,{headers:authHeaders(token),cache:'no-store'});return handleResponse<{jobs:any[]}>(res);}
-export async function createPrintJob(slug:string,token:string,orderId:string,variant='customer'){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/print-jobs`,{method:'POST',headers:authHeaders(token),body:JSON.stringify({orderId,variant})});return handleResponse(res);}
 export async function fetchDrivers(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/drivers`,{headers:authHeaders(token)});return handleResponse<{drivers:any[]}>(res);}
 export async function fetchBackups(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/backups`,{headers:authHeaders(token)});return handleResponse<{backups:any[]}>(res);}
 export async function createBackup(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/backup`,{headers:authHeaders(token)});return handleResponse(res);}
