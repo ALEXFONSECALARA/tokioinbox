@@ -9,7 +9,7 @@ import {
   PaymentMethod
 } from '../types';
 import { formatCurrency, playSoundEffect, COUPONS } from '../utils/helpers';
-import { fetchAdminLoginLogs, fetchErrorLogs, clearAdminLoginLogs, clearErrorLogs, deleteAdminLoginLog, deleteErrorLog } from '../utils/api';
+import { toPublicSlug, fetchAdminLoginLogs, fetchErrorLogs, clearAdminLoginLogs, clearErrorLogs, deleteAdminLoginLog, deleteErrorLog, fetchRestaurantHealth, RestaurantHealth, fetchDrivers, fetchBackups, createBackup } from '../utils/api';
 import { 
   Wrench, 
   QrCode, 
@@ -31,7 +31,14 @@ import {
   RefreshCw,
   Layers,
   FileText,
-  AlertCircle
+  AlertCircle,
+  Activity,
+  CheckCircle2,
+  XCircle,
+  ServerCog,
+  UsersRound,
+  ArchiveRestore,
+  ShieldCheck
 } from 'lucide-react';
 
 interface ToolsHubProps {
@@ -43,6 +50,8 @@ interface ToolsHubProps {
   onUpdateConfig: (config: RestaurantConfig) => void;
   token?: string;
   slug?: string;
+  onOpenPlatform?: () => void;
+  onOpenUsers?: () => void;
 }
 
 export const ToolsHub: React.FC<ToolsHubProps> = ({
@@ -54,9 +63,11 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
   onUpdateConfig,
   token,
   slug,
+  onOpenPlatform,
+  onOpenUsers,
 }) => {
   const [activeSubTool, setActiveSubTool] = useState<
-    'qr_flyer' | 'cmv_calculator' | 'demo_orders' | 'backup_export' | 'maintenance' | 'coupons'
+    'qr_flyer' | 'cmv_calculator' | 'demo_orders' | 'backup_export' | 'maintenance' | 'diagnostics' | 'coupons' | 'drivers' | 'production'
   >('qr_flyer');
 
   // ==========================================
@@ -65,8 +76,8 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
   const [flyerTitle, setFlyerTitle] = useState(restaurantConfig.name);
   const [flyerSubtitle, setFlyerSubtitle] = useState('Peça pelo nosso Cardápio Online & WhatsApp');
   const [flyerPromo, setFlyerPromo] = useState('Ganhe 10% OFF com o cupom: BEMVINDO10');
-  const [flyerQrUrl, setFlyerQrUrl] = useState(`${window.location.origin}/r/${slug || ''}`);
-  useEffect(() => { if (slug) setFlyerQrUrl(`${window.location.origin}/r/${slug}`); }, [slug]);
+  const [flyerQrUrl, setFlyerQrUrl] = useState(`${window.location.origin}/r/${slug ? toPublicSlug(restaurantConfig.name || slug) : ''}`);
+  useEffect(() => { if (slug) setFlyerQrUrl(`${window.location.origin}/r/${slug ? toPublicSlug(restaurantConfig.name || slug) : ''}`); }, [slug]);
 
   // ==========================================
   // 2. CMV / PROFIT MARGIN CALCULATOR STATE
@@ -92,9 +103,15 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
   // 3. BACKUP & EXPORT DATA STATE
   // ==========================================
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
-  const [loginLogs,setLoginLogs]=useState<any[]>([]); const [errorLogs,setErrorLogs]=useState<any[]>([]); const [logsLoading,setLogsLoading]=useState(false);
+  const [loginLogs,setLoginLogs]=useState<any[]>([]); const [health,setHealth]=useState<RestaurantHealth|null>(null); const [healthLoading,setHealthLoading]=useState(false); const [errorLogs,setErrorLogs]=useState<any[]>([]); const [logsLoading,setLogsLoading]=useState(false);
   const loadLogs=async()=>{if(!token)return;setLogsLoading(true);try{const [a,b]=await Promise.all([fetchAdminLoginLogs(token),fetchErrorLogs(token)]);setLoginLogs(a);setErrorLogs(b)}catch(err:any){alert(err?.message||'Não foi possível carregar os logs.')}finally{setLogsLoading(false)}};
   useEffect(()=>{if(activeSubTool==='maintenance')loadLogs()},[activeSubTool,token]);
+  const loadHealth=async()=>{if(!token||!slug)return;setHealthLoading(true);try{setHealth(await fetchRestaurantHealth(slug,token))}catch(err:any){alert(err?.message||'Não foi possível diagnosticar o restaurante.')}finally{setHealthLoading(false)}};
+  useEffect(()=>{if(activeSubTool==='diagnostics')loadHealth()},[activeSubTool,token,slug]);
+  const [drivers,setDrivers]=useState<any[]>([]); const [backups,setBackups]=useState<any[]>([]);
+  const loadOps=async()=>{if(!token||!slug)return;try{const [{drivers:d},{backups:b}]=await Promise.all([fetchDrivers(slug,token),fetchBackups(slug,token)]);setDrivers(d);setBackups(b)}catch(err:any){alert(err?.message||'Não foi possível carregar a operação.')}};
+  useEffect(()=>{if(['drivers','production','backup_export'].includes(activeSubTool))loadOps()},[activeSubTool,token,slug]);
+  const doBackup=async()=>{if(!token||!slug)return;try{await createBackup(slug,token);await loadOps();setExportSuccess('Backup persistente criado com sucesso.')}catch(err:any){alert(err?.message||'Falha no backup.')}};
 
   const handleExportCSV = () => {
     if (orders.length === 0) {
@@ -285,8 +302,11 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
     setTimeout(() => setExportSuccess(null), 3000);
   };
 
+  const productionCards = activeSubTool==='production' ? <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"><div className="rounded-2xl border p-4"><ShieldCheck size={20}/><b>Segurança</b><p className="text-sm opacity-70 mt-1">Rate limit, CORS e sessões protegidas.</p></div><div className="rounded-2xl border p-4"><ArchiveRestore size={20}/><b>Backups</b><p className="text-sm opacity-70 mt-1">{backups.length} backup(s) persistente(s).</p><button onClick={doBackup} className="mt-3 px-3 py-2 rounded-xl bg-black text-white">Criar backup agora</button></div><div className="rounded-2xl border p-4"><Printer size={20}/><b>Impressão</b><p className="text-sm opacity-70 mt-1">Fila persistente + Print Bridge V14.</p></div></div> : null;
+  const driverCards = activeSubTool==='drivers' ? <div className="rounded-2xl border p-4 mb-6"><div className="flex items-center gap-2 mb-3"><UsersRound size={20}/><b>Entregadores</b></div><div className="grid gap-2">{drivers.map(d=><div key={d.id} className="flex justify-between border rounded-xl p-3"><span>{d.name} · {d.phone}</span><span>{d.status}</span></div>)}{!drivers.length&&<p className="text-sm opacity-60">Nenhum entregador cadastrado.</p>}</div></div> : null;
   return (
     <div className="space-y-6">
+      {productionCards}{driverCards}
       {/* Header of Tools */}
       <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -309,6 +329,17 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
             <span>{exportSuccess}</span>
           </div>
         )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button onClick={onOpenPlatform} className="rounded-2xl border border-stone-200 bg-white p-4 text-left hover:border-amber-400 hover:shadow-sm transition">
+          <div className="text-sm font-black text-stone-900">Vitrine Principal</div>
+          <div className="text-xs text-stone-500 mt-1">Título, destaque e apresentação da página inicial.</div>
+        </button>
+        <button onClick={onOpenUsers} className="rounded-2xl border border-stone-200 bg-white p-4 text-left hover:border-amber-400 hover:shadow-sm transition">
+          <div className="text-sm font-black text-stone-900">Usuários e Permissões</div>
+          <div className="text-xs text-stone-500 mt-1">Acessos administrativos e clientes da plataforma.</div>
+        </button>
       </div>
 
       {/* Sub Tools Tabs */}
@@ -349,8 +380,12 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
           <span>Simulador de Pedidos (Testes)</span>
         </button>
 
+        <button onClick={() => setActiveSubTool('diagnostics')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='diagnostics'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Activity className="w-4 h-4"/><span>Diagnóstico V8</span></button>
+
         <button onClick={() => setActiveSubTool('maintenance')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='maintenance'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Wrench className="w-4 h-4"/><span>Históricos & Logs</span></button>
 
+        <button onClick={() => setActiveSubTool('production')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='production'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><ShieldCheck className="w-4 h-4"/><span>Produção V18</span></button>
+        <button onClick={() => setActiveSubTool('drivers')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='drivers'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><UsersRound className="w-4 h-4"/><span>Entregadores</span></button>
         <button
           onClick={() => setActiveSubTool('backup_export')}
           className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
@@ -719,6 +754,24 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
           </div>
         </div>
       )}
+      {activeSubTool === 'diagnostics' && (
+        <div className="space-y-5">
+          <div className="bg-stone-900 text-white rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div><div className="flex items-center gap-2 text-xs font-bold text-stone-300"><ServerCog className="w-4 h-4"/> SAÚDE OPERACIONAL V8</div><h3 className="text-xl font-black mt-1">{health?.restaurant?.name || restaurantConfig.name}</h3><p className="text-xs text-stone-400 mt-1">Validação do cardápio, pedidos, tempo de resposta e recursos conectados.</p></div>
+            <button onClick={loadHealth} disabled={healthLoading} className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 text-xs font-black flex items-center gap-2 disabled:opacity-50"><RefreshCw className={`w-4 h-4 ${healthLoading?'animate-spin':''}`}/> Atualizar diagnóstico</button>
+          </div>
+          {health && <>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              {[['Produtos',health.metrics.products],['Categorias',health.metrics.categories],['Pedidos ativos',health.metrics.activeOrders],['Pedidos totais',health.metrics.totalOrders],['Conexões realtime',health.metrics.realtimeClients]].map(([label,value])=><div key={String(label)} className="bg-white border border-stone-200 rounded-2xl p-4"><div className="text-[10px] uppercase font-black text-stone-400">{label}</div><div className="text-2xl font-black text-stone-900 mt-1">{value}</div></div>)}
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div className="bg-white border border-stone-200 rounded-3xl p-5 space-y-3"><h4 className="font-black text-sm">Checklist</h4>{(health.issues.length?health.issues:[{key:'ok',severity:'info',message:'Nenhum problema encontrado no diagnóstico atual.'}]).map((issue:any)=><div key={issue.key} className="flex items-start gap-3 p-3 rounded-2xl bg-stone-50"><span className="mt-0.5">{issue.severity==='error'?<XCircle className="w-4 h-4 text-rose-600"/>:issue.severity==='warning'?<AlertCircle className="w-4 h-4 text-amber-600"/>:<CheckCircle2 className="w-4 h-4 text-emerald-600"/>}</span><span className="text-xs font-semibold text-stone-700">{issue.message}</span></div>)}</div>
+              <div className="bg-white border border-stone-200 rounded-3xl p-5"><h4 className="font-black text-sm mb-3">Infraestrutura</h4><div className="space-y-2 text-xs">{[['Banco',health.capabilities.dataBackend],['Imagens',health.capabilities.storageMode],['Push',health.capabilities.pushConfigured?'Configurado':'Não configurado'],['IA',health.capabilities.aiConfigured?'Configurada':'Não configurada'],['Tempo de diagnóstico',`${health.latencyMs||0} ms`]].map(([a,b])=><div key={String(a)} className="flex justify-between border-b border-stone-100 py-2"><span className="text-stone-500">{a}</span><b className="text-stone-800">{b}</b></div>)}</div></div>
+            </div>
+          </>}
+        </div>
+      )}
+
       {activeSubTool === 'maintenance' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs space-y-3">

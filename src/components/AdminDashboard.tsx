@@ -23,10 +23,11 @@ import {
   playOrderAlertSound,
   unlockOrderAlertAudio,
 } from '../utils/helpers';
-import { fetchMenu } from '../utils/api';
+import { fetchMenu, toPublicSlug } from '../utils/api';
 import { LAYOUTS } from '../utils/layouts';
 import { ToolsHub } from './ToolsHub';
 import { ReceiptPrintModal } from './ReceiptPrintModal';
+import { createPrintJob, updatePrintJob } from '../utils/api';
 import { ImageUploadField } from './ImageUploadField';
 import { LayoutPreviewModal } from './LayoutPreviewModal';
 import { 
@@ -105,6 +106,8 @@ interface AdminDashboardProps {
   // aqui só controla o toggle visual e o painel de escolher/testar o som.
   soundEnabled: boolean;
   onToggleSound: () => void;
+  onOpenPlatform?: () => void;
+  onOpenUsers?: () => void;
   // Avisa o painel pai (AdminPortal) se existem edições no formulário de
   // Configurações ainda não salvas — usado pra impedir troca de restaurante
   // sem confirmação e perda acidental de alterações.
@@ -133,6 +136,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onCloseAdmin,
   soundEnabled,
   onToggleSound,
+  onOpenPlatform,
+  onOpenUsers,
   onDirtyChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'identity' | 'zones' | 'drivers' | 'config' | 'metrics' | 'tools' | 'notifications' | 'ai'>('orders');
@@ -250,7 +255,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<Order | null>(null);
   // Pedidos já impressos nesta sessão do painel (troca o botão pra
   // "Reimprimir" e deixa claro que os dados usados são os mesmos salvos).
-  const [printedOrderIds, setPrintedOrderIds] = useState<Set<string>>(new Set());
+  const [printStates, setPrintStates] = useState<Record<string, 'pendente' | 'imprimindo' | 'impresso' | 'erro'>>({});
+  const setPrintState = (orderId: string, state: 'pendente' | 'imprimindo' | 'impresso' | 'erro') => {
+    setPrintStates(prev => { const next = { ...prev, [orderId]: state }; try { localStorage.setItem(`tokioinbox_print_state_${slug}`, JSON.stringify(next)); } catch {} return next; });
+  };
+  useEffect(() => { try { const raw = localStorage.getItem(`tokioinbox_print_state_${slug}`); if (raw) setPrintStates(JSON.parse(raw)); } catch {} }, [slug]);
+  const [activePrintJobId, setActivePrintJobId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedReceiptOrder || !token) { setActivePrintJobId(null); return; }
+    let cancelled = false;
+    createPrintJob(slug, token, selectedReceiptOrder.id, selectedReceiptOrder.orderNumber, 'customer')
+      .then(job => { if (!cancelled) setActivePrintJobId(job.id); })
+      .catch(() => { /* a fila local continua funcionando como fallback */ });
+    return () => { cancelled = true; };
+  }, [selectedReceiptOrder?.id, slug, token]);
+  const persistPrintJobState = async (state: 'pendente'|'imprimindo'|'impresso'|'erro') => {
+    if (!activePrintJobId || !token) return;
+    try { await updatePrintJob(slug, token, activePrintJobId, { status: state, attempts: state === 'imprimindo' ? 1 : undefined }); } catch {}
+  };
+
   
   // Modal for add/edit dish
   const [isDishModalOpen, setIsDishModalOpen] = useState(false);
@@ -1339,7 +1362,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={async()=>{const n=orders.filter(o=>['entregue','cancelado'].includes(o.status)).length;if(!n)return alert('Não há histórico finalizado para excluir.');if(!window.confirm(`Excluir ${n} pedido(s) finalizado(s)/cancelado(s) deste restaurante? Esta ação não pode ser desfeita.`))return;if(onClearOrderHistory)await onClearOrderHistory();}} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5"/> Limpar histórico ({orders.filter(o=>['entregue','cancelado'].includes(o.status)).length})</button>
-              <button onClick={async()=>{const url=`${window.location.origin}/r/${slug}`;try{await navigator.clipboard.writeText(url);alert(`Link exclusivo copiado:
+              <button onClick={async()=>{const url=`${window.location.origin}/r/${toPublicSlug(localConfig.name || slug)}`;try{await navigator.clipboard.writeText(url);alert(`Link exclusivo copiado:
 ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-stone-300 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5"><ExternalLink className="w-3.5 h-3.5"/> Copiar link exclusivo</button>
             </div>
 
@@ -1538,11 +1561,11 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
 
                         <div className="flex items-center gap-1.5 pt-1">
                           <button
-                            onClick={() => handleStartDispatch(order)}
-                            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
+                            onClick={() => onUpdateOrderStatus(order.id, 'pronto')}
+                            className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
                           >
-                            <Bike className="w-4 h-4" />
-                            <span>Despachar / Chamar Motoboy</span>
+                            <Check className="w-4 h-4" />
+                            <span>Marcar como PRONTO</span>
                           </button>
                           <button
                             onClick={() => setSelectedReceiptOrder(order)}
@@ -1570,7 +1593,7 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                 <div className="flex items-center justify-between pb-2.5 border-b border-purple-200 mb-3">
                   <h3 className="font-extrabold text-purple-950 text-xs sm:text-sm flex items-center gap-1.5">
                     <Bike className="w-4 h-4 text-purple-600 animate-pulse" />
-                    Em Trânsito / Entrega
+                    Pronto / Em Trânsito / Entrega
                   </h3>
                   <span className="bg-purple-200 text-purple-900 text-xs font-bold px-2 py-0.5 rounded-full">
                     {transitOrders.length}
@@ -1649,13 +1672,23 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                           </p>
                         )}
 
-                        <button
-                          onClick={() => onUpdateOrderStatus(order.id, 'entregue')}
-                          className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs"
-                        >
-                          <Check className="w-4 h-4" />
-                          <span>Confirmar Entrega Concluída</span>
-                        </button>
+                        {order.status === 'pronto' ? (
+                          <button
+                            onClick={() => handleStartDispatch(order)}
+                            className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs"
+                          >
+                            <Bike className="w-4 h-4" />
+                            <span>Despachar / Chamar Motoboy</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => onUpdateOrderStatus(order.id, 'entregue')}
+                            className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>Confirmar Entrega Concluída</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => setCancelOrderTarget(order)}
                           className="w-full py-1.5 text-stone-400 hover:text-rose-700 rounded-xl font-bold text-[11px] text-center"
@@ -3682,6 +3715,8 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
             orders={orders}
             token={token}
             slug={slug}
+            onOpenPlatform={onOpenPlatform}
+            onOpenUsers={onOpenUsers}
             menuItems={menuItems}
             restaurantConfig={localConfig}
             onUpdateConfig={(newConfig) => {
@@ -4305,10 +4340,8 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
           order={selectedReceiptOrder}
           restaurantConfig={localConfig}
           onClose={() => setSelectedReceiptOrder(null)}
-          alreadyPrinted={printedOrderIds.has(selectedReceiptOrder.id)}
-          onPrinted={() => {
-            setPrintedOrderIds((prev) => new Set(prev).add(selectedReceiptOrder.id));
-          }}
+          printState={printStates[selectedReceiptOrder.id] || 'pendente'}
+          onPrintStateChange={(state) => { setPrintState(selectedReceiptOrder.id, state); void persistPrintJobState(state); }}
         />
       )}
 
@@ -4364,6 +4397,15 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
           </div>
         </div>
       )}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[70] bg-stone-950/95 backdrop-blur-xl border-t border-stone-800 px-2 pt-2 pb-[max(.5rem,env(safe-area-inset-bottom))]">
+        <div className="grid grid-cols-4 gap-1">
+          {([['orders','Pedidos',ShoppingBag],['menu','Cardápio',Layers],['identity','Restaurante',Settings],['tools','Mais',Wrench]] as const).map(([id,label,Icon]) => (
+            <button key={id} onClick={() => setActiveTab(id as any)} className={`min-h-12 rounded-xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold ${activeTab===id?'bg-amber-500 text-stone-950':'text-stone-400'}`}>
+              <Icon className="w-4 h-4" />{label}
+            </button>
+          ))}
+        </div>
+      </nav>
     </div>
 
   );

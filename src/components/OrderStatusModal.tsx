@@ -45,16 +45,17 @@ export const OrderStatusModal: React.FC<OrderStatusModalProps> = ({
   const currentOrder = orders.find((o) => o.id === activeOrderId) || orders[0];
   const statusInfo = getOrderStatusLabel(currentOrder.status);
 
-  const steps = [
+  const steps = currentOrder.orderType === 'delivery' ? [
     { key: 'recebido', label: 'Recebido', icon: Clock, desc: 'Confirmado no sistema' },
-    { key: 'em_preparo', label: 'Na Cozinha', icon: ChefHat, desc: 'Grelhando e embalando' },
-    { 
-      key: currentOrder.orderType === 'delivery' ? 'saiu_entrega' : 'pronto', 
-      label: currentOrder.orderType === 'delivery' ? 'A Caminho' : 'Pronto', 
-      icon: currentOrder.orderType === 'delivery' ? Bike : ShoppingBag, 
-      desc: currentOrder.orderType === 'delivery' ? 'Motoboy a caminho' : 'Disponível no balcão' 
-    },
+    { key: 'em_preparo', label: 'Na Cozinha', icon: ChefHat, desc: 'Pedido sendo preparado' },
+    { key: 'pronto', label: 'Pronto', icon: ShoppingBag, desc: 'Pedido embalado e pronto' },
+    { key: 'saiu_entrega', label: 'A Caminho', icon: Bike, desc: 'Motoboy a caminho' },
     { key: 'entregue', label: 'Entregue', icon: CheckCircle2, desc: 'Bom apetite!' },
+  ] : [
+    { key: 'recebido', label: 'Recebido', icon: Clock, desc: 'Confirmado no sistema' },
+    { key: 'em_preparo', label: 'Na Cozinha', icon: ChefHat, desc: 'Pedido sendo preparado' },
+    { key: 'pronto', label: 'Pronto', icon: ShoppingBag, desc: 'Disponível para retirada' },
+    { key: 'entregue', label: 'Concluído', icon: CheckCircle2, desc: 'Bom apetite!' },
   ];
 
   const handlePrint = () => {
@@ -146,7 +147,7 @@ export const OrderStatusModal: React.FC<OrderStatusModalProps> = ({
             </div>
 
             {/* Stepper Bar */}
-            <div className="grid grid-cols-4 gap-2 relative mt-4">
+            <div className={`grid ${steps.length === 5 ? 'grid-cols-5' : 'grid-cols-4'} gap-2 relative mt-4`}>
               {steps.map((step, idx) => {
                 const isPassed = statusInfo.step > idx + 1;
                 const isCurrent = statusInfo.step === idx + 1;

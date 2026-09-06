@@ -167,6 +167,7 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
 
         {!token || !customer ? (
           <form onSubmit={handleAuthSubmit} className="space-y-3">
+            <div className="rounded-xl bg-stone-50 border border-stone-200 p-3 text-xs text-stone-600"><strong className="text-stone-900">Conta única do cliente</strong><br/>Use o mesmo telefone e senha em qualquer restaurante do multicardápio. Esta conta é separada do login administrativo.</div>
             <div className="flex gap-2 bg-stone-100 rounded-xl p-1">
               <button
                 type="button"

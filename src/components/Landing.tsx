@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchRestaurants, fetchPlatformSettings, RestaurantSummary, PlatformSettings } from '../utils/api';
 import { RestaurantCard } from './RestaurantCard';
-import { ArrowDown, Sparkles } from 'lucide-react';
+import { ArrowDown, Sparkles, UserRound } from 'lucide-react';
 
 export const Landing: React.FC = () => {
   const [restaurants, setRestaurants] = useState<RestaurantSummary[]>([]);
@@ -27,7 +27,7 @@ export const Landing: React.FC = () => {
         <p className="text-[#e2c55d] text-[10px] uppercase tracking-[.35em] font-black flex items-center gap-2"><Sparkles size={13}/> Delivery digital</p>
         <h1 className="mt-3 text-4xl sm:text-6xl font-black tracking-tight max-w-3xl">{platform?.landingTitle || 'Escolha onde pedir'}</h1>
         <p className="mt-4 max-w-xl text-sm sm:text-base text-white/70">{platform?.landingSubtitle || 'Cada loja possui sua própria identidade, cardápio e experiência de pedido.'}</p>
-        <button onClick={()=>document.getElementById('stores')?.scrollIntoView({behavior:'smooth'})} className="mt-7 rounded-2xl bg-[#c9a227] text-[#080a0a] px-6 py-3.5 min-h-[48px] font-black text-sm flex items-center gap-2 shadow-xl">Ver lojas <ArrowDown size={17}/></button>
+        <div className="mt-7 flex flex-wrap justify-center gap-2"><button onClick={()=>document.getElementById('stores')?.scrollIntoView({behavior:'smooth'})} className="mt-7 rounded-2xl bg-[#c9a227] text-[#080a0a] px-6 py-3.5 min-h-[48px] font-black text-sm flex items-center gap-2 shadow-xl">Ver lojas <ArrowDown size={17}/></button><a href="/conta" className="rounded-2xl border border-white/15 bg-white/5 text-white px-5 py-3.5 min-h-[48px] font-black text-sm flex items-center gap-2"><UserRound size={17}/> Minha conta</a></div>
       </div>
     </section>
     <section id="stores" className="max-w-6xl mx-auto px-5 py-10 sm:py-14">

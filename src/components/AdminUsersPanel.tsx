@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AdminUser, RestaurantSummary, fetchAdminUsers, createAdminUser, updateAdminUser } from '../utils/api';
+import { AdminUser, RestaurantSummary, fetchAdminUsers, createAdminUser, updateAdminUser, fetchAdminCustomers, deleteAdminCustomer, CustomerAdmin } from '../utils/api';
 import { PERMISSION_GROUPS } from '../utils/permissions';
 import { Users, Plus, X, Check, ShieldCheck, KeyRound, Power } from 'lucide-react';
 
@@ -36,6 +36,7 @@ export const AdminUsersPanel: React.FC<{ token: string; restaurants: RestaurantS
 }) => {
   const [open, setOpen] = useState(false);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [customers, setCustomers] = useState<CustomerAdmin[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<UserFormState | null>(null);
@@ -43,13 +44,15 @@ export const AdminUsersPanel: React.FC<{ token: string; restaurants: RestaurantS
   const [resetPasswordFor, setResetPasswordFor] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
 
+  const loadCustomers = () => { fetchAdminCustomers(token).then(setCustomers).catch(() => {}); };
+
   const loadUsers = () => {
     setLoading(true);
     setError(null);
     fetchAdminUsers(token)
       .then(setUsers)
       .catch((err) => setError(err.message || 'Não foi possível carregar os usuários.'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); loadCustomers(); });
   };
 
   useEffect(() => {
@@ -208,6 +211,19 @@ export const AdminUsersPanel: React.FC<{ token: string; restaurants: RestaurantS
               ))}
             </div>
           )}
+
+          <div className="pt-4 border-t border-stone-700 space-y-3">
+            <div>
+              <h3 className="text-white text-sm font-black">Clientes globais</h3>
+              <p className="text-stone-400 text-xs mt-1">Uma única conta de cliente funciona em todos os restaurantes. Exclusão disponível somente para o super-admin.</p>
+            </div>
+            {customers.length === 0 ? <p className="text-stone-500 text-xs">Nenhum cliente cadastrado.</p> : customers.map(c => (
+              <div key={c.id} className="flex items-center justify-between gap-3 bg-stone-900/60 border border-stone-700 rounded-xl px-4 py-3">
+                <div className="min-w-0"><p className="text-white text-sm font-semibold truncate">{c.name}</p><p className="text-stone-400 text-xs truncate">{c.phone}{c.email ? ` · ${c.email}` : ''}</p></div>
+                <button onClick={async()=>{if(!window.confirm(`Excluir a conta de ${c.name}? Os pedidos históricos serão mantidos, mas deixarão de estar vinculados à conta.`))return;try{await deleteAdminCustomer(token,c.id);loadCustomers()}catch(err:any){setError(err?.message||'Não foi possível excluir o cliente.')}}} className="p-2 rounded-lg bg-red-600/70 hover:bg-red-600 text-white" title="Excluir conta do cliente"><X size={14}/></button>
+              </div>
+            ))}
+          </div>
 
           {/* Redefinir senha — o super-admin nunca vê a senha original, só define uma nova */}
           {resetPasswordFor && (

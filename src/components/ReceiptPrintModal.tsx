@@ -9,10 +9,8 @@ interface ReceiptPrintModalProps {
   order: Order;
   restaurantConfig: RestaurantConfig;
   onClose: () => void;
-  // Se este pedido já foi impresso antes nesta sessão do painel — troca o
-  // rótulo do botão pra "Reimprimir" (usa exatamente os mesmos dados salvos).
-  alreadyPrinted: boolean;
-  onPrinted: () => void;
+  printState: 'pendente' | 'imprimindo' | 'impresso' | 'erro';
+  onPrintStateChange: (state: 'pendente' | 'imprimindo' | 'impresso' | 'erro') => void;
 }
 
 const paymentLabels: Record<string, string> = {
@@ -33,8 +31,8 @@ export const ReceiptPrintModal: React.FC<ReceiptPrintModalProps> = ({
   order,
   restaurantConfig: config,
   onClose,
-  alreadyPrinted,
-  onPrinted,
+  printState,
+  onPrintStateChange,
 }) => {
   const [copied, setCopied] = useState(false);
   const [variant, setVariant] = useState<PrintVariant>('customer');
@@ -46,14 +44,29 @@ export const ReceiptPrintModal: React.FC<ReceiptPrintModalProps> = ({
   useEffect(() => {
     if (!isPrinting) return;
     // Dá um tick pro portal montar no DOM antes de chamar print().
-    const raf = requestAnimationFrame(() => window.print());
-    const handleAfterPrint = () => {
+    const raf = requestAnimationFrame(() => {
+      if (typeof window.print !== 'function') {
+        setIsPrinting(false);
+        onPrintStateChange('erro');
+        return;
+      }
+      try { window.print(); } catch { setIsPrinting(false); onPrintStateChange('erro'); }
+    });
+    const timeout = window.setTimeout(() => {
+      // Alguns navegadores não disparam afterprint quando a caixa é bloqueada.
+      // Evita deixar o pedido eternamente em "Imprimindo…".
       setIsPrinting(false);
-      onPrinted();
+      onPrintStateChange('erro');
+    }, 15000);
+    const handleAfterPrint = () => {
+      window.clearTimeout(timeout);
+      setIsPrinting(false);
+      onPrintStateChange('impresso');
     };
     window.addEventListener('afterprint', handleAfterPrint);
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(timeout);
       window.removeEventListener('afterprint', handleAfterPrint);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,6 +140,7 @@ export const ReceiptPrintModal: React.FC<ReceiptPrintModalProps> = ({
 
   const handlePrintClick = () => {
     playSoundEffect('beep');
+    onPrintStateChange('imprimindo');
     setIsPrinting(true);
   };
 
@@ -189,6 +203,11 @@ export const ReceiptPrintModal: React.FC<ReceiptPrintModalProps> = ({
           </div>
 
           {/* Botões */}
+          <div className="px-4 py-2 border-t border-stone-100 bg-stone-50 flex items-center gap-2 text-[11px] font-bold">
+            <span className={`w-2 h-2 rounded-full ${printState === 'impresso' ? 'bg-emerald-500' : printState === 'erro' ? 'bg-rose-500' : printState === 'imprimindo' ? 'bg-amber-500 animate-pulse' : 'bg-stone-400'}`} />
+            {printState === 'impresso' ? 'Impresso nesta estação' : printState === 'erro' ? 'Falha ao iniciar impressão — tente novamente' : printState === 'imprimindo' ? 'Aguardando a impressora…' : 'Pendente de impressão'}
+          </div>
+
           <div className="p-4 bg-white border-t border-stone-200 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <button
@@ -211,8 +230,8 @@ export const ReceiptPrintModal: React.FC<ReceiptPrintModalProps> = ({
               onClick={handlePrintClick}
               className="px-5 py-2.5 rounded-xl bg-[var(--brand)] hover:bg-[var(--brand-light)] text-slate-950 text-xs font-extrabold flex items-center gap-2 shadow-xs transition-transform active:scale-95"
             >
-              {alreadyPrinted ? <RefreshCw className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
-              <span>{alreadyPrinted ? 'Reimprimir' : 'Imprimir'} ({VARIANT_LABELS[variant].label})</span>
+              {printState === 'imprimindo' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+              <span>{printState === 'imprimindo' ? 'Imprimindo…' : printState === 'impresso' ? 'Reimprimir' : printState === 'erro' ? 'Tentar novamente' : 'Imprimir'} ({VARIANT_LABELS[variant].label})</span>
             </button>
           </div>
         </div>

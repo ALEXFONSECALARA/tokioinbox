@@ -15,6 +15,7 @@ import {
   savePlatformSettings,
   deleteOrderAdmin,
   clearOrderHistory,
+  subscribeToOrderEvents,
   PlatformSettings,
   RestaurantSummary,
 } from '../utils/api';
@@ -282,6 +283,7 @@ export const AdminPortal: React.FC = () => {
   // diferente). O toggle de ligar/desligar já existia no AdminDashboard mas
   // não fazia nada de verdade — agora é aqui, junto de quem detecta pedido
   // novo de fato.
+  const [realtimeState, setRealtimeState] = useState<'connecting'|'online'|'reconnecting'|'offline'>('connecting');
   const [soundEnabled, setSoundEnabled] = useState(() => {
     try {
       return localStorage.getItem('tokioinbox_sound_enabled') !== 'false';
@@ -440,9 +442,41 @@ export const AdminPortal: React.FC = () => {
   return () => clearInterval(interval);
   }, [token, selectedSlug, soundEnabled]);
 
+  // Canal em tempo real: todos os painéis conectados ao mesmo restaurante recebem
+  // a mesma mudança assim que o servidor grava. O polling continua como fallback.
+  useEffect(() => {
+    if (!token || !selectedSlug) return;
+    const stop = subscribeToOrderEvents(selectedSlug, token, (event) => {
+      if (event.type === 'created' && event.status === 'recebido' && event.orderId) {
+        pendingAlertIdsRef.current.add(event.orderId);
+        if (soundEnabled) { playOrderAlertSound(); try { navigator.vibrate?.([300,120,300]); } catch {} }
+      }
+      if (event.type === 'updated' && event.orderId && event.status !== 'recebido') pendingAlertIdsRef.current.delete(event.orderId);
+      fetchOrdersAdmin(selectedSlug, token).then(next => {
+        if (latestRequestedSlugRef.current !== selectedSlug) return;
+        knownOrderIdsRef.current = new Set(next.map(o => o.id));
+        setOrders(next);
+      }).catch(() => {});
+    }, undefined, 'admin', setRealtimeState);
+    return stop;
+  }, [token, selectedSlug]);
+
   useEffect(()=>{if(!token||!selectedSlug||!soundEnabled)return;const tick=()=>{const ids=[...pendingAlertIdsRef.current];if(!ids.length)return;playOrderAlertSound();try{navigator.vibrate?.([300,120,300])}catch{}const now=Date.now();ids.forEach(id=>{const last=lastVoiceAlertAtRef.current[id]||0;if(now-last>12000&&'speechSynthesis' in window){const o=orders.find(x=>x.id===id);if(o){const u=new SpeechSynthesisUtterance(`Novo pedido ${o.orderNumber}. Toque para aceitar.`);u.lang='pt-BR';u.rate=1.05;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);lastVoiceAlertAtRef.current[id]=now}}})};const t=setInterval(tick,4500);return()=>clearInterval(t)},[token,selectedSlug,soundEnabled,orders]);
 
-  const handleDeleteOrder = useCallback(async(orderId:string)=>{if(!selectedSlug||!token)return false;try{await deleteOrderAdmin(selectedSlug,token,orderId);setOrders(prev=>prev.filter(o=>o.id!==orderId));return true}catch(err:any){alert(err?.message||'Não foi possível excluir o pedido.');return false}},[selectedSlug,token]);
+  const handleDeleteOrder = useCallback(async(orderId:string)=>{if(!selectedSlug||!token)return false;try{await deleteOrderAdmin(selectedSlug,token,orderId);pendingAlertIdsRef.current.delete(orderId);setOrders(prev=>prev.filter(o=>o.id!==orderId));return true}catch(err:any){alert(err?.message||'Não foi possível excluir o pedido.');return false}},[selectedSlug,token]);
+  const pendingAlerts = orders.filter(o => o.status === 'recebido' && pendingAlertIdsRef.current.has(o.id));
+  const acceptPendingOrder = useCallback(async () => {
+    const order = pendingAlerts[0];
+    if (!order || !selectedSlug || !token) return;
+    try {
+      await updateOrderAdmin(selectedSlug, token, order.id, { status: 'em_preparo' });
+      pendingAlertIdsRef.current.delete(order.id);
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'em_preparo' } : o));
+      try { navigator.vibrate?.([80,60,80]); } catch {}
+    } catch (err:any) {
+      alert(err?.message || 'Não foi possível aceitar o pedido.');
+    }
+  }, [pendingAlerts, selectedSlug, token]);
   const handleClearHistory = useCallback(async()=>{if(!selectedSlug||!token)return false;try{const removed=await clearOrderHistory(selectedSlug,token);setOrders(prev=>prev.filter(o=>!['entregue','cancelado'].includes(o.status)));alert(`${removed} pedido(s) removido(s) do histórico.`);return true}catch(err:any){alert(err?.message||'Não foi possível limpar o histórico.');return false}},[selectedSlug,token]);
 
   if (!token) {
@@ -470,29 +504,19 @@ export const AdminPortal: React.FC = () => {
   const handleUpdateOrderStatus = (orderId: string, status: OrderStatus, driver?: DriverInfo, cancelReason?: string) => {
     const target = orders.find((o) => o.id === orderId);
     if (!target) return;
-    const updatedOrder: Order = {
-      ...target,
-      status,
-      driver: driver || target.driver,
-      cancelReason: status === 'cancelado' ? cancelReason || target.cancelReason : target.cancelReason,
-      statusHistory: [
-        ...target.statusHistory,
-        {
-          status,
-          timestamp: new Date().toISOString(),
-          note: driver
-            ? `Atribuído ao entregador ${driver.name}`
-            : status === 'cancelado' && cancelReason
-            ? `Pedido cancelado — motivo: ${cancelReason}`
-            : `Status alterado para ${status}`,
-        },
-      ],
-    };
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? updatedOrder : o)));
+    const patch: Partial<Order> = { status, ...(driver ? { driver } : {}), ...(status === 'cancelado' ? { cancelReason: cancelReason || target.cancelReason } : {}) };
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...patch } : o)));
     playSoundEffect('notification');
-    updateOrderAdmin(selectedSlug, token, orderId, updatedOrder).catch((err) =>
-      console.error('Erro ao atualizar pedido:', err)
-    );
+    updateOrderAdmin(selectedSlug, token, orderId, patch, target.updatedAt).then((serverOrder) => {
+      setOrders((prev) => prev.map((o) => (o.id === serverOrder.id ? serverOrder : o)));
+    }).catch((err: any) => {
+      if (err?.message?.includes('alterado em outro dispositivo')) {
+        fetchOrdersAdmin(selectedSlug, token).then(setOrders).catch(() => {});
+      } else {
+        setOrders((prev) => prev.map((o) => (o.id === target.id ? target : o)));
+        console.error('Erro ao atualizar pedido:', err);
+      }
+    });
   };
 
   const persistMenuItems = async (items: MenuItem[]): Promise<boolean> => {
@@ -639,6 +663,7 @@ export const AdminPortal: React.FC = () => {
             </div>
           );
         })}
+        <span className={`text-[11px] font-bold shrink-0 ${realtimeState === 'online' ? 'text-emerald-500' : realtimeState === 'reconnecting' ? 'text-amber-500' : 'text-stone-400'}`}>● {realtimeState === 'online' ? 'Sincronizado' : realtimeState === 'reconnecting' ? 'Reconectando…' : realtimeState === 'connecting' ? 'Conectando…' : 'Offline'}</span>
         {isSaving && (
           <span className="text-[11px] text-amber-400 font-semibold shrink-0 animate-pulse">Salvando...</span>
         )}
@@ -650,8 +675,20 @@ export const AdminPortal: React.FC = () => {
         </button>
       </div>
 
-      <PlatformSettingsPanel token={token} restaurants={restaurants} />
-      <AdminUsersPanel token={token} restaurants={restaurants} />
+      <div data-admin-platform><PlatformSettingsPanel token={token} restaurants={restaurants} /></div>
+      <div data-admin-users><AdminUsersPanel token={token} restaurants={restaurants} /></div>
+
+      {pendingAlerts.length > 0 && (
+        <button
+          onClick={acceptPendingOrder}
+          className="fixed left-3 right-3 bottom-4 z-[80] md:left-auto md:right-5 md:w-[380px] rounded-2xl bg-emerald-600 text-white px-4 py-3.5 shadow-2xl border border-emerald-300/30 flex items-center gap-3 active:scale-[.98] transition-transform"
+          aria-label={`Aceitar pedido ${pendingAlerts[0].orderNumber}`}
+        >
+          <span className="w-3 h-3 rounded-full bg-white animate-pulse shrink-0" />
+          <span className="text-left flex-1"><strong className="block text-sm font-black">PEDIDO #{pendingAlerts[0].orderNumber}</strong><span className="text-xs text-emerald-50">Toque para aceitar e enviar para preparo</span></span>
+          <span className="text-xs font-black bg-white/15 px-2 py-1 rounded-lg">ACEITAR</span>
+        </button>
+      )}
 
       <AdminDashboard
         key={selectedSlug}
@@ -676,6 +713,8 @@ export const AdminPortal: React.FC = () => {
         onDirtyChange={setIsDirty}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled((v) => !v)}
+        onOpenPlatform={() => document.querySelector('[data-admin-platform]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        onOpenUsers={() => document.querySelector('[data-admin-users]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
       />
     </div>
   );

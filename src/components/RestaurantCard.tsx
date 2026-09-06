@@ -2,6 +2,7 @@ import React from 'react';
 import { getLayoutTheme } from '../utils/layouts';
 import { UtensilsCrossed, ArrowRight } from 'lucide-react';
 import { LayoutId } from '../types';
+import { toPublicSlug } from '../utils/api';
 
 // Card de UM restaurante na vitrine multi-restaurantes. Usado tanto pela
 // Landing pública quanto pela prévia do painel (LayoutPreviewModal) — um
@@ -30,7 +31,7 @@ export const RestaurantCard: React.FC<{ restaurant: RestaurantCardData }> = ({ r
   const accent = r.color || '#B45309';
   const accent2 = r.secondaryColor || accent;
   const Wrapper: any = r.slug ? 'a' : 'div';
-  const wrapperProps = r.slug ? { href: `/r/${r.slug}` } : {};
+  const wrapperProps = r.slug ? { href: `/r/${toPublicSlug(r.name)}` } : {};
 
   const photoEl = r.photo ? (
     <img
