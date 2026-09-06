@@ -117,3 +117,13 @@
   .admin-kanban button { min-height:46px; }
   input, select, textarea { font-size:16px; }
 }
+
+
+/* V20 — Kanban mobile: cada coluna é uma página horizontal, mas a coluna
+   "Novos Pedidos" continua visível e rolável sem ser cortada pelo viewport. */
+@media (max-width:767px){
+  .admin-kanban{align-items:stretch;overflow-x:auto!important;overflow-y:visible!important;overscroll-behavior-x:contain;scroll-padding-inline:.25rem;}
+  .admin-kanban>*{box-sizing:border-box;flex:0 0 calc(100vw - 2rem)!important;width:calc(100vw - 2rem)!important;max-width:calc(100vw - 2rem)!important;min-width:calc(100vw - 2rem)!important;}
+  .admin-kanban>*:first-child{scroll-snap-align:start;}
+  .admin-kanban .space-y-3{overflow:visible!important;}
+}
