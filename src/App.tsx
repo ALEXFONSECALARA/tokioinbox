@@ -505,18 +505,20 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
   };
 
   // Order Placement
-  const handleOrderPlaced = (order: Order, openWhatsApp: boolean) => {
-    setOrders((prev) => [order, ...prev]);
-    setActiveOrderId(order.id);
-    setShowOngoingOrderBanner(true);
-    setCartItems([]);
-    if (!openWhatsApp) {
-      setIsOrderStatusOpen(true);
-    }
-    // Envia o pedido pro backend, pra aparecer no painel do admin (super-admin)
-    createOrder(restaurantSlug, order, customerToken || undefined).catch((err) => {
+  const handleOrderPlaced = async (order: Order, openWhatsApp: boolean) => {
+    try {
+      // Primeiro confirma a gravação no servidor. O mesmo ID torna o POST idempotente,
+      // então uma tentativa repetida não cria pedido duplicado.
+      await createOrder(restaurantSlug, order, customerToken || undefined);
+      setOrders((prev) => [order, ...prev.filter(o => o.id !== order.id)]);
+      setActiveOrderId(order.id);
+      setShowOngoingOrderBanner(true);
+      setCartItems([]);
+      if (!openWhatsApp) setIsOrderStatusOpen(true);
+    } catch (err) {
       console.error('Não foi possível enviar o pedido ao servidor:', err);
-    });
+      alert('Não foi possível enviar o pedido ao restaurante. Verifique sua conexão e tente novamente.');
+    }
   };
 
   // Filtered menu items
