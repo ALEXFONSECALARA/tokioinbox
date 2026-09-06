@@ -1,127 +1,41 @@
 import React, { useEffect, useState } from 'react';
 import { fetchRestaurants, fetchPlatformSettings, RestaurantSummary, PlatformSettings } from '../utils/api';
-import { getLayoutTheme, DEFAULT_LAYOUT } from '../utils/layouts';
 import { RestaurantCard } from './RestaurantCard';
-
-// Vitrine pública multi-restaurantes ("/"). Layout base: GALERIA GOURMET —
-// fundo elegante, fotos reais grandes, tipografia sofisticada, pouco uso de
-// ícones. O título/subtítulo e o layout de fundo vêm da configuração global
-// da vitrine (super-admin); cada card usa a IDENTIDADE PRÓPRIA do restaurante
-// (foto real, nome, slogan, cor primária/secundária e o estilo escolhido por
-// ele — ver RestaurantCard.tsx) — nunca preso a uma cor fixa.
-//
-// Sem "Acesso do administrador" nem emoji como identidade: o painel continua
-// existindo e protegido em /admin, só não aparece pra quem só quer pedir comida.
+import { ArrowDown, Sparkles } from 'lucide-react';
 
 export const Landing: React.FC = () => {
   const [restaurants, setRestaurants] = useState<RestaurantSummary[]>([]);
   const [platform, setPlatform] = useState<PlatformSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     Promise.all([fetchRestaurants(), fetchPlatformSettings().catch(() => null)])
       .then(([list, settings]) => {
         setRestaurants(list);
-        setPlatform(
-          settings || {
-            landingTitle: 'Escolha seu restaurante',
-            landingSubtitle: 'Cada loja tem seu próprio cardápio e pedidos',
-            landingLayout: DEFAULT_LAYOUT,
-          }
-        );
+        setPlatform(settings || { landingTitle:'Escolha onde pedir', landingSubtitle:'Lojas independentes, cardápios próprios e atendimento direto.', landingLayout:'galeria-gourmet' as any });
       })
-      .catch((err) => setError(err.message || 'Não foi possível carregar os restaurantes.'))
+      .catch(err => setError(err.message || 'Não foi possível carregar as lojas.'))
       .finally(() => setLoading(false));
   }, []);
-
-  const theme = getLayoutTheme(platform?.landingLayout);
-  // Colagem de até 4 fotos reais dos próprios restaurantes cadastrados no
-  // fundo do hero — sem baixar/gerar nenhuma imagem nova, reaproveitando o
-  // que cada restaurante já tem configurado (banner ou logo).
-  const heroPhotos = restaurants
-    .map((r) => r.bannerImage || r.logo)
-    .filter((v): v is string => Boolean(v))
-    .slice(0, 4);
-
-  return (
-    <div className={`min-h-screen ${theme.pageBg}`}>
-      {/* ---------- HERO ---------- */}
-      <div className="relative w-full h-[46vh] min-h-[280px] max-h-[420px] overflow-hidden">
-        {heroPhotos.length > 0 ? (
-          <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 gap-0.5">
-            {heroPhotos.map((src, idx) => (
-              <div key={src + idx} className="relative overflow-hidden">
-                <img src={src} alt="" loading="eager" className="w-full h-full object-cover" />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg,#3a2417,#1f1719)' }} />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/55 to-black" />
-
-        <div className="relative h-full flex flex-col items-center justify-center text-center px-4">
-          <h1 className={`${theme.pageText} text-3xl sm:text-5xl ${theme.heroFont} drop-shadow-lg uppercase tracking-tight`}>
-            {platform?.landingTitle || 'Escolha seu restaurante'}
-          </h1>
-          {platform?.landingSubtitle && (
-            <p className={`${theme.pageText}/90 mt-3 max-w-md text-sm sm:text-base drop-shadow`}>
-              {platform.landingSubtitle}
-            </p>
-          )}
-        </div>
+  const heroPhotos = restaurants.map(r => r.bannerImage || r.logo).filter(Boolean).slice(0,4);
+  return <div className="min-h-screen bg-[#060908] text-[#f4f0e5]">
+    <section className="relative min-h-[52vh] overflow-hidden">
+      {heroPhotos.length ? <div className="absolute inset-0 grid grid-cols-2 md:grid-cols-4">{heroPhotos.map((src,i)=><img key={src+i} src={src} alt="" className="w-full h-full object-cover"/>)}</div> : <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,#173533,transparent_55%)]"/>}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/70 to-[#060908]"/>
+      <div className="relative z-10 max-w-6xl mx-auto px-5 py-12 sm:py-16 flex min-h-[52vh] flex-col items-center justify-center text-center">
+        <img src="/tokioinbox-mark.svg" alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl mb-5 shadow-2xl"/>
+        <p className="text-[#e2c55d] text-[10px] uppercase tracking-[.35em] font-black flex items-center gap-2"><Sparkles size={13}/> Delivery digital</p>
+        <h1 className="mt-3 text-4xl sm:text-6xl font-black tracking-tight max-w-3xl">{platform?.landingTitle || 'Escolha onde pedir'}</h1>
+        <p className="mt-4 max-w-xl text-sm sm:text-base text-white/70">{platform?.landingSubtitle || 'Cada loja possui sua própria identidade, cardápio e experiência de pedido.'}</p>
+        <button onClick={()=>document.getElementById('stores')?.scrollIntoView({behavior:'smooth'})} className="mt-7 rounded-2xl bg-[#c9a227] text-[#080a0a] px-6 py-3.5 min-h-[48px] font-black text-sm flex items-center gap-2 shadow-xl">Ver lojas <ArrowDown size={17}/></button>
       </div>
-
-      {/* ---------- LISTA DE RESTAURANTES ---------- */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
-        <div className="text-center mb-8 sm:mb-10">
-          <h2 className={`${theme.pageText} text-xl sm:text-2xl ${theme.heroFont} uppercase tracking-wide`}>
-            Nossos Restaurantes
-          </h2>
-          <p className={`${theme.pageSubtext} text-xs sm:text-sm mt-1`}>
-            Cada loja tem sua própria identidade, cardápio e pedidos
-          </p>
-        </div>
-
-        {loading && (
-          <div className="flex justify-center py-16">
-            <div className="w-8 h-8 border-4 border-white/20 border-t-white/80 rounded-full animate-spin" />
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-xl p-4 text-center max-w-md mx-auto">
-            {error}
-          </div>
-        )}
-
-        {!loading && !error && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-            {restaurants.map((r) => (
-              <RestaurantCard
-                key={r.slug}
-                restaurant={{
-                  slug: r.slug,
-                  name: r.name,
-                  tagline: r.tagline,
-                  photo: r.bannerImage || r.logo,
-                  color: r.color,
-                  secondaryColor: r.secondaryColor,
-                  layout: r.layout,
-                  bannerPositionX: r.bannerPositionX,
-                  bannerPositionY: r.bannerPositionY,
-                  bannerZoom: r.bannerZoom,
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Sem link/acesso administrativo aqui de propósito — o painel continua
-          existindo e protegido em /admin, só não é exposto pro cliente. */}
-      <div className="pb-8" />
-    </div>
-  );
+    </section>
+    <section id="stores" className="max-w-6xl mx-auto px-5 py-10 sm:py-14">
+      <div className="mb-7"><p className="text-[#c9a227] text-[10px] uppercase tracking-[.28em] font-black">Escolha sua loja</p><h2 className="text-2xl sm:text-3xl font-black mt-1">Cada restaurante é uma experiência própria</h2><p className="text-sm text-white/55 mt-2">Ao entrar em uma loja, você vê somente o cardápio e o atendimento daquele restaurante.</p></div>
+      {loading && <div className="py-16 text-center text-white/50">Carregando lojas...</div>}
+      {error && <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
+      {!loading && !error && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">{restaurants.map(r=><RestaurantCard key={r.slug} restaurant={{slug:r.slug,name:r.name,tagline:r.tagline,photo:r.bannerImage||r.logo,color:r.color,secondaryColor:r.secondaryColor,layout:r.layout,bannerPositionX:r.bannerPositionX,bannerPositionY:r.bannerPositionY,bannerZoom:r.bannerZoom}}/>)}</div>}
+    </section>
+    <footer className="border-t border-white/10 py-8 text-center text-[10px] text-white/35">Escolha uma loja para continuar seu pedido.</footer>
+  </div>;
 };

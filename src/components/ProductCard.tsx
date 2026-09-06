@@ -27,17 +27,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     <article
       id={`product-card-${item.id}`}
       onClick={() => item.available && onSelect(item)}
-      className={`group bg-white rounded-2xl border border-stone-200 overflow-hidden transition-all duration-200 hover:shadow-md hover:border-[var(--brand-light)] flex flex-col justify-between cursor-pointer relative ${
+      className={`group bg-[#0d1212] rounded-[24px] border border-white/8 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:border-[#c9a227]/35 flex flex-col justify-between cursor-pointer relative ${
         !item.available ? 'opacity-60 cursor-not-allowed grayscale-[0.4]' : ''
       }`}
     >
       <div>
         {/* Card Image and Floating Badges */}
-        <div className="relative h-44 sm:h-48 w-full overflow-hidden bg-stone-100">
+        <div className="relative h-44 sm:h-48 w-full overflow-hidden bg-[#101515]">
           <img
             src={item.image}
             alt={item.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            className="w-full h-full object-cover group-hover:scale-[1.06] transition-transform duration-700"
             loading="lazy"
             referrerPolicy="no-referrer"
           />
@@ -86,28 +86,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
 
         {/* Card Body */}
-        <div className="p-4">
+        <div className="p-4 sm:p-5">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-bold text-stone-900 text-sm sm:text-base leading-snug group-hover:text-[var(--brand-dark)] transition-colors line-clamp-1">
+            <h3 className="font-semibold text-[#f4f0e5] text-sm sm:text-base leading-snug group-hover:text-[#e2c55d] transition-colors line-clamp-1">
               {item.name}
             </h3>
           </div>
 
-          <p className="text-stone-500 text-xs mt-1.5 line-clamp-2 leading-relaxed">
+          <p className="text-[#999e97] text-xs mt-1.5 line-clamp-2 leading-relaxed">
             {item.description}
           </p>
 
           {/* Metadata info */}
-          <div className="flex items-center gap-3 text-[11px] text-stone-400 mt-3">
+          <div className="flex items-center gap-3 text-[11px] text-[#707770] mt-3">
             {item.preparationTimeMinutes && (
               <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3 text-stone-400" />
+                <Clock className="w-3 h-3 text-[#777d76]" />
                 {item.preparationTimeMinutes} min
               </span>
             )}
             {item.servesCount && (
               <span className="flex items-center gap-1">
-                <Users className="w-3 h-3 text-stone-400" />
+                <Users className="w-3 h-3 text-[#777d76]" />
                 Serve {item.servesCount} {item.servesCount > 1 ? 'pessoas' : 'pessoa'}
               </span>
             )}
@@ -116,14 +116,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       </div>
 
       {/* Card Footer: Price & Add Button */}
-      <div className="p-4 pt-0 flex items-center justify-between mt-2 border-t border-stone-100 pt-3">
+      <div className="p-4 sm:p-5 pt-0 flex items-center justify-between mt-2 border-t border-white/8 pt-4">
         <div>
           {hasDiscount && (
-            <span className="text-[11px] text-stone-400 line-through block font-medium">
+            <span className="text-[11px] text-[#777d76] line-through block font-medium">
               {formatCurrency(item.originalPrice!)}
             </span>
           )}
-          <span className="text-base sm:text-lg font-extrabold text-stone-900">
+          <span className="text-base sm:text-lg font-extrabold text-[#f4f0e5]">
             {formatCurrency(item.price)}
           </span>
         </div>
@@ -137,8 +137,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           }}
           className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all ${
             item.available
-              ? 'bg-[var(--brand)] hover:bg-[var(--brand-light)] text-stone-950 active:scale-95 shadow-xs'
-              : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+              ? 'bg-[#c9a227] hover:bg-[#e2c55d] text-[#080a0a] active:scale-95 shadow-lg shadow-black/20'
+              : 'bg-white/10 text-[#666c65] cursor-not-allowed'
           }`}
         >
           <Plus className="w-3.5 h-3.5" />

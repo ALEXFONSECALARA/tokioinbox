@@ -41,20 +41,25 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
       case 'BadgePercent':
         return <BadgePercent className="w-4 h-4" />;
       default:
+        // O cadastro japonês usa emojis como ícone de categoria. Mantemos o
+        // visual limpo sem substituir o ícone definido pelo restaurante.
+        if (iconName && iconName.length <= 4) {
+          return <span className="text-base leading-none" aria-hidden="true">{iconName}</span>;
+        }
         return <Layers className="w-4 h-4" />;
     }
   };
 
   return (
-    <nav aria-label="Navegação por Categorias" className="sticky top-11 z-30 bg-white/95 backdrop-blur-md border-b border-stone-200 shadow-xs py-2.5 px-4 sm:px-6">
+    <nav aria-label="Navegação por Categorias" className="sticky top-0 z-30 bg-[#080b0b]/92 backdrop-blur-xl border-b border-white/5 shadow-lg py-3 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto flex items-center gap-2 overflow-x-auto scrollbar-none py-0.5">
         <button
           id="category-tab-all"
           onClick={() => onSelectCategory('all')}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
             activeCategoryId === 'all'
-              ? 'bg-[var(--brand)] text-stone-950 shadow-sm'
-              : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+              ? 'bg-[#c9a227] text-[#080a0a] shadow-sm'
+              : 'bg-white/5 text-[#b9bbb4] hover:bg-white/10 border border-white/10'
           }`}
         >
           <Layers className="w-4 h-4" />
@@ -71,8 +76,8 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               onClick={() => onSelectCategory(cat.id)}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
                 isActive
-                  ? 'bg-[var(--brand)] text-stone-950 shadow-sm'
-                  : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                  ? 'bg-[#c9a227] text-[#080a0a] shadow-sm'
+                  : 'bg-white/5 text-[#b9bbb4] hover:bg-white/10 border border-white/10'
               }`}
             >
               {getIcon(cat.icon)}
@@ -80,7 +85,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
               {count > 0 && (
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isActive ? 'bg-stone-950 text-[var(--brand-light)]' : 'bg-stone-200 text-stone-600'
+                    isActive ? 'bg-[#080a0a] text-[#e2c55d]' : 'bg-white/10 text-[#a8aaa2]'
                   }`}
                 >
                   {count}

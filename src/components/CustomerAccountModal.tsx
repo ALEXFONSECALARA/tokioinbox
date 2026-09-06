@@ -96,16 +96,18 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
 
   if (!isOpen) return null;
 
+  const normalizePhone = (value: string) => value.replace(/\D/g, '');
+
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
     setAuthError(null);
     try {
       if (authMode === 'login') {
-        const res = await loginCustomer(phone, password);
+        const res = await loginCustomer(normalizePhone(phone), password);
         onLoggedIn(res.token, res.customer);
       } else {
-        const res = await registerCustomer({ name, phone, email: email || undefined, password });
+        const cleanName=name.trim(); const cleanPhone=normalizePhone(phone); const cleanEmail=email.trim().toLowerCase(); if(cleanName.length<2) throw new Error('Informe seu nome completo.'); if(cleanPhone.length<10||cleanPhone.length>13) throw new Error('Informe um telefone válido com DDD.'); if(password.length<6) throw new Error('A senha deve ter pelo menos 6 caracteres.'); const res = await registerCustomer({ name:cleanName, phone:cleanPhone, email:cleanEmail||undefined, password });
         onLoggedIn(res.token, res.customer);
       }
       setPassword('');
@@ -153,7 +155,7 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
-      <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[90vh] overflow-y-auto p-5 space-y-4">
+      <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[92dvh] overflow-y-auto p-4 sm:p-5 space-y-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between border-b border-stone-100 pb-3">
           <h2 className="font-black text-lg text-stone-900 flex items-center gap-2">
             <User className="w-5 h-5" /> {customer ? `Olá, ${customer.name.split(' ')[0]} 👋` : 'Minha Conta'}

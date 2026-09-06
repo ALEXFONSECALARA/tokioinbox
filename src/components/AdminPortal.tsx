@@ -13,6 +13,8 @@ import {
   saveRestaurantConfig,
   fetchPlatformSettings,
   savePlatformSettings,
+  deleteOrderAdmin,
+  clearOrderHistory,
   PlatformSettings,
   RestaurantSummary,
 } from '../utils/api';
@@ -297,6 +299,8 @@ export const AdminPortal: React.FC = () => {
   // IDs de pedidos já vistos, pra tocar o alerta só quando um pedido
   // GENUINAMENTE novo chega (não em toda troca de status de um já existente).
   const knownOrderIdsRef = useRef<Set<string> | null>(null);
+  const pendingAlertIdsRef = useRef<Set<string>>(new Set());
+  const lastVoiceAlertAtRef = useRef<Record<string, number>>({});
   // Auto-save acontece em muitos campos do painel. Sem uma fila, dois PUTs
   // simultâneos podem terminar fora de ordem e o segundo salvar uma versão
   // antiga da configuração — especialmente perceptível ao adicionar fotos
@@ -427,16 +431,19 @@ export const AdminPortal: React.FC = () => {
           if (latestRequestedSlugRef.current !== slugAtScheduleTime) return;
           const known = knownOrderIdsRef.current;
           const newOnes = known ? list.filter((o) => !known.has(o.id)) : [];
-          if (newOnes.length > 0 && soundEnabled) {
-            playOrderAlertSound();
-          }
-          knownOrderIdsRef.current = new Set(list.map((o) => o.id));
-          setOrders((prev) => (list.length !== prev.length ? list : prev));
+          if (newOnes.length > 0) { newOnes.filter(o=>o.status==='recebido').forEach(o=>pendingAlertIdsRef.current.add(o.id)); if(soundEnabled) playOrderAlertSound(); try{navigator.vibrate?.([250,120,250])}catch{} }
+          list.forEach(o=>{if(o.status!=='recebido')pendingAlertIdsRef.current.delete(o.id)});
+          knownOrderIdsRef.current = new Set(list.map(o=>o.id)); setOrders(list);
         })
         .catch(() => {});
     }, 8000);
-    return () => clearInterval(interval);
+  return () => clearInterval(interval);
   }, [token, selectedSlug, soundEnabled]);
+
+  useEffect(()=>{if(!token||!selectedSlug||!soundEnabled)return;const tick=()=>{const ids=[...pendingAlertIdsRef.current];if(!ids.length)return;playOrderAlertSound();try{navigator.vibrate?.([300,120,300])}catch{}const now=Date.now();ids.forEach(id=>{const last=lastVoiceAlertAtRef.current[id]||0;if(now-last>12000&&'speechSynthesis' in window){const o=orders.find(x=>x.id===id);if(o){const u=new SpeechSynthesisUtterance(`Novo pedido ${o.orderNumber}. Toque para aceitar.`);u.lang='pt-BR';u.rate=1.05;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);lastVoiceAlertAtRef.current[id]=now}}})};const t=setInterval(tick,4500);return()=>clearInterval(t)},[token,selectedSlug,soundEnabled,orders]);
+
+  const handleDeleteOrder = useCallback(async(orderId:string)=>{if(!selectedSlug||!token)return false;try{await deleteOrderAdmin(selectedSlug,token,orderId);setOrders(prev=>prev.filter(o=>o.id!==orderId));return true}catch(err:any){alert(err?.message||'Não foi possível excluir o pedido.');return false}},[selectedSlug,token]);
+  const handleClearHistory = useCallback(async()=>{if(!selectedSlug||!token)return false;try{const removed=await clearOrderHistory(selectedSlug,token);setOrders(prev=>prev.filter(o=>!['entregue','cancelado'].includes(o.status)));alert(`${removed} pedido(s) removido(s) do histórico.`);return true}catch(err:any){alert(err?.message||'Não foi possível limpar o histórico.');return false}},[selectedSlug,token]);
 
   if (!token) {
     return <LoginScreen onLoggedIn={setToken} />;
@@ -653,6 +660,8 @@ export const AdminPortal: React.FC = () => {
         otherRestaurants={restaurants.filter((r) => r.slug !== selectedSlug)}
         orders={orders}
         onUpdateOrderStatus={handleUpdateOrderStatus}
+        onDeleteOrder={handleDeleteOrder}
+        onClearOrderHistory={handleClearHistory}
         menuItems={menuItems}
         categories={categories}
         onAddMenuItem={handleAddMenuItem}

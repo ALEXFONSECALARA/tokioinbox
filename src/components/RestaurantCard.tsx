@@ -30,7 +30,7 @@ export const RestaurantCard: React.FC<{ restaurant: RestaurantCardData }> = ({ r
   const accent = r.color || '#B45309';
   const accent2 = r.secondaryColor || accent;
   const Wrapper: any = r.slug ? 'a' : 'div';
-  const wrapperProps = r.slug ? { href: `/${r.slug}` } : {};
+  const wrapperProps = r.slug ? { href: `/r/${r.slug}` } : {};
 
   const photoEl = r.photo ? (
     <img

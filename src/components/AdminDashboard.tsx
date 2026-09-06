@@ -84,6 +84,8 @@ interface AdminDashboardProps {
   otherRestaurants?: { slug: string; name: string }[];
   orders: Order[];
   onUpdateOrderStatus: (orderId: string, status: OrderStatus, driver?: DriverInfo, cancelReason?: string) => void;
+  onDeleteOrder?: (orderId: string) => Promise<boolean>;
+  onClearOrderHistory?: () => Promise<boolean>;
   menuItems: MenuItem[];
   categories: Category[];
   onAddMenuItem: (item: MenuItem) => Promise<boolean>;
@@ -115,6 +117,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   otherRestaurants,
   orders,
   onUpdateOrderStatus,
+  onDeleteOrder,
+  onClearOrderHistory,
   menuItems,
   categories,
   onAddMenuItem,
@@ -1333,6 +1337,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
 
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={async()=>{const n=orders.filter(o=>['entregue','cancelado'].includes(o.status)).length;if(!n)return alert('Não há histórico finalizado para excluir.');if(!window.confirm(`Excluir ${n} pedido(s) finalizado(s)/cancelado(s) deste restaurante? Esta ação não pode ser desfeita.`))return;if(onClearOrderHistory)await onClearOrderHistory();}} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5"/> Limpar histórico ({orders.filter(o=>['entregue','cancelado'].includes(o.status)).length})</button>
+              <button onClick={async()=>{const url=`${window.location.origin}/r/${slug}`;try{await navigator.clipboard.writeText(url);alert(`Link exclusivo copiado:
+${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-stone-300 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5"><ExternalLink className="w-3.5 h-3.5"/> Copiar link exclusivo</button>
+            </div>
+
             {/* ❌ Cancelados — nunca some do sistema, só sai das colunas ativas (item 26) */}
             {showCancelledOrders && (
               <div className="bg-white rounded-2xl border border-stone-200 p-4 space-y-2">
@@ -1358,7 +1368,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             )}
 
             {/* 4-Column Kanban Board */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="admin-kanban grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Column 1: Novos Pedidos */}
               <div className="bg-amber-50/70 rounded-2xl p-3 border border-amber-200 flex flex-col h-full min-h-[440px]">
                 <div className="flex items-center justify-between pb-2.5 border-b border-amber-200 mb-3">
@@ -1692,6 +1702,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <span className="font-extrabold text-emerald-700">
                             {formatCurrency(order.total)}
                           </span>
+                          <button
+                            onClick={async () => { if (!window.confirm(`Excluir o pedido #${order.orderNumber} do histórico?`)) return; await onDeleteOrder?.(order.id); }}
+                            className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700"
+                            title="Excluir do histórico"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             onClick={() => setSelectedReceiptOrder(order)}
                             className="p-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700"
@@ -3663,6 +3680,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {activeTab === 'tools' && (
           <ToolsHub
             orders={orders}
+            token={token}
+            slug={slug}
             menuItems={menuItems}
             restaurantConfig={localConfig}
             onUpdateConfig={(newConfig) => {

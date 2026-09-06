@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   MenuItem, 
   Category, 
@@ -9,6 +9,7 @@ import {
   PaymentMethod
 } from '../types';
 import { formatCurrency, playSoundEffect, COUPONS } from '../utils/helpers';
+import { fetchAdminLoginLogs, fetchErrorLogs, clearAdminLoginLogs, clearErrorLogs, deleteAdminLoginLog, deleteErrorLog } from '../utils/api';
 import { 
   Wrench, 
   QrCode, 
@@ -29,7 +30,8 @@ import {
   Bike,
   RefreshCw,
   Layers,
-  FileText
+  FileText,
+  AlertCircle
 } from 'lucide-react';
 
 interface ToolsHubProps {
@@ -39,6 +41,8 @@ interface ToolsHubProps {
   onUpdateMenuItems: (items: MenuItem[]) => void;
   restaurantConfig: RestaurantConfig;
   onUpdateConfig: (config: RestaurantConfig) => void;
+  token?: string;
+  slug?: string;
 }
 
 export const ToolsHub: React.FC<ToolsHubProps> = ({
@@ -48,9 +52,11 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
   onUpdateMenuItems,
   restaurantConfig,
   onUpdateConfig,
+  token,
+  slug,
 }) => {
   const [activeSubTool, setActiveSubTool] = useState<
-    'qr_flyer' | 'cmv_calculator' | 'demo_orders' | 'backup_export' | 'coupons'
+    'qr_flyer' | 'cmv_calculator' | 'demo_orders' | 'backup_export' | 'maintenance' | 'coupons'
   >('qr_flyer');
 
   // ==========================================
@@ -59,7 +65,8 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
   const [flyerTitle, setFlyerTitle] = useState(restaurantConfig.name);
   const [flyerSubtitle, setFlyerSubtitle] = useState('Peça pelo nosso Cardápio Online & WhatsApp');
   const [flyerPromo, setFlyerPromo] = useState('Ganhe 10% OFF com o cupom: BEMVINDO10');
-  const [flyerQrUrl, setFlyerQrUrl] = useState(window.location.href);
+  const [flyerQrUrl, setFlyerQrUrl] = useState(`${window.location.origin}/r/${slug || ''}`);
+  useEffect(() => { if (slug) setFlyerQrUrl(`${window.location.origin}/r/${slug}`); }, [slug]);
 
   // ==========================================
   // 2. CMV / PROFIT MARGIN CALCULATOR STATE
@@ -85,6 +92,9 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
   // 3. BACKUP & EXPORT DATA STATE
   // ==========================================
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [loginLogs,setLoginLogs]=useState<any[]>([]); const [errorLogs,setErrorLogs]=useState<any[]>([]); const [logsLoading,setLogsLoading]=useState(false);
+  const loadLogs=async()=>{if(!token)return;setLogsLoading(true);try{const [a,b]=await Promise.all([fetchAdminLoginLogs(token),fetchErrorLogs(token)]);setLoginLogs(a);setErrorLogs(b)}catch(err:any){alert(err?.message||'Não foi possível carregar os logs.')}finally{setLogsLoading(false)}};
+  useEffect(()=>{if(activeSubTool==='maintenance')loadLogs()},[activeSubTool,token]);
 
   const handleExportCSV = () => {
     if (orders.length === 0) {
@@ -338,6 +348,8 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
           <Sparkles className="w-4 h-4" />
           <span>Simulador de Pedidos (Testes)</span>
         </button>
+
+        <button onClick={() => setActiveSubTool('maintenance')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='maintenance'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Wrench className="w-4 h-4"/><span>Históricos & Logs</span></button>
 
         <button
           onClick={() => setActiveSubTool('backup_export')}
@@ -707,6 +719,19 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
           </div>
         </div>
       )}
+      {activeSubTool === 'maintenance' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs space-y-3">
+            <div className="flex items-center justify-between gap-2"><div><h3 className="font-extrabold text-stone-900 flex items-center gap-2"><FileText className="w-4 h-4 text-amber-600"/> Histórico de login</h3><p className="text-[11px] text-stone-500">Registros dos acessos ao painel. Pode excluir um por um ou limpar todos.</p></div><button onClick={async()=>{if(!token||!window.confirm('Excluir todo o histórico de login?'))return;await clearAdminLoginLogs(token);setLoginLogs([])}} className="text-[11px] font-bold text-rose-700 px-2 py-1 rounded-lg bg-rose-50">Limpar tudo</button></div>
+            {logsLoading?<p className="text-xs text-stone-400">Carregando...</p>:loginLogs.length===0?<p className="text-xs text-stone-400">Nenhum registro.</p>:<div className="max-h-80 overflow-y-auto space-y-1">{loginLogs.map(l=><div key={l.id} className="flex items-center justify-between gap-2 border border-stone-100 rounded-xl p-2.5 text-[11px]"><div><b className={l.success?'text-emerald-700':'text-rose-700'}>{l.success?'Sucesso':'Falha'}</b> · {l.login||'—'} · {l.mode}<div className="text-stone-400">{new Date(l.createdAt).toLocaleString('pt-BR')}</div></div><button onClick={async()=>{if(!token)return;await deleteAdminLoginLog(token,l.id);setLoginLogs(x=>x.filter(a=>a.id!==l.id))}} className="p-2 rounded-lg bg-stone-100 text-rose-700" title="Excluir registro"><Trash2 size={13}/></button></div>)}</div>}
+          </div>
+          <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs space-y-3">
+            <div className="flex items-center justify-between gap-2"><div><h3 className="font-extrabold text-stone-900 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-rose-600"/> Logs de erro</h3><p className="text-[11px] text-stone-500">Falhas registradas pelo servidor para diagnóstico.</p></div><button onClick={async()=>{if(!token||!window.confirm('Excluir todos os logs de erro?'))return;await clearErrorLogs(token);setErrorLogs([])}} className="text-[11px] font-bold text-rose-700 px-2 py-1 rounded-lg bg-rose-50">Limpar tudo</button></div>
+            {logsLoading?<p className="text-xs text-stone-400">Carregando...</p>:errorLogs.length===0?<p className="text-xs text-stone-400">Nenhum erro registrado.</p>:<div className="max-h-80 overflow-y-auto space-y-1">{errorLogs.map(l=><div key={l.id} className="flex items-start justify-between gap-2 border border-stone-100 rounded-xl p-2.5 text-[11px]"><div className="min-w-0"><b className="text-rose-700">{l.context||'Erro'}</b><p className="text-stone-700 break-words">{l.message}</p><div className="text-stone-400">{new Date(l.createdAt).toLocaleString('pt-BR')}{l.restaurantSlug?` · ${l.restaurantSlug}`:''}</div></div><button onClick={async()=>{if(!token)return;await deleteErrorLog(token,l.id);setErrorLogs(x=>x.filter(a=>a.id!==l.id))}} className="p-2 rounded-lg bg-stone-100 text-rose-700 shrink-0" title="Excluir log"><Trash2 size={13}/></button></div>)}</div>}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
