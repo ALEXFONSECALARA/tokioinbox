@@ -107,3 +107,13 @@
 @media (max-width:767px){.admin-kanban{display:flex!important;overflow-x:auto;scroll-snap-type:x mandatory;gap:.75rem;padding-bottom:.35rem;-webkit-overflow-scrolling:touch}.admin-kanban>*{flex:0 0 88vw;max-width:88vw;min-width:88vw;scroll-snap-align:start;min-height:58vh}button,[role="button"]{touch-action:manipulation}}
 
 @media (max-width:767px){.admin-kanban{scrollbar-width:none}.admin-kanban>*{min-height:520px}.admin-kanban .space-y-3{overflow:visible!important;max-height:none}.admin-kanban button{min-height:44px}.admin-kanban .p-3\.5{padding:1rem}}
+
+/* Mobile operations */
+@media (max-width: 767px) {
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .admin-kanban { display:flex!important; overflow-x:auto; scroll-snap-type:x mandatory; gap:.75rem; padding:.25rem .1rem 5rem; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .admin-kanban::-webkit-scrollbar { display:none; }
+  .admin-kanban > * { flex:0 0 88vw; max-width:88vw; min-width:88vw; scroll-snap-align:start; min-height:520px; }
+  .admin-kanban button { min-height:46px; }
+  input, select, textarea { font-size:16px; }
+}

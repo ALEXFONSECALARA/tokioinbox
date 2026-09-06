@@ -242,6 +242,7 @@ export interface Order {
   id: string;
   orderNumber: number;
   createdAt: string;
+  updatedAt?: string;
   items: CartItem[];
   subtotal: number;
   deliveryFee: number;
@@ -255,6 +256,8 @@ export interface Order {
   // valor vindo do próprio cliente sem validação de token.
   customerId?: string;
   paymentMethod: PaymentMethod;
+  paymentStatus?: 'pendente' | 'confirmado' | 'recusado' | 'reembolsado';
+  paymentConfirmedAt?: string;
   cardBrand?: string;
   cashChangeFor?: number;
   status: OrderStatus;

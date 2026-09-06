@@ -15,7 +15,7 @@ import {
   INITIAL_MENU_ITEMS, 
   INITIAL_RESTAURANT_CONFIG 
 } from './data/initialData';
-import { fetchMenu, createOrder, fetchOrder, fetchOperationalStatus, fetchCustomerProfile } from './utils/api';
+import { fetchMenu, createOrder, fetchOrder, fetchOperationalStatus, fetchCustomerProfile, subscribeToOrderEvents } from './utils/api';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from './utils/push';
 import { formatCurrency, playSoundEffect, COUPONS } from './utils/helpers';
 import { SplashScreen } from './components/SplashScreen';
@@ -245,6 +245,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
   // Controla o banner "Você possui um pedido em andamento" — só é dispensado
   // quando o cliente clica em "Acompanhar Pedido" ou fecha o aviso.
   const [showOngoingOrderBanner, setShowOngoingOrderBanner] = useState(!!activeOrderId);
+  const [orderRealtimeState, setOrderRealtimeState] = useState<'connecting'|'online'|'reconnecting'|'offline'>('offline');
 
   // Coupon state
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
@@ -343,6 +344,20 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
       localStorage.setItem(storageKey('delivery_address'), JSON.stringify(deliveryAddress));
     }
   }, [deliveryAddress]);
+
+  // Canal em tempo real para o cliente: status novo chega no site/app e em
+  // qualquer outro dispositivo autenticado sem depender de refresh. O polling
+  // abaixo permanece como fallback para redes que bloqueiam SSE.
+  useEffect(() => {
+    if (!activeOrderId || !customerToken) return;
+    const stop = subscribeToOrderEvents(restaurantSlug, customerToken, (event) => {
+      if (event.orderId !== activeOrderId) return;
+      fetchOrder(restaurantSlug, activeOrderId).then(updated => {
+        setOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
+      }).catch(() => {});
+    }, undefined, 'customer', setOrderRealtimeState);
+    return stop;
+  }, [activeOrderId, customerToken, restaurantSlug]);
 
   // Enquanto o pedido do cliente está ativo, consulta o backend a cada poucos
   // segundos pra saber se o admin mudou o status (recebido -> em preparo -> etc).
@@ -652,6 +667,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {customerToken && <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${orderRealtimeState === 'online' ? 'text-emerald-300 border-emerald-400/20 bg-emerald-400/10' : 'text-stone-400 border-white/10'}`}>● {orderRealtimeState === 'online' ? 'Sincronizado' : orderRealtimeState === 'reconnecting' ? 'Reconectando' : 'Atualizando'}</span>}
                   <button
                     onClick={() => setIsOrderStatusOpen(true)}
                     className="px-4 py-2 rounded-xl bg-[var(--brand)] hover:bg-[var(--brand-light)] text-slate-950 text-xs font-black flex items-center gap-1.5"
