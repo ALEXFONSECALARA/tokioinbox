@@ -1,26 +1,36 @@
-// Service worker mínimo, só pra notificações push (Fase 4, itens 27-30).
-// De propósito NÃO faz cache/offline — isso é responsabilidade de outra
-// camada, se um dia o projeto quiser um PWA completo. Aqui é só o mínimo
-// que o navegador exige pra permitir `pushManager.subscribe()` e mostrar
-// as notificações quando chegam.
+// TokioInbox PWA — V12: shell offline + Push.
+const CACHE = 'tokioinbox-shell-v12';
+const SHELL = ['/', '/index.html', '/tokioinbox-mark.svg'];
 
-self.addEventListener('install', () => {
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).catch(() => {}));
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))));
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+  // API is never cached: orders, auth and restaurant data must remain fresh.
+  if (url.pathname.startsWith('/api/')) return;
+  event.respondWith(fetch(event.request).then(response => {
+    if (response.ok) {
+      const copy = response.clone();
+      caches.open(CACHE).then(cache => cache.put(event.request, copy)).catch(() => {});
+    }
+    return response;
+  }).catch(() => caches.match(event.request).then(cached => cached || caches.match('/index.html'))));
 });
 
 self.addEventListener('push', (event) => {
   let payload = { title: 'Nova notificação', body: '' };
-  try {
-    if (event.data) payload = event.data.json();
-  } catch {
-    // payload não veio em JSON — mostra algo genérico em vez de quebrar
-    payload = { title: 'Nova notificação', body: event.data ? event.data.text() : '' };
-  }
-
+  try { if (event.data) payload = event.data.json(); }
+  catch { payload = { title: 'Nova notificação', body: event.data ? event.data.text() : '' }; }
   const options = {
     body: payload.body || '',
     icon: payload.icon || '/icon-192.png',
@@ -28,20 +38,14 @@ self.addEventListener('push', (event) => {
     image: payload.image || undefined,
     data: { url: payload.url || '/' },
   };
-
   event.waitUntil(self.registration.showNotification(payload.title || 'Nova notificação', options));
 });
 
-// Clique na notificação: foca uma aba já aberta da loja, ou abre uma nova.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || '/';
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes(targetUrl) && 'focus' in client) return client.focus();
-      }
-      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
-    })
-  );
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    for (const client of clients) if (client.url.includes(targetUrl) && 'focus' in client) return client.focus();
+    if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+  }));
 });
