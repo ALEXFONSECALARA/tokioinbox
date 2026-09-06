@@ -47,6 +47,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'ver_clientes', label: 'Ver clientes' },
       { key: 'editar_clientes', label: 'Editar clientes' },
       { key: 'ver_historico', label: 'Ver histórico' },
+      { key: 'gerenciar_historico', label: 'Excluir histórico' },
     ],
   },
   {

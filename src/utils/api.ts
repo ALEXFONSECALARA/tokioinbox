@@ -217,6 +217,17 @@ export async function fetchOrdersAdmin(slug: string, token: string): Promise<Ord
   return handleResponse<Order[]>(res);
 }
 
+export async function deleteOrderAdmin(slug:string, token:string, orderId:string):Promise<Order>{ const res=await fetch(`${API_PREFIX}/${slug}/orders/${orderId}`,{method:'DELETE',headers:authHeaders(token)}); const data=await handleResponse<{order:Order}>(res); return data.order; }
+export async function clearOrderHistory(slug:string, token:string):Promise<number>{ const res=await fetch(`${API_PREFIX}/${slug}/orders/history`,{method:'DELETE',headers:authHeaders(token)}); const data=await handleResponse<{removed:number}>(res); return data.removed; }
+export interface AdminLoginLog {id:string;createdAt:string;adminUserId?:string|null;login?:string|null;success:boolean;mode:string;ip?:string|null;userAgent?:string|null;details?:Record<string,unknown>}
+export interface ErrorLog {id:string;createdAt:string;level:string;context?:string|null;message:string;stack?:string|null;restaurantSlug?:string|null;details?:Record<string,unknown>}
+export async function fetchAdminLoginLogs(token:string):Promise<AdminLoginLog[]>{const res=await fetch(`${API_PREFIX}/admin/logs/login`,{headers:authHeaders(token)});return (await handleResponse<{logs:AdminLoginLog[]}>(res)).logs;}
+export async function clearAdminLoginLogs(token:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/logs/login`,{method:'DELETE',headers:authHeaders(token)}));}
+export async function deleteAdminLoginLog(token:string,id:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/logs/login/${id}`,{method:'DELETE',headers:authHeaders(token)}));}
+export async function fetchErrorLogs(token:string):Promise<ErrorLog[]>{const res=await fetch(`${API_PREFIX}/admin/logs/errors`,{headers:authHeaders(token)});return (await handleResponse<{logs:ErrorLog[]}>(res)).logs;}
+export async function clearErrorLogs(token:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/logs/errors`,{method:'DELETE',headers:authHeaders(token)}));}
+export async function deleteErrorLog(token:string,id:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/logs/errors/${id}`,{method:'DELETE',headers:authHeaders(token)}));}
+
 export async function updateOrderAdmin(
   slug: string,
   token: string,
