@@ -109,3 +109,16 @@ Depois do deploy com Supabase ativo, testar manualmente:
   todos) — as políticas de RLS em `0002_rls_policies.sql` já preveem um claim
   `restaurant_id` no JWT para esse cenário, mas a autenticação por
   restaurante em si ainda não existe.
+
+## Biblioteca de fotos por restaurante
+
+A migration `supabase/migrations/0016_media_library.sql` cria:
+
+- tabela `media_assets` para catálogo/metadata das imagens;
+- bucket público `restaurant-media` no Supabase Storage;
+- limite de 8 MB e tipos JPG/PNG/WebP/GIF/AVIF;
+- índices por restaurante, tipo e entidade.
+
+Em produção, com `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`, o backend grava o arquivo no Supabase Storage e registra a referência em `media_assets`. O caminho do objeto é sempre prefixado pelo slug do restaurante (`<slug>/...`), evitando mistura entre lojas.
+
+O backend mantém fallback para Cloudinary e disco local, nessa ordem, para não quebrar ambientes antigos.
