@@ -46,13 +46,18 @@ export interface MenuData {
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = `Erro na requisição (${res.status})`;
+    let code = '';
+    let requestId = res.headers.get('x-request-id') || '';
     try {
       const body = await res.json();
-      if (body?.error) message = body.error;
+      if (body?.error) message = String(body.error);
+      if (body?.code) code = String(body.code);
+      if (body?.requestId) requestId = String(body.requestId);
     } catch {
       // ignora corpo não-JSON
     }
-    throw new Error(message);
+    const suffix = [code && `código: ${code}`, requestId && `pedido/solicitação: ${requestId}`].filter(Boolean).join(' | ');
+    throw new Error(suffix ? `${message} (${suffix})` : message);
   }
   return res.json();
 }
