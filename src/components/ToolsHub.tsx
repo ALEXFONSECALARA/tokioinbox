@@ -380,11 +380,11 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
           <span>Simulador de Pedidos (Testes)</span>
         </button>
 
-        <button onClick={() => setActiveSubTool('diagnostics')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='diagnostics'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Activity className="w-4 h-4"/><span>Diagnóstico V19</span></button>
+        <button onClick={() => setActiveSubTool('diagnostics')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='diagnostics'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Activity className="w-4 h-4"/><span>Diagnóstico V22</span></button>
 
         <button onClick={() => setActiveSubTool('maintenance')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='maintenance'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><Wrench className="w-4 h-4"/><span>Históricos & Logs</span></button>
 
-        <button onClick={() => setActiveSubTool('production')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='production'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><ShieldCheck className="w-4 h-4"/><span>Produção V19</span></button>
+        <button onClick={() => setActiveSubTool('production')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='production'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><ShieldCheck className="w-4 h-4"/><span>Produção V22</span></button>
         <button onClick={() => setActiveSubTool('drivers')} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap ${activeSubTool==='drivers'?'bg-amber-500 text-slate-950 font-black shadow-xs':'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'}`}><UsersRound className="w-4 h-4"/><span>Entregadores</span></button>
         <button
           onClick={() => setActiveSubTool('backup_export')}
