@@ -82,13 +82,23 @@ export interface OrderRealtimeEvent {
   version?: number;
 }
 
+export function subscribeToAllOrderEvents(
+  token: string,
+  onEvent: (event: OrderRealtimeEvent) => void,
+  signal?: AbortSignal,
+  onState?: (state: 'connecting' | 'online' | 'reconnecting' | 'offline') => void
+): () => void {
+  return subscribeToOrderEvents('__all__', token, onEvent, signal, 'admin', onState, true);
+}
+
 export function subscribeToOrderEvents(
   slug: string,
   token: string,
   onEvent: (event: OrderRealtimeEvent) => void,
   signal?: AbortSignal,
   audience: 'admin' | 'customer' = 'admin',
-  onState?: (state: 'connecting' | 'online' | 'reconnecting' | 'offline') => void
+  onState?: (state: 'connecting' | 'online' | 'reconnecting' | 'offline') => void,
+  globalAdmin = false
 ): () => void {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -99,7 +109,8 @@ export function subscribeToOrderEvents(
     onState?.('connecting');
     while (!stopped && !controller.signal.aborted) {
       try {
-        const res = await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/order-events?audience=${audience}`, {
+        const eventUrl = globalAdmin ? `${API_PREFIX}/admin/order-events` : `${API_PREFIX}/${encodeURIComponent(slug)}/order-events?audience=${audience}`;
+        const res = await fetch(eventUrl, {
           headers: authHeaders(token), signal: controller.signal, cache: 'no-store'
         });
         if (!res.ok || !res.body) {
@@ -216,7 +227,7 @@ export async function createOrder(slug: string, order: Order, customerToken?: st
   throw finalError;
 }
 export async function fetchOrder(slug: string, orderId: string): Promise<Order> {
-  const res = await fetch(`${API_PREFIX}/${slug}/orders/${orderId}`);
+  const res = await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/orders/${encodeURIComponent(orderId)}`);
   return handleResponse<Order>(res);
 }
 
@@ -238,6 +249,12 @@ export async function adminLogin(password: string): Promise<string> {
 export async function fetchRestaurantsAdmin(token: string): Promise<RestaurantSummary[]> {
   const res = await fetch(`${API_PREFIX}/admin/restaurants`, { headers: authHeaders(token) });
   return handleResponse<RestaurantSummary[]>(res);
+}
+
+export interface AdminSession { isMaster: boolean; restaurantSlug: string | null; permissions: Record<string, boolean>; }
+export async function fetchAdminSession(token: string): Promise<AdminSession> {
+  const res = await fetch(`${API_PREFIX}/admin/session`, { headers: authHeaders(token), cache: 'no-store' });
+  return handleResponse<AdminSession>(res);
 }
 
 export async function setRestaurantActive(
@@ -342,8 +359,13 @@ export async function fetchOrdersAdmin(slug: string, token: string): Promise<Ord
   return handleResponse<Order[]>(res);
 }
 
-export async function deleteOrderAdmin(slug:string, token:string, orderId:string):Promise<Order>{ const res=await fetch(`${API_PREFIX}/${slug}/orders/${orderId}`,{method:'DELETE',headers:authHeaders(token)}); const data=await handleResponse<{order:Order}>(res); return data.order; }
-export async function clearOrderHistory(slug:string, token:string):Promise<number>{ const res=await fetch(`${API_PREFIX}/${slug}/orders/history`,{method:'DELETE',headers:authHeaders(token)}); const data=await handleResponse<{removed:number}>(res); return data.removed; }
+export async function fetchAllOrdersAdmin(token: string): Promise<Order[]> {
+  const res = await fetch(`${API_PREFIX}/admin/orders`, { headers: authHeaders(token), cache: 'no-store' });
+  return handleResponse<Order[]>(res);
+}
+
+export async function deleteOrderAdmin(slug:string, token:string, orderId:string):Promise<Order>{ const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/orders/${encodeURIComponent(orderId)}`,{method:'DELETE',headers:authHeaders(token)}); const data=await handleResponse<{order:Order}>(res); return data.order; }
+export async function clearOrderHistory(slug:string, token:string):Promise<number>{ const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/orders/history`,{method:'DELETE',headers:authHeaders(token)}); const data=await handleResponse<{removed:number}>(res); return data.removed; }
 export interface AdminLoginLog {id:string;createdAt:string;adminUserId?:string|null;login?:string|null;success:boolean;mode:string;ip?:string|null;userAgent?:string|null;details?:Record<string,unknown>}
 export interface ErrorLog {id:string;createdAt:string;level:string;context?:string|null;message:string;stack?:string|null;restaurantSlug?:string|null;details?:Record<string,unknown>}
 export async function fetchAdminLoginLogs(token:string):Promise<AdminLoginLog[]>{const res=await fetch(`${API_PREFIX}/admin/logs/login`,{headers:authHeaders(token)});return (await handleResponse<{logs:AdminLoginLog[]}>(res)).logs;}
@@ -360,7 +382,7 @@ export async function updateOrderAdmin(
   patch: Partial<Order>,
   expectedUpdatedAt?: string
 ): Promise<Order> {
-  const res = await fetch(`${API_PREFIX}/${slug}/orders/${orderId}`, {
+  const res = await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/orders/${encodeURIComponent(orderId)}`, {
     method: 'PATCH',
     headers: authHeaders(token),
     body: JSON.stringify({ ...patch, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) }),
