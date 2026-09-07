@@ -300,7 +300,9 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
     let apple=document.querySelector('link[rel="apple-touch-icon"]') as HTMLLinkElement | null;
     if(!apple){apple=document.createElement('link');apple.rel='apple-touch-icon';document.head.appendChild(apple)}
     if(restaurantConfig.logo) apple.href=restaurantConfig.logo;
-    if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+    if('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((regs)=>Promise.all(regs.map((r)=>r.unregister()))).finally(()=>{ navigator.serviceWorker.register('/sw.js?v=24').catch(()=>{}); });
+    }
   }, [isMenuLoading, restaurantSlug, restaurantConfig?.name, restaurantConfig?.logo]);
 
   // Decide se mostra a splash screen: só se o admin ativou e cadastrou fotos,
