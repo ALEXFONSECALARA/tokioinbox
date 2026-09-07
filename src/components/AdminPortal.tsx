@@ -4,6 +4,8 @@ import {
   adminLogin,
   adminUserLogin,
   fetchRestaurantsAdmin,
+  fetchAdminSession,
+  fetchAllOrdersAdmin,
   setRestaurantActive,
   fetchMenu,
   fetchOrdersAdmin,
@@ -16,6 +18,7 @@ import {
   deleteOrderAdmin,
   clearOrderHistory,
   subscribeToOrderEvents,
+  subscribeToAllOrderEvents,
   PlatformSettings,
   RestaurantSummary,
 } from '../utils/api';
@@ -267,6 +270,7 @@ export const AdminPortal: React.FC = () => {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(TOKEN_KEY));
   const [restaurants, setRestaurants] = useState<RestaurantSummary[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [isMaster, setIsMaster] = useState(false);
   // Slug de quem os dados abaixo (menuItems/categories/restaurantConfig/orders)
   // realmente pertencem no momento — só muda quando uma resposta da API chega.
   // Evita a "tela em branco piscando dado errado": enquanto loadedSlug !==
@@ -349,6 +353,16 @@ export const AdminPortal: React.FC = () => {
     [selectedSlug, isDirty]
   );
 
+  useEffect(() => {
+    if (!token) { setIsMaster(false); return; }
+    fetchAdminSession(token).then((session) => {
+      setIsMaster(session.isMaster || session.permissions?.admin_gerenciar_restaurantes === true);
+      if (session.restaurantSlug) setSelectedSlug((prev) => prev || session.restaurantSlug);
+    }).catch((err) => {
+      if (String(err?.message || '').includes('Não autorizado')) handleLogout();
+    });
+  }, [token, handleLogout]);
+
   // Carrega a lista de TODOS os restaurantes (ativos e inativos) assim que
   // loga — o super-admin precisa ver e poder reativar os desativados aqui,
   // diferente da vitrine pública "/" (que só mostra os ativos).
@@ -393,7 +407,7 @@ export const AdminPortal: React.FC = () => {
     latestRequestedSlugRef.current = selectedSlug;
     const requestedSlug = selectedSlug;
     setLoading(true);
-    Promise.all([fetchMenu(requestedSlug), fetchOrdersAdmin(requestedSlug, token)])
+    Promise.all([fetchMenu(requestedSlug), isMaster ? fetchAllOrdersAdmin(token) : fetchOrdersAdmin(requestedSlug, token)])
       .then(([menu, orderList]) => {
         // Uma seleção mais nova já foi feita enquanto isso carregava — descarta.
         if (latestRequestedSlugRef.current !== requestedSlug) return;
@@ -416,7 +430,7 @@ export const AdminPortal: React.FC = () => {
       .finally(() => {
         if (latestRequestedSlugRef.current === requestedSlug) setLoading(false);
       });
-  }, [token, selectedSlug, handleLogout]);
+  }, [token, selectedSlug, isMaster, handleLogout]);
 
   // Atualiza os pedidos periodicamente (novo pedido chegando de um cliente) e
   // toca o alerta sonoro quando um pedido GENUINAMENTE novo aparece — o
@@ -428,7 +442,7 @@ export const AdminPortal: React.FC = () => {
     if (!token || !selectedSlug) return;
     const slugAtScheduleTime = selectedSlug;
     const refreshOrders = () => {
-      fetchOrdersAdmin(slugAtScheduleTime, token).then((list) => {
+      (isMaster ? fetchAllOrdersAdmin(token) : fetchOrdersAdmin(slugAtScheduleTime, token)).then((list) => {
         if (latestRequestedSlugRef.current !== slugAtScheduleTime) return;
         const known = knownOrderIdsRef.current;
         const newOnes = known ? list.filter((o) => !known.has(o.id)) : [];
@@ -447,44 +461,68 @@ export const AdminPortal: React.FC = () => {
     const onVisible = () => { if (document.visibilityState === 'visible') refreshOrders(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); window.removeEventListener('tokio:admin-refresh-orders', onManualRefresh); document.removeEventListener('visibilitychange', onVisible); };
-  }, [token, selectedSlug, soundEnabled]);
+  }, [token, selectedSlug, isMaster, soundEnabled]);
 
-  // Canal em tempo real: todos os painéis conectados ao mesmo restaurante recebem
-  // a mesma mudança assim que o servidor grava. O polling continua como fallback.
+  // Canal em tempo real: o login mestre assina UM canal global e recebe
+  // eventos de todos os restaurantes simultaneamente. Usuário restrito assina
+  // apenas o restaurante ao qual pertence. O polling continua como fallback.
   useEffect(() => {
     if (!token || !selectedSlug) return;
-    const stop = subscribeToOrderEvents(selectedSlug, token, (event) => {
-      if (event.type === 'created' && event.status === 'recebido' && event.orderId) {
-        pendingAlertIdsRef.current.add(event.orderId);
-        if (soundEnabled) { playOrderAlertSound(); try { navigator.vibrate?.([300,120,300]); } catch {} }
-      }
-      if (event.type === 'updated' && event.orderId && event.status !== 'recebido') pendingAlertIdsRef.current.delete(event.orderId);
-      fetchOrdersAdmin(selectedSlug, token).then(next => {
-        if (latestRequestedSlugRef.current !== selectedSlug) return;
-        knownOrderIdsRef.current = new Set(next.map(o => o.id));
-        setOrders(next);
+    const refresh = () => {
+      const request = isMaster ? fetchAllOrdersAdmin(token) : fetchOrdersAdmin(selectedSlug, token);
+      request.then(next => {
+        if (isMaster || latestRequestedSlugRef.current === selectedSlug) {
+          knownOrderIdsRef.current = new Set(next.map(o => o.id));
+          setOrders(next);
+        }
       }).catch(() => {});
-    }, undefined, 'admin', setRealtimeState);
+    };
+    const stop = isMaster
+      ? subscribeToAllOrderEvents(token, (event) => {
+          if (event.type === 'created' && event.status === 'recebido' && event.orderId) {
+            pendingAlertIdsRef.current.add(event.orderId);
+            if (soundEnabled) { playOrderAlertSound(); try { navigator.vibrate?.([300,120,300]); } catch {} }
+          }
+          if (event.type === 'updated' && event.orderId && event.status !== 'recebido') pendingAlertIdsRef.current.delete(event.orderId);
+          refresh();
+        }, undefined, setRealtimeState)
+      : subscribeToOrderEvents(selectedSlug, token, (event) => {
+          if (event.type === 'created' && event.status === 'recebido' && event.orderId) {
+            pendingAlertIdsRef.current.add(event.orderId);
+            if (soundEnabled) { playOrderAlertSound(); try { navigator.vibrate?.([300,120,300]); } catch {} }
+          }
+          if (event.type === 'updated' && event.orderId && event.status !== 'recebido') pendingAlertIdsRef.current.delete(event.orderId);
+          refresh();
+        }, undefined, 'admin', setRealtimeState);
     return stop;
-  }, [token, selectedSlug, soundEnabled]);
+  }, [token, selectedSlug, isMaster, soundEnabled]);
 
-  useEffect(()=>{if(!token||!selectedSlug||!soundEnabled)return;const tick=()=>{const ids=[...pendingAlertIdsRef.current];if(!ids.length)return;playOrderAlertSound();try{navigator.vibrate?.([300,120,300])}catch{}const now=Date.now();ids.forEach(id=>{const last=lastVoiceAlertAtRef.current[id]||0;if(now-last>12000&&'speechSynthesis' in window){const o=orders.find(x=>x.id===id);if(o){const u=new SpeechSynthesisUtterance(`Novo pedido ${o.orderNumber}. Toque para aceitar.`);u.lang='pt-BR';u.rate=1.05;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);lastVoiceAlertAtRef.current[id]=now}}})};const t=setInterval(tick,4500);return()=>clearInterval(t)},[token,selectedSlug,soundEnabled,orders]);
+  useEffect(()=>{if(!token||!selectedSlug||!soundEnabled)return;const tick=()=>{const ids=[...pendingAlertIdsRef.current];if(!ids.length)return;playOrderAlertSound();try{navigator.vibrate?.([300,120,300])}catch{}const now=Date.now();ids.forEach(id=>{const last=lastVoiceAlertAtRef.current[id]||0;if(now-last>12000&&'speechSynthesis' in window){const o=orders.find(x=>x.id===id);if(o){const u=new SpeechSynthesisUtterance(`Novo pedido ${o.orderNumber} do restaurante ${o.restaurantName || o.restaurantSlug || ''}. Toque para aceitar.`);u.lang='pt-BR';u.rate=1.05;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);lastVoiceAlertAtRef.current[id]=now}}})};const t=setInterval(tick,4500);return()=>clearInterval(t)},[token,selectedSlug,soundEnabled,orders]);
 
-  const handleDeleteOrder = useCallback(async(orderId:string)=>{if(!selectedSlug||!token)return false;try{await deleteOrderAdmin(selectedSlug,token,orderId);pendingAlertIdsRef.current.delete(orderId);setOrders(prev=>prev.filter(o=>o.id!==orderId));return true}catch(err:any){alert(err?.message||'Não foi possível excluir o pedido.');return false}},[selectedSlug,token]);
+  const handleDeleteOrder = useCallback(async(orderId:string)=>{if(!selectedSlug||!token)return false;const target=orders.find(o=>o.id===orderId);const orderSlug=target?.restaurantSlug||selectedSlug;try{await deleteOrderAdmin(orderSlug,token,orderId);pendingAlertIdsRef.current.delete(orderId);setOrders(prev=>prev.filter(o=>o.id!==orderId));return true}catch(err:any){alert(err?.message||'Não foi possível excluir o pedido.');return false}},[selectedSlug,token]);
   const pendingAlerts = orders.filter(o => o.status === 'recebido' && pendingAlertIdsRef.current.has(o.id));
   const acceptPendingOrder = useCallback(async () => {
     const order = pendingAlerts[0];
-    if (!order || !selectedSlug || !token) return;
+    const orderSlug = order?.restaurantSlug || selectedSlug;
+    if (!order || !orderSlug || !token) return;
     try {
-      await updateOrderAdmin(selectedSlug, token, order.id, { status: 'em_preparo' });
+      const updated = await updateOrderAdmin(orderSlug, token, order.id, { status: 'em_preparo' }, order.updatedAt);
       pendingAlertIdsRef.current.delete(order.id);
-      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'em_preparo' } : o));
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       try { navigator.vibrate?.([80,60,80]); } catch {}
     } catch (err:any) {
       alert(err?.message || 'Não foi possível aceitar o pedido.');
     }
   }, [pendingAlerts, selectedSlug, token]);
-  const handleClearHistory = useCallback(async()=>{if(!selectedSlug||!token)return false;try{const removed=await clearOrderHistory(selectedSlug,token);setOrders(prev=>prev.filter(o=>!['entregue','cancelado'].includes(o.status)));alert(`${removed} pedido(s) removido(s) do histórico.`);return true}catch(err:any){alert(err?.message||'Não foi possível limpar o histórico.');return false}},[selectedSlug,token]);
+  const handleClearHistory = useCallback(async()=>{
+    if(!selectedSlug||!token)return false;
+    try{
+      const removed=await clearOrderHistory(selectedSlug,token);
+      setOrders(prev=>prev.filter(o=>o.restaurantSlug!==selectedSlug || !['entregue','cancelado'].includes(o.status)));
+      alert(`${removed} pedido(s) removido(s) do histórico de ${selectedSlug}.`);
+      return true;
+    }catch(err:any){alert(err?.message||'Não foi possível limpar o histórico.');return false}
+  },[selectedSlug,token]);
   const handleInjectDemoOrder = useCallback((order: Order) => {
     if (!selectedSlug) return;
     setOrders(prev => [order, ...prev.filter(o => o.id !== order.id)]);
@@ -514,22 +552,29 @@ export const AdminPortal: React.FC = () => {
     );
   }
 
-  const handleUpdateOrderStatus = (orderId: string, status: OrderStatus, driver?: DriverInfo, cancelReason?: string) => {
+  const handleUpdateOrderStatus = async (orderId: string, status: OrderStatus, driver?: DriverInfo, cancelReason?: string): Promise<boolean> => {
     const target = orders.find((o) => o.id === orderId);
-    if (!target) return;
+    if (!target || !token) return false;
     const patch: Partial<Order> = { status, ...(driver ? { driver } : {}), ...(status === 'cancelado' ? { cancelReason: cancelReason || target.cancelReason } : {}) };
+    const orderSlug = target.restaurantSlug || selectedSlug;
+    if (!orderSlug) return false;
+    // Atualização otimista: o Kanban muda imediatamente no celular/PC, mas
+    // qualquer falha do servidor restaura o pedido e informa o motivo.
     setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...patch } : o)));
     playSoundEffect('notification');
-    updateOrderAdmin(selectedSlug, token, orderId, patch, target.updatedAt).then((serverOrder) => {
+    try {
+      const serverOrder = await updateOrderAdmin(orderSlug, token, orderId, patch, target.updatedAt);
       setOrders((prev) => prev.map((o) => (o.id === serverOrder.id ? serverOrder : o)));
-    }).catch((err: any) => {
+      return true;
+    } catch (err: any) {
+      setOrders((prev) => prev.map((o) => (o.id === target.id ? target : o)));
       if (err?.message?.includes('alterado em outro dispositivo')) {
-        fetchOrdersAdmin(selectedSlug, token).then(setOrders).catch(() => {});
-      } else {
-        setOrders((prev) => prev.map((o) => (o.id === target.id ? target : o)));
-        console.error('Erro ao atualizar pedido:', err);
+        const fresh = isMaster ? await fetchAllOrdersAdmin(token) : await fetchOrdersAdmin(selectedSlug!, token);
+        setOrders(fresh);
       }
-    });
+      alert(err?.message || 'Não foi possível atualizar o pedido.');
+      return false;
+    }
   };
 
   const persistMenuItems = async (items: MenuItem[]): Promise<boolean> => {
@@ -614,7 +659,7 @@ export const AdminPortal: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-stone-100">
+    <div className="admin-root min-h-screen bg-stone-100">
       {/* Banner de erro ao salvar (Fase 4) — antes uma falha ficava só no
           console.error, invisível pro admin, que achava que tinha salvo. */}
       {saveError && (
@@ -698,7 +743,7 @@ export const AdminPortal: React.FC = () => {
           aria-label={`Aceitar pedido ${pendingAlerts[0].orderNumber}`}
         >
           <span className="w-3 h-3 rounded-full bg-white animate-pulse shrink-0" />
-          <span className="text-left flex-1"><strong className="block text-sm font-black">PEDIDO #{pendingAlerts[0].orderNumber}</strong><span className="text-xs text-emerald-50">Toque para aceitar e enviar para preparo</span></span>
+          <span className="text-left flex-1"><strong className="block text-sm font-black">PEDIDO #{pendingAlerts[0].orderNumber}</strong><span className="text-xs text-emerald-50">{pendingAlerts[0].restaurantName || pendingAlerts[0].restaurantSlug} · toque para aceitar</span></span>
           <span className="text-xs font-black bg-white/15 px-2 py-1 rounded-lg">ACEITAR</span>
         </button>
       )}
@@ -722,6 +767,7 @@ export const AdminPortal: React.FC = () => {
         onUpdateMenuItems={persistMenuItems}
         onUpdateCategories={persistCategories}
         restaurantConfig={restaurantConfig}
+        globalOrderView={isMaster}
         onUpdateConfig={handleUpdateConfig}
         onCloseAdmin={() => (window.location.href = '/')}
         onDirtyChange={setIsDirty}

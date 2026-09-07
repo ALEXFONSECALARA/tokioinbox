@@ -84,7 +84,8 @@ interface AdminDashboardProps {
   // grava nada nesses restaurantes, só lê pra copiar.
   otherRestaurants?: { slug: string; name: string }[];
   orders: Order[];
-  onUpdateOrderStatus: (orderId: string, status: OrderStatus, driver?: DriverInfo, cancelReason?: string) => void;
+  globalOrderView?: boolean;
+  onUpdateOrderStatus: (orderId: string, status: OrderStatus, driver?: DriverInfo, cancelReason?: string) => Promise<boolean>;
   onDeleteOrder?: (orderId: string) => Promise<boolean>;
   onClearOrderHistory?: () => Promise<boolean>;
   menuItems: MenuItem[];
@@ -119,6 +120,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   token,
   otherRestaurants,
   orders,
+  globalOrderView = false,
   onUpdateOrderStatus,
   onDeleteOrder,
   onClearOrderHistory,
@@ -300,6 +302,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Order Dispatch Modal (assigning driver)
   const [dispatchOrder, setDispatchOrder] = useState<Order | null>(null);
+  const [dispatchDrivers, setDispatchDrivers] = useState<DriverInfo[]>([]);
   // Cancelamento de pedido com motivo obrigatório (fica registrado no
   // histórico do pedido — nunca cancela silenciosamente).
   const [cancelOrderTarget, setCancelOrderTarget] = useState<Order | null>(null);
@@ -942,10 +945,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Dispatch Order with Driver
-  const handleStartDispatch = (order: Order) => {
+  const handleStartDispatch = async (order: Order) => {
+    let drivers = localConfig.drivers || [];
+    if (globalOrderView && order.restaurantSlug && order.restaurantSlug !== slug) {
+      try {
+        const data = await fetchMenu(order.restaurantSlug);
+        drivers = data.restaurantConfig?.drivers || [];
+      } catch {
+        alert('Não foi possível carregar os entregadores deste restaurante.');
+        return;
+      }
+    }
+    setDispatchDrivers(drivers);
     setDispatchOrder(order);
-    const availableDrivers = (localConfig.drivers || []).filter((d) => d.status === 'available');
-    setSelectedDriverId(availableDrivers[0]?.id || localConfig.drivers?.[0]?.id || '');
+    const availableDrivers = drivers.filter((d) => d.status === 'available');
+    setSelectedDriverId(availableDrivers[0]?.id || drivers[0]?.id || '');
   };
 
   const CANCEL_REASON_SUGGESTIONS = [
@@ -956,9 +970,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     'Não foi possível contatar o cliente',
   ];
 
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     if (!cancelOrderTarget || !cancelReasonInput.trim()) return;
-    onUpdateOrderStatus(cancelOrderTarget.id, 'cancelado', undefined, cancelReasonInput.trim());
+    const ok = await onUpdateOrderStatus(cancelOrderTarget.id, 'cancelado', undefined, cancelReasonInput.trim());
+    if (!ok) return;
     setCancelOrderTarget(null);
     setCancelReasonInput('');
     playSoundEffect('beep');
@@ -966,8 +981,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Pedidos "atualmente elegíveis" pra cancelamento em massa/cancelar todos —
   // nunca inclui os que já estão cancelados ou já entregues (item 25).
-  const cancellableOrders = orders.filter((o) => o.status !== 'cancelado' && o.status !== 'entregue');
-  const cancelledOrdersList = orders.filter((o) => o.status === 'cancelado');
+  const scopedOrders = globalOrderView ? orders.filter((o) => o.restaurantSlug === slug) : orders;
+  const cancellableOrders = scopedOrders.filter((o) => o.status !== 'cancelado' && o.status !== 'entregue');
+  const cancelledOrdersList = scopedOrders.filter((o) => o.status === 'cancelado');
 
   const toggleOrderSelection = (orderId: string) => {
     setSelectedOrderIds((prev) => {
@@ -978,33 +994,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   };
 
-  const handleConfirmBulkCancel = () => {
+  const handleConfirmBulkCancel = async () => {
     if (!bulkCancelReasonInput.trim() || selectedOrderIds.size === 0) return;
-    selectedOrderIds.forEach((id) => {
-      onUpdateOrderStatus(id, 'cancelado', undefined, bulkCancelReasonInput.trim());
-    });
-    setShowBulkCancelModal(false);
-    setBulkCancelReasonInput('');
-    setSelectedOrderIds(new Set());
-    setSelectionMode(false);
-    playSoundEffect('beep');
+    const results = await Promise.all([...selectedOrderIds].map((id) => onUpdateOrderStatus(id, 'cancelado', undefined, bulkCancelReasonInput.trim())));
+    if (results.every(Boolean)) {
+      setShowBulkCancelModal(false);
+      setBulkCancelReasonInput('');
+      setSelectedOrderIds(new Set());
+      setSelectionMode(false);
+      playSoundEffect('beep');
+    }
   };
 
-  const handleConfirmCancelAll = () => {
+  const handleConfirmCancelAll = async () => {
     if (cancelAllConfirmText.trim().toUpperCase() !== 'CANCELAR' || !cancelAllReasonInput.trim()) return;
-    cancellableOrders.forEach((order) => {
-      onUpdateOrderStatus(order.id, 'cancelado', undefined, cancelAllReasonInput.trim());
-    });
-    setShowCancelAllModal(false);
-    setCancelAllConfirmText('');
-    setCancelAllReasonInput('');
-    playSoundEffect('beep');
+    const results = await Promise.all(cancellableOrders.map((order) => onUpdateOrderStatus(order.id, 'cancelado', undefined, cancelAllReasonInput.trim())));
+    if (results.every(Boolean)) {
+      setShowCancelAllModal(false);
+      setCancelAllConfirmText('');
+      setCancelAllReasonInput('');
+      playSoundEffect('beep');
+    }
   };
 
-  const handleConfirmDispatch = () => {
+  const handleConfirmDispatch = async () => {
     if (!dispatchOrder) return;
-    const chosenDriver = (localConfig.drivers || []).find((d) => d.id === selectedDriverId);
-    onUpdateOrderStatus(dispatchOrder.id, 'saiu_entrega', chosenDriver);
+    const chosenDriver = dispatchDrivers.find((d) => d.id === selectedDriverId);
+    const ok = await onUpdateOrderStatus(dispatchOrder.id, 'saiu_entrega', chosenDriver);
+    if (!ok) return;
     setDispatchOrder(null);
     playSoundEffect('success');
   };
@@ -1022,9 +1039,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const preparingOrders = orders.filter((o) => o.status === 'em_preparo');
   const transitOrders = orders.filter((o) => o.status === 'saiu_entrega' || o.status === 'pronto');
   const finishedOrders = orders.filter((o) => o.status === 'entregue');
+  const historyOrders = orders.filter((o) => (!globalOrderView || o.restaurantSlug === slug) && ['entregue','cancelado'].includes(o.status));
 
   return (
-    <div className="bg-stone-100 min-h-screen pb-16">
+    <div className="admin-root bg-stone-100 min-h-screen pb-16">
       {/* Top Admin Header */}
       <header className="bg-stone-900 text-white border-b border-stone-800 sticky top-11 z-40 px-4 sm:px-6 py-3">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
@@ -1044,9 +1062,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span className="inline-flex items-center gap-1 bg-stone-800 text-amber-400 font-bold px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wide">
                   Restaurante Ativo
                 </span>
-                <span className="font-semibold text-stone-200">{restaurantConfig.name}</span>
+                <span className="font-semibold text-stone-200">{globalOrderView ? 'Todos os restaurantes' : restaurantConfig.name}</span>
                 <span className="text-stone-500">· slug: {slug}</span>
-                <span className="text-stone-500">· {validOrdersCount} pedidos registrados</span>
+                <span className="text-stone-500">· {globalOrderView ? `${orders.length} pedidos em todas as lojas` : `${validOrdersCount} pedidos registrados`}</span>
               </p>
             </div>
           </div>
@@ -1370,7 +1388,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button onClick={async()=>{const n=orders.filter(o=>['entregue','cancelado'].includes(o.status)).length;if(!n)return alert('Não há histórico finalizado para excluir.');if(!window.confirm(`Excluir ${n} pedido(s) do histórico deste restaurante? Esta ação não pode ser desfeita.`))return;if(onClearOrderHistory)await onClearOrderHistory();}} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5"/> Limpar histórico ({orders.filter(o=>['entregue','cancelado'].includes(o.status)).length})</button>
+              <button onClick={async()=>{const n=historyOrders.length;if(!n)return alert('Não há histórico finalizado para excluir.');if(!window.confirm(`Excluir ${n} pedido(s) do histórico deste restaurante? Esta ação não pode ser desfeita.`))return;if(onClearOrderHistory)await onClearOrderHistory();}} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5"/> Limpar histórico ({historyOrders.length})</button>
               <button onClick={async()=>{const url=`${window.location.origin}/r/${toPublicSlug(localConfig.name || slug)}`;try{await navigator.clipboard.writeText(url);alert(`Link exclusivo copiado:
 ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-stone-300 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5"><ExternalLink className="w-3.5 h-3.5"/> Copiar link exclusivo</button>
             </div>
@@ -1436,7 +1454,7 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                               />
                             )}
                             <div>
-                              <span className="text-xs font-black text-amber-700">#{order.orderNumber}</span>
+                              <span className="text-xs font-black text-amber-700">#{order.orderNumber}</span>{globalOrderView && order.restaurantName && <span className="ml-1.5 inline-flex max-w-[150px] truncate bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-md text-[9px] font-bold align-middle" title={order.restaurantName}>{order.restaurantName}</span>}
                               <h4 className="font-bold text-stone-900 text-xs sm:text-sm">
                                 {order.customer.name}
                               </h4>
@@ -1543,7 +1561,7 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                               />
                             )}
                             <div>
-                              <span className="text-xs font-black text-blue-700">#{order.orderNumber}</span>
+                              <span className="text-xs font-black text-blue-700">#{order.orderNumber}</span>{globalOrderView && order.restaurantName && <span className="ml-1.5 inline-flex max-w-[150px] truncate bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-md text-[9px] font-bold align-middle" title={order.restaurantName}>{order.restaurantName}</span>}
                               <h4 className="font-bold text-stone-900 text-xs">{order.customer.name}</h4>
                             </div>
                           </div>
@@ -1632,7 +1650,7 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                               />
                             )}
                             <div>
-                              <span className="text-xs font-black text-purple-700">#{order.orderNumber}</span>
+                              <span className="text-xs font-black text-purple-700">#{order.orderNumber}</span>{globalOrderView && order.restaurantName && <span className="ml-1.5 inline-flex max-w-[150px] truncate bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-md text-[9px] font-bold align-middle" title={order.restaurantName}>{order.restaurantName}</span>}
                               <h4 className="font-bold text-stone-900 text-xs">{order.customer.name}</h4>
                             </div>
                           </div>
@@ -1735,7 +1753,7 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                         className="bg-white p-3 rounded-xl border border-emerald-200 shadow-2xs flex items-center justify-between text-xs"
                       >
                         <div>
-                          <span className="font-black text-stone-800">#{order.orderNumber}</span> - {order.customer.name}
+                          <span className="font-black text-stone-800">#{order.orderNumber}</span> - {order.customer.name} {globalOrderView && order.restaurantName && <span className="ml-1 inline-flex bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-md text-[9px] font-bold">{order.restaurantName}</span>}
                           <span className="text-[10px] text-stone-400 block">
                             {new Date(order.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • {order.customer.address?.neighborhood}
                           </span>
@@ -3771,7 +3789,7 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                 onChange={(e) => setSelectedDriverId(e.target.value)}
                 className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
               >
-                {(localConfig.drivers || []).map((d) => (
+                {dispatchDrivers.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name} ({d.vehicle} - {d.plate}) - {d.status === 'available' ? '🟢 Disponível' : '🟣 Em rota'}
                   </option>

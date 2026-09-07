@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { uploadImage } from '../utils/api';
 import { Upload, Loader2, ImageOff } from 'lucide-react';
 
@@ -38,6 +38,8 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
   const inputId = useId();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => { setImageFailed(false); }, [value]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -91,10 +93,13 @@ export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
             aspect === 'square' ? 'w-16 h-16' : 'w-24 h-14'
           }`}
         >
-          {value ? (
-            <img src={value} alt={label} className="w-full h-full object-cover" />
+          {value && !imageFailed ? (
+            <img src={value} alt={label} className="w-full h-full object-cover" onError={() => setImageFailed(true)} />
           ) : (
-            <ImageOff className="w-5 h-5 text-stone-300" />
+            <div className="flex flex-col items-center justify-center gap-0.5 text-stone-400 px-1 text-center">
+              <ImageOff className="w-5 h-5" />
+              {value && imageFailed && <span className="text-[8px] leading-tight">Foto indisponível</span>}
+            </div>
           )}
           {uploading && (
             <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
