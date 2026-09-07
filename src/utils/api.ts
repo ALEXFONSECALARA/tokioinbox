@@ -190,16 +190,26 @@ export async function createOrder(slug: string, order: Order, customerToken?: st
         cache: 'no-store',
         body: JSON.stringify(order),
       });
+      if (!res.ok && res.status >= 400 && res.status < 500) {
+        await handleResponse(res); // throws immediately; do not retry validation/schema errors
+      }
       await handleResponse(res);
       return;
     } catch (err) {
       lastError = err;
+      const msg = err instanceof Error ? err.message : String(err || '');
+      // Validation/auth/business errors are deterministic. Retrying them only
+      // delays the real message and can make checkout look frozen.
+      if (/Pedido inválido|Modalidade|Total do pedido|indisponível|Restaurante não encontrado|não autorizado|banco .*atualizado|migration/i.test(msg)) break;
       if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
     }
   }
-  throw lastError instanceof Error ? lastError : new Error('Não foi possível enviar o pedido ao restaurante.');
+  const finalError = lastError instanceof Error ? lastError : new Error('Não foi possível enviar o pedido ao restaurante.');
+  // Preserve the server's diagnostic message (and request id when present) so
+  // support can identify the exact failed order instead of showing only a
+  // generic connectivity alert.
+  throw finalError;
 }
-
 export async function fetchOrder(slug: string, orderId: string): Promise<Order> {
   const res = await fetch(`${API_PREFIX}/${slug}/orders/${orderId}`);
   return handleResponse<Order>(res);
