@@ -225,6 +225,8 @@ function orderRowToApi(orderRow, itemRows) {
     customer: orderRow.customer,
     customerId: orderRow.customer_id ?? undefined,
     paymentMethod: orderRow.payment_method,
+    paymentStatus: orderRow.payment_status || 'pendente',
+    paymentConfirmedAt: orderRow.payment_confirmed_at || undefined,
     cardBrand: orderRow.card_brand || undefined,
     cashChangeFor: orderRow.cash_change_for != null ? Number(orderRow.cash_change_for) : undefined,
     status: orderRow.status,
@@ -379,17 +381,19 @@ export async function createOrder(slug, order) {
   const orderRow = {
     id: order.id,
     restaurant_id: restaurantId,
-    order_number: order.orderNumber,
+    order_number: Number(order.orderNumber),
     order_type: order.orderType,
     status: order.status || 'recebido',
-    customer: order.customer,
+    customer: order.customer || {},
     customer_id: order.customerId ?? null,
-    subtotal: order.subtotal,
-    delivery_fee: order.deliveryFee,
-    discount: order.discount,
+    subtotal: Number(order.subtotal) || 0,
+    delivery_fee: Number(order.deliveryFee) || 0,
+    discount: Number(order.discount) || 0,
     coupon_code: order.couponCode ?? null,
-    total: order.total,
-    payment_method: order.paymentMethod,
+    total: Number(order.total) || 0,
+    payment_method: order.paymentMethod ?? null,
+    payment_status: order.paymentStatus ?? 'pendente',
+    payment_confirmed_at: order.paymentConfirmedAt ?? null,
     card_brand: order.cardBrand ?? null,
     cash_change_for: order.cashChangeFor ?? null,
     driver: order.driver ?? null,
@@ -400,43 +404,59 @@ export async function createOrder(slug, order) {
     created_at: order.createdAt || new Date().toISOString(),
   };
 
-  // Idempotência básica (seção 50 do prompt mestre): se o cliente reenviar o
-  // mesmo id (ex: duplo clique), o insert com PK repetida falha com erro
-  // 23505 — tratamos isso como sucesso silencioso, devolvendo o pedido já
-  // existente, em vez de criar um pedido duplicado no restaurante.
-  const { error: insertErr } = await supabase.from('orders').insert(orderRow);
-  if (insertErr) {
-    if (insertErr.code === '23505') {
-      return getOrder(slug, order.id);
-    }
-    throw insertErr;
-  }
-
   const itemRows = (order.items || []).map((item, idx) => ({
     order_id: order.id,
-    id: item.id,
+    id: item.id || `${order.id}-item-${idx}`,
     restaurant_id: restaurantId,
     menu_item_id: item.menuItem?.id ?? null,
     name: item.menuItem?.name || '',
     category_id: item.menuItem?.categoryId ?? null,
-    sector: null, // Fase 3
-    quantity: item.quantity,
-    unit_price: item.unitPrice,
-    total_price: item.totalPrice,
+    sector: item.menuItem?.sector ?? null,
+    quantity: Number(item.quantity) || 1,
+    unit_price: Number(item.unitPrice) || 0,
+    total_price: Number(item.totalPrice) || 0,
     selected_choices: item.selectedChoices || [],
     selected_extras: item.selectedExtras || [],
     special_notes: item.specialNotes ?? null,
     menu_item_snapshot: item.menuItem || {},
     sort_order: idx,
   }));
-  if (itemRows.length > 0) {
-    const { error: itemsErr } = await supabase.from('order_items').insert(itemRows);
-    if (itemsErr) throw itemsErr;
+
+  // Prefer the transactional RPC. This prevents the dangerous V21 failure mode
+  // where the order row is committed but order_items fails, leaving a broken
+  // order that the client sees as "erro" and retries.
+  const { error: rpcErr } = await supabase.rpc('create_order_atomic', {
+    p_order: orderRow,
+    p_items: itemRows,
+  });
+
+  if (!rpcErr) return await getOrder(slug, order.id);
+
+  // During rollout, allow the app to keep working against a database that has
+  // not received 0022 yet. If the function is missing, use a guarded fallback
+  // and roll the order back if item persistence fails.
+  const rpcMissing = rpcErr.code === '42883' || /create_order_atomic.*does not exist/i.test(String(rpcErr.message || ''));
+  if (!rpcMissing) {
+    if (rpcErr.code === '23505') return await getOrder(slug, order.id);
+    throw rpcErr;
   }
 
-  return order;
+  const { error: insertErr } = await supabase.from('orders').insert(orderRow);
+  if (insertErr) {
+    if (insertErr.code === '23505') return await getOrder(slug, order.id);
+    throw insertErr;
+  }
+  try {
+    if (itemRows.length > 0) {
+      const { error: itemsErr } = await supabase.from('order_items').insert(itemRows);
+      if (itemsErr) throw itemsErr;
+    }
+  } catch (err) {
+    await supabase.from('orders').delete().eq('restaurant_id', restaurantId).eq('id', order.id);
+    throw err;
+  }
+  return await getOrder(slug, order.id);
 }
-
 export async function deleteOrder(slug, id) {
   const restaurantId = await resolveRestaurantId(slug); if (!restaurantId) return null;
   const existing = await getOrder(slug, id); if (!existing) return null;
@@ -458,6 +478,8 @@ export async function updateOrder(slug, id, patch, expectedUpdatedAt) {
     estimatedMinutes: 'estimated_minutes',
     cancelReason: 'cancel_reason',
     statusHistory: 'status_history',
+    paymentStatus: 'payment_status',
+    paymentConfirmedAt: 'payment_confirmed_at',
     notes: 'notes',
   };
   for (const [apiKey, col] of Object.entries(map)) {
