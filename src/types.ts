@@ -239,6 +239,9 @@ export interface OrderCustomer {
 }
 
 export interface Order {
+  // Preenchido pelo painel administrativo global; nunca é confiado pelo cliente.
+  restaurantSlug?: string;
+  restaurantName?: string;
   id: string;
   orderNumber: number;
   createdAt: string;

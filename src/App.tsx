@@ -301,7 +301,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
     if(!apple){apple=document.createElement('link');apple.rel='apple-touch-icon';document.head.appendChild(apple)}
     if(restaurantConfig.logo) apple.href=restaurantConfig.logo;
     if('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((regs)=>Promise.all(regs.map((r)=>r.unregister()))).finally(()=>{ navigator.serviceWorker.register('/sw.js?v=24').catch(()=>{}); });
+      navigator.serviceWorker.getRegistrations().then((regs)=>Promise.all(regs.map((r)=>r.unregister()))).finally(()=>{ navigator.serviceWorker.register('/sw.js?v=25').catch(()=>{}); });
     }
   }, [isMenuLoading, restaurantSlug, restaurantConfig?.name, restaurantConfig?.logo]);
 

@@ -7,7 +7,7 @@ const reportClientError=(message:string,details:Record<string,unknown>={})=>{try
 window.addEventListener('error',(e)=>reportClientError(e.message||'Erro de interface',{source:e.filename||'',line:e.lineno||0,column:e.colno||0}));
 window.addEventListener('unhandledrejection',(e)=>reportClientError(String((e.reason as any)?.message||e.reason||'Promise rejeitada')));
 
-class AppErrorBoundary extends React.Component<React.PropsWithChildren, { hasError: boolean }> {
+class AppErrorBoundary extends React.Component<React.PropsWithChildren<{}>, { hasError: boolean }> {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
