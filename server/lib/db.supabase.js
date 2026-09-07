@@ -435,7 +435,15 @@ export async function createOrder(slug, order) {
   // During rollout, allow the app to keep working against a database that has
   // not received 0022 yet. If the function is missing, use a guarded fallback
   // and roll the order back if item persistence fails.
-  const rpcMissing = rpcErr.code === '42883' || /create_order_atomic.*does not exist/i.test(String(rpcErr.message || ''));
+  const rpcMessage = String(rpcErr.message || '');
+  // PostgREST can keep an old schema cache for a short period after the SQL
+  // migration. In that case the function exists in PostgreSQL but the API
+  // returns PGRST202 / 'Could not find the function'. Treat that exactly like
+  // a missing RPC and use the guarded fallback below. This is critical during
+  // Render deploys because otherwise the customer sees a generic checkout
+  // failure even though the normal orders/order_items tables are healthy.
+  const rpcMissing = ['42883', 'PGRST202'].includes(String(rpcErr.code || '')) ||
+    /create_order_atomic.*does not exist|could not find the function/i.test(rpcMessage);
   if (!rpcMissing) {
     if (rpcErr.code === '23505') return await getOrder(slug, order.id);
     throw rpcErr;
