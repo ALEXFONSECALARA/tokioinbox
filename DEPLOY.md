@@ -150,3 +150,19 @@ próprio app do cliente — isso foi removido.)
 2. Rode `node scripts/seed-restaurants.mjs` (ele não sobrescreve restaurantes
    que já existem, só cria os novos)
 3. Pronto — o novo restaurante já aparece na lista (`/`) e no admin (`/admin`)
+
+## V25 — atualização de produção
+
+1. Faça deploy do código V25 no GitHub/Render.
+2. No Supabase SQL Editor, execute **todo o conteúdo** de `supabase/migrations/0023_v25_consolidation.sql`.
+3. Depois execute:
+
+```sql
+NOTIFY pgrst, 'reload schema';
+```
+
+4. Confirme no Render as variáveis `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, `SESSION_SECRET` e `CORS_ORIGINS`.
+5. Abra `/admin`, faça login uma vez e confirme que o Kanban global recebe pedidos de todas as lojas.
+6. Teste pelo menos um pedido em cada restaurante antes de usar a operação real.
+
+A migration V25 é aditiva e não apaga pedidos. Ela também corrige a estrutura antiga de `print_jobs` e sincroniza `order_items.restaurant_id` com o restaurante do pedido antes de criar a restrição estrutural.

@@ -68,3 +68,15 @@ A migração adiciona `updated_at` aos pedidos e impede que uma tela antiga sobr
 ## V19 — Hardening / Bugfix
 
 V19 corrige riscos encontrados na auditoria: senha/CORS obrigatórios em produção, correlation ID, realtime por restaurante, conflito em pagamento, claim/lease da fila de impressão e backup de segurança antes de restore.
+
+## V25 — consolidação de produção
+
+- Um único login mestre em `/admin` abre o Kanban global com pedidos de todos os restaurantes simultaneamente.
+- Cada pedido mantém `restaurantSlug`/`restaurant_id`; ações de aceitar, recusar, cancelar, despachar e excluir usam o restaurante real do pedido.
+- Realtime global por SSE para o super-admin, com polling apenas como fallback.
+- Histórico finalizado/cancelado pode ser excluído e a confirmação usa o restaurante correto.
+- Isolamento estrutural de `order_items.restaurant_id` em relação ao pedido.
+- Migration única de consolidação: `supabase/migrations/0023_v25_consolidation.sql`.
+- Fotos usam Supabase Storage quando configurado; o bucket `restaurant-media` é garantido como público para URLs de prévia.
+- Service Worker atualizado para V25 para evitar frontend antigo em cache.
+- O projeto mantém somente este `README.md` e este `DEPLOY.md`; arquivos README/DEPLOY de versões intermediárias foram removidos.
