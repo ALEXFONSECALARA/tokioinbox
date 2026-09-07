@@ -16,7 +16,7 @@ await test('V22 order repair contract exists', () => {
   assert.match(migration, /create or replace function create_order_atomic/i);
   assert.match(supabase, /supabase\.rpc\('create_order_atomic'/);
   assert.match(supabase, /paymentStatus: 'payment_status'/);
-  assert.match(server, /0022_production_repair\.sql/);
+  assert.match(server, /0023_v25_consolidation\.sql/);
   assert.match(api, /cache: 'no-store'/);
 });
 
