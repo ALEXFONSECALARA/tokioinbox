@@ -440,6 +440,11 @@ export async function createOrder(slug, order) {
 
   if (!rpcErr) return await getOrder(slug, order.id);
 
+  // PGRST204 can be returned by PostgREST when its schema cache does not know
+  // a column referenced by the RPC payload. Treat it as a rollout/schema-cache
+  // problem too, instead of aborting checkout. The direct fallback below can
+  // then omit only the column PostgREST explicitly reports as unknown.
+
   // During rollout, allow the app to keep working against a database that has
   // not received 0022 yet. If the function is missing, use a guarded fallback
   // and roll the order back if item persistence fails.
@@ -450,21 +455,58 @@ export async function createOrder(slug, order) {
   // a missing RPC and use the guarded fallback below. This is critical during
   // Render deploys because otherwise the customer sees a generic checkout
   // failure even though the normal orders/order_items tables are healthy.
-  const rpcMissing = ['42883', 'PGRST202'].includes(String(rpcErr.code || '')) ||
-    /create_order_atomic.*does not exist|could not find the function/i.test(rpcMessage);
+  const rpcMissing = ['42883', 'PGRST202', 'PGRST204'].includes(String(rpcErr.code || '')) ||
+    /create_order_atomic.*does not exist|could not find the function|could not find the .* column/i.test(rpcMessage);
   if (!rpcMissing) {
     if (rpcErr.code === '23505') return await getOrder(slug, order.id);
     throw rpcErr;
   }
 
-  const { error: insertErr } = await supabase.from('orders').insert(orderRow);
-  if (insertErr) {
+  // Some production databases are one migration behind. PostgREST's PGRST204
+  // names the exact column missing from its schema cache. We remove only that
+  // reported key and retry, rather than deleting arbitrary data from the
+  // payload. This keeps checkout operational while the migration/schema cache
+  // is being repaired.
+  const stripUnknownColumn = (payload, err) => {
+    const msg = String(err?.message || '');
+    const match = msg.match(/(?:column|field) ['\"]?([a-zA-Z0-9_]+)['\"]?/i);
+    const column = match?.[1];
+    if (!column || !(column in payload)) return null;
+    const next = { ...payload };
+    delete next[column];
+    return { payload: next, column };
+  };
+
+  let safeOrderRow = { ...orderRow };
+  let insertErr = null;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const result = await supabase.from('orders').insert(safeOrderRow);
+    insertErr = result.error || null;
+    if (!insertErr) break;
     if (insertErr.code === '23505') return await getOrder(slug, order.id);
-    throw insertErr;
+    const stripped = (insertErr.code === 'PGRST204' || insertErr.code === '42703')
+      ? stripUnknownColumn(safeOrderRow, insertErr) : null;
+    if (!stripped) throw insertErr;
+    safeOrderRow = stripped.payload;
   }
+  if (insertErr) throw insertErr;
+
   try {
     if (itemRows.length > 0) {
-      const { error: itemsErr } = await supabase.from('order_items').insert(itemRows);
+      let safeItemRows = itemRows.map((x) => ({ ...x }));
+      let itemsErr = null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const result = await supabase.from('order_items').insert(safeItemRows);
+        itemsErr = result.error || null;
+        if (!itemsErr) break;
+        if (itemsErr.code === 'PGRST204' || itemsErr.code === '42703') {
+          const strippedRows = safeItemRows.map((row) => stripUnknownColumn(row, itemsErr));
+          if (strippedRows.some((x) => !x)) throw itemsErr;
+          safeItemRows = strippedRows.map((x) => x.payload);
+          continue;
+        }
+        throw itemsErr;
+      }
       if (itemsErr) throw itemsErr;
     }
   } catch (err) {
@@ -484,9 +526,33 @@ export async function clearFinishedOrders(slug) {
   if (selectErr) throw selectErr;
   const orderIds = (ids || []).map((x) => x.id);
   if (!orderIds.length) return { removed: 0 };
-  const { error: deleteErr } = await supabase.from('orders').delete().eq('restaurant_id', restaurantId).in('id', orderIds);
+  // Exclui os itens explicitamente antes dos pedidos. Isso torna a limpeza
+  // compatível também com bancos que ainda possuem a FK antiga de order_items
+  // ou uma combinação de constraints sem ON DELETE CASCADE. Sempre restringimos
+  // pelo restaurante para nunca atingir itens de outro estabelecimento.
+  const { error: itemsDeleteErr } = await supabase
+    .from('order_items')
+    .delete()
+    .eq('restaurant_id', restaurantId)
+    .in('order_id', orderIds);
+  if (itemsDeleteErr) throw itemsDeleteErr;
+
+  const { error: deleteErr } = await supabase
+    .from('orders')
+    .delete()
+    .eq('restaurant_id', restaurantId)
+    .in('id', orderIds);
   if (deleteErr) throw deleteErr;
-  return { removed: orderIds.length };
+
+  // Confirma que não sobrou pedido finalizado/cancelado deste restaurante.
+  const { data: remaining, error: verifyErr } = await supabase
+    .from('orders')
+    .select('id')
+    .eq('restaurant_id', restaurantId)
+    .in('status', ['entregue', 'cancelado'])
+    .limit(1);
+  if (verifyErr) throw verifyErr;
+  return { removed: orderIds.length, verified: !remaining?.length };
 }
 
 export async function updateOrder(slug, id, patch, expectedUpdatedAt) {

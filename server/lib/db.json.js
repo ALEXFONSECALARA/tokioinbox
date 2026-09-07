@@ -173,7 +173,15 @@ export async function clearFinishedOrders(slug) {
   const kept = orders.filter((o) => !['entregue', 'cancelado'].includes(o.status));
   const removed = orders.length - kept.length;
   if (removed) await writeJson(ordersPath(slug), kept);
-  return { removed };
+  // Retorna somente sucesso depois de persistir e conferir o arquivo.
+  const after = await readJson(ordersPath(slug), []);
+  const stillFinished = after.some((o) => ['entregue', 'cancelado'].includes(o.status));
+  if (stillFinished) {
+    const err = new Error('Não foi possível confirmar a exclusão do histórico.');
+    err.code = 'HISTORY_DELETE_NOT_CONFIRMED';
+    throw err;
+  }
+  return { removed, verified: true };
 }
 
 export async function updateOrder(slug, id, patch, expectedUpdatedAt) {
