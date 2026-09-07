@@ -1,5 +1,5 @@
-// TokioInbox PWA — V12: shell offline + Push.
-const CACHE = 'tokioinbox-shell-v12';
+// TokioInbox PWA — V24: shell offline + Push.
+const CACHE = 'tokioinbox-shell-v24';
 const SHELL = ['/', '/index.html', '/tokioinbox-mark.svg'];
 
 self.addEventListener('install', (event) => {
