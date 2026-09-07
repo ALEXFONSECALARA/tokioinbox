@@ -518,9 +518,19 @@ export async function updateOrder(slug, id, patch, expectedUpdatedAt) {
   }
   if (Object.keys(row).length === 0) return getOrder(slug, id);
 
+  // Compatibilidade com bancos que ainda não receberam a coluna updated_at.
+  // O V25 usa optimistic locking quando a coluna existe; se o PostgREST/Postgres
+  // informar que updated_at não existe (42703/PGRST204), repetimos a operação
+  // sem esse filtro para que status/cancelamento/recusa continuem funcionando.
+  // A resposta continua normalizando updatedAt para createdAt até a migration ser aplicada.
   let query = supabase.from('orders').update(row).eq('restaurant_id', restaurantId).eq('id', id);
   if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
-  const { data, error } = await query.select('*').maybeSingle();
+  let result = await query.select('*').maybeSingle();
+  const missingUpdatedAt = result.error && (result.error.code === '42703' || result.error.code === 'PGRST204') && /updated[_ ]?at/i.test(String(result.error.message || ''));
+  if (missingUpdatedAt) {
+    result = await supabase.from('orders').update(row).eq('restaurant_id', restaurantId).eq('id', id).select('*').maybeSingle();
+  }
+  const { data, error } = result;
   if (error) throw error;
   if (!data) {
     const current = await getOrder(slug, id);
