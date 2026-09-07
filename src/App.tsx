@@ -517,7 +517,10 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
       if (!openWhatsApp) setIsOrderStatusOpen(true);
     } catch (err) {
       console.error('Não foi possível enviar o pedido ao servidor:', err);
-      alert('Não foi possível enviar o pedido ao restaurante. Verifique sua conexão e tente novamente.');
+      const message = err instanceof Error && err.message
+        ? err.message
+        : 'Não foi possível enviar o pedido ao restaurante. Verifique sua conexão e tente novamente.';
+      alert(`Não foi possível enviar o pedido.\n\n${message}`);
     }
   };
 
