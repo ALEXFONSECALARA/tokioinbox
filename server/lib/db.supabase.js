@@ -433,8 +433,11 @@ export async function createOrder(slug, order) {
   if (!rpcErr) return await getOrder(slug, order.id);
 
   // During rollout, allow the app to keep working against a database that has
-  // not received 0022 yet. If the function is missing, use a guarded fallback
-  // and roll the order back if item persistence fails.
+  // not received 0022 yet. If the function is missing OR the function is
+  // present but PostgreSQL/PostgREST still has an incomplete schema cache, use
+  // a guarded fallback. The fallback also removes only the columns that the
+  // live schema explicitly says it does not know, so one pending migration
+  // does not make the entire checkout unusable.
   const rpcMessage = String(rpcErr.message || '');
   // PostgREST can keep an old schema cache for a short period after the SQL
   // migration. In that case the function exists in PostgreSQL but the API
@@ -442,23 +445,57 @@ export async function createOrder(slug, order) {
   // a missing RPC and use the guarded fallback below. This is critical during
   // Render deploys because otherwise the customer sees a generic checkout
   // failure even though the normal orders/order_items tables are healthy.
-  const rpcMissing = ['42883', 'PGRST202'].includes(String(rpcErr.code || '')) ||
-    /create_order_atomic.*does not exist|could not find the function/i.test(rpcMessage);
+  const rpcMissing = ['42883', 'PGRST202', 'PGRST204'].includes(String(rpcErr.code || '')) ||
+    /create_order_atomic.*does not exist|could not find the function|could not find the '.*' column|column .* does not exist/i.test(rpcMessage);
   if (!rpcMissing) {
     if (rpcErr.code === '23505') return await getOrder(slug, order.id);
     throw rpcErr;
   }
 
-  const { error: insertErr } = await supabase.from('orders').insert(orderRow);
-  if (insertErr) {
-    if (insertErr.code === '23505') return await getOrder(slug, order.id);
-    throw insertErr;
-  }
-  try {
-    if (itemRows.length > 0) {
-      const { error: itemsErr } = await supabase.from('order_items').insert(itemRows);
-      if (itemsErr) throw itemsErr;
+  const removeMissingColumn = (row, err) => {
+    const code = String(err?.code || '');
+    const message = String(err?.message || '');
+    if (!['42703', 'PGRST204'].includes(code)) return null;
+    const match =
+      message.match(/Could not find the '([a-z_]+)' column/i) ||
+      message.match(/column [\"']?([a-z_]+)[\"']? (?:of .* )?does not exist/i);
+    return match ? match[1] : null;
+  };
+
+  const insertOrderResilient = async (initialRow) => {
+    let row = { ...initialRow };
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const { error: insertErr } = await supabase.from('orders').insert(row);
+      if (!insertErr) return { duplicate: false };
+      if (insertErr.code === '23505') return { duplicate: true };
+      const missingColumn = removeMissingColumn(row, insertErr);
+      if (!missingColumn || !(missingColumn in row)) throw insertErr;
+      console.warn(`[checkout-schema-fallback] orders.${missingColumn} não está disponível no schema/cache do Supabase; continuando sem esse campo.`);
+      delete row[missingColumn];
     }
+    throw new Error('Não foi possível persistir o pedido: schema do Supabase incompatível.');
+  };
+
+  const insertItemsResilient = async (rows) => {
+    if (!rows.length) return;
+    let current = rows.map((row) => ({ ...row }));
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const { error: itemsErr } = await supabase.from('order_items').insert(current);
+      if (!itemsErr) return;
+      const missingColumn = removeMissingColumn(current[0] || {}, itemsErr);
+      if (!missingColumn || !(missingColumn in (current[0] || {}))) throw itemsErr;
+      console.warn(`[checkout-schema-fallback] order_items.${missingColumn} não está disponível no schema/cache do Supabase; continuando sem esse campo.`);
+      current = current.map((row) => { const next = { ...row }; delete next[missingColumn]; return next; });
+    }
+    throw new Error('Não foi possível persistir os itens do pedido: schema do Supabase incompatível.');
+  };
+
+  try {
+    const orderInsertResult = await insertOrderResilient(orderRow);
+    // Idempotent retry: the order already exists, so its items are already
+    // persisted and must not be inserted a second time.
+    if (orderInsertResult?.duplicate) return await getOrder(slug, order.id);
+    await insertItemsResilient(itemRows);
   } catch (err) {
     await supabase.from('orders').delete().eq('restaurant_id', restaurantId).eq('id', order.id);
     throw err;
