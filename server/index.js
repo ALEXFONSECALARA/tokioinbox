@@ -36,33 +36,50 @@ if (process.env.NODE_ENV === 'production' && !ADMIN_PASSWORD) {
   throw new Error('ADMIN_PASSWORD é obrigatório em produção.');
 }
 
-// Tokens de sessão do admin ficam em memória (somem se o servidor reiniciar,
-// então o admin só precisa logar de novo — nada grave).
-//
-// Fase 4 (itens 17-19): cada token agora guarda também QUEM logou.
-// userId === null → login mestre (senha única ADMIN_PASSWORD, comportamento
-// de sempre, acesso total, nada muda pra quem já usa isso). userId
-// preenchido → usuário individual, com permissões e restaurante próprios
-// (ver server/lib/permissions.js e requirePermission/requireOwnRestaurant
-// abaixo).
-const adminTokens = new Map(); // token -> { expiresAt, userId }
+// Sessões assinadas e independentes de instância. O V21 guardava os tokens
+// somente em memória; em Render com mais de uma instância, um login feito em
+// uma instância podia chegar à outra e virar 401. O token abaixo contém apenas
+// tipo/usuário/expiração e é validado por HMAC; nenhuma senha vai para o token.
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || ADMIN_PASSWORD;
+const revokedTokens = new Map();
+
+function b64url(value) { return Buffer.from(value).toString('base64url'); }
+function signSession(payload) {
+  const body = b64url(JSON.stringify(payload));
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  return `${body}.${sig}`;
+}
+function verifySession(token) {
+  if (!token || typeof token !== 'string') return null;
+  if (revokedTokens.has(token)) return null;
+  const [body, sig] = token.split('.');
+  if (!body || !sig) return null;
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  try {
+    if (Buffer.byteLength(sig) !== Buffer.byteLength(expected) || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  } catch { return null; }
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (payload?.v !== 1 || !payload?.type || !Number.isFinite(payload.exp) || Date.now() > payload.exp) return null;
+    return payload;
+  } catch { return null; }
+}
+function revokeSession(token, exp) {
+  if (!token) return;
+  revokedTokens.set(token, Number(exp) || Date.now() + 60000);
+}
+setInterval(() => { const now=Date.now(); for (const [t,exp] of revokedTokens) if (exp <= now) revokedTokens.delete(t); }, 60000).unref();
 
 function issueToken(userId = null) {
-  const token = crypto.randomBytes(24).toString('hex');
-  adminTokens.set(token, { expiresAt: Date.now() + TOKEN_TTL_MS, userId });
-  return token;
+  const expiresAt = Date.now() + TOKEN_TTL_MS;
+  return signSession({ v: 1, type: 'admin', userId, exp: expiresAt });
 }
 
 function getTokenSession(token) {
-  if (!token) return null;
-  const session = adminTokens.get(token);
-  if (!session) return null;
-  if (Date.now() > session.expiresAt) {
-    adminTokens.delete(token);
-    return null;
-  }
-  return session;
+  const payload = verifySession(token);
+  if (!payload || payload.type !== 'admin') return null;
+  return { expiresAt: payload.exp, userId: payload.userId ?? null };
 }
 
 // Middleware base: exige um token válido (mestre OU de usuário individual) e
@@ -83,7 +100,7 @@ async function requireAdmin(req, res, next) {
   try {
     const user = await db.getAdminUserById(session.userId);
     if (!user || !user.active) {
-      adminTokens.delete(token);
+      revokeSession(token, session.expiresAt);
       return res.status(401).json({ error: 'Usuário desativado ou não encontrado. Faça login novamente.' });
     }
     req.adminUser = {
@@ -128,27 +145,18 @@ function requireOwnRestaurant(req, res, next) {
 }
 
 // ---------- Sessão do CLIENTE final (Fase 4, itens 20-22) ----------
-// Autenticação separada da do painel (adminTokens) — token mais duradouro
-// (cliente não quer logar de novo a cada pedido) e sem nenhuma noção de
-// permissão/restaurante: uma conta de cliente é global à plataforma.
-const customerTokens = new Map(); // token -> { expiresAt, customerId }
+// Também é assinada para funcionar em qualquer instância do Render. A conta
+// do cliente é global à plataforma e o token não depende de memória local.
 const CUSTOMER_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 dias
 
 function issueCustomerToken(customerId) {
-  const token = crypto.randomBytes(24).toString('hex');
-  customerTokens.set(token, { expiresAt: Date.now() + CUSTOMER_TOKEN_TTL_MS, customerId });
-  return token;
+  return signSession({ v: 1, type: 'customer', customerId, exp: Date.now() + CUSTOMER_TOKEN_TTL_MS });
 }
 
 function getCustomerSession(token) {
-  if (!token) return null;
-  const session = customerTokens.get(token);
-  if (!session) return null;
-  if (Date.now() > session.expiresAt) {
-    customerTokens.delete(token);
-    return null;
-  }
-  return session;
+  const payload = verifySession(token);
+  if (!payload || payload.type !== 'customer' || !payload.customerId) return null;
+  return { expiresAt: payload.exp, customerId: payload.customerId };
 }
 
 function bearerToken(req) {
@@ -270,7 +278,7 @@ app.post('/api/client-errors', async (req,res)=>{try{const message=String(req.bo
 app.get('/api/pwa/manifest', async (req,res)=>{ try{const slug=String(req.query.slug||'').trim();if(!slug||!(await db.restaurantExists(slug)))return res.status(404).json({error:'Restaurante não encontrado.'});const data=await db.readRestaurantData(slug);const cfg=data.restaurantConfig||{};res.set('Cache-Control','no-store');res.json({name:cfg.name||slug,short_name:cfg.name||slug,start_url:`/r/${publicSlug(cfg.name,slug)}`,scope:`/r/${publicSlug(cfg.name,slug)}/`,display:'standalone',background_color:'#070908',theme_color:cfg.color||'#c9a227',description:cfg.tagline||'Delivery',icons:[{src:cfg.logo||'/tokioinbox-mark.svg',sizes:'512x512',type:cfg.logo?'image/png':'image/svg+xml',purpose:'any maskable'}]});}catch(err){logServerError('Erro ao gerar manifesto PWA',err);res.status(500).json({error:'Não foi possível gerar o aplicativo.'})} });
 
 app.get('/api/version', (req, res) => {
-  res.json({ ok: true, version: '19.0.0', release: 'V19', features: ['print-bridge-claim','durable-print-jobs','shared-realtime-per-restaurant','backup-safety-restore','production-security','payment-conflict-control','request-correlation','error-observability'] });
+  res.json({ ok: true, version: '22.0.0', release: 'V22', features: ['atomic-order-persistence','production-schema-repair','shared-realtime-per-restaurant','stateless-sessions','payment-conflict-control','request-correlation','error-observability','print-bridge-claim'] });
 });
 
 app.get('/api/health', async (req, res) => {
@@ -405,8 +413,14 @@ app.post('/api/:slug/orders', async (req, res) => {
   }
   try {
     const order = req.body;
-    if (!order || !order.id) {
-      return res.status(400).json({ error: 'Pedido inválido.' });
+    if (!order || !order.id || !order.customer || !Array.isArray(order.items) || order.items.length === 0) {
+      return res.status(400).json({ error: 'Pedido inválido. Confira os itens e os dados do cliente.', requestId: req.requestId });
+    }
+    if (!['delivery', 'takeaway'].includes(order.orderType)) {
+      return res.status(400).json({ error: 'Modalidade de pedido inválida.', requestId: req.requestId });
+    }
+    if (!Number.isFinite(Number(order.total)) || Number(order.total) < 0) {
+      return res.status(400).json({ error: 'Total do pedido inválido.', requestId: req.requestId });
     }
     // Vincula o pedido ao cliente logado (item 20/22) — nunca confia num
     // customerId enviado pelo corpo da requisição, sempre deriva do token.
@@ -418,8 +432,21 @@ app.post('/api/:slug/orders', async (req, res) => {
     broadcastOrderEvent(slug, { type: 'created', orderId: saved.id, status: saved.status, updatedAt: saved.updatedAt || saved.createdAt, customerId: saved.customerId || null, requestId: req.requestId });
     res.status(201).json({ ok: true, order: saved });
   } catch (err) {
-    logServerError(`Erro ao salvar pedido de ${slug}:`, err);
-    res.status(500).json({ error: 'Não foi possível registrar o pedido.' });
+    logServerError(`Erro ao salvar pedido de ${slug}:`, err, {
+      restaurantSlug: slug,
+      details: { requestId: req.requestId, orderId: req.body?.id || null, code: err?.code || null },
+    });
+    const code = String(err?.code || '');
+    const message = String(err?.message || '');
+    const schemaProblem = ['42P01', '42703', '42883', '23502'].includes(code) ||
+      /relation .* does not exist|column .* does not exist|function .* does not exist/i.test(message);
+    if (schemaProblem) {
+      return res.status(503).json({
+        error: 'O banco do restaurante ainda não está atualizado para receber pedidos. Execute a migration 0022_production_repair.sql no Supabase.',
+        requestId: req.requestId,
+      });
+    }
+    res.status(500).json({ error: 'Não foi possível registrar o pedido. Tente novamente.', requestId: req.requestId });
   }
 });
 
@@ -1494,8 +1521,8 @@ app.post('/api/:slug/drivers', requireAdmin, requireOwnRestaurant, async(req,res
 app.patch('/api/:slug/drivers/:id', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const list=data.restaurantConfig?.drivers||[];const i=list.findIndex(x=>x.id===req.params.id);if(i<0)return res.status(404).json({error:'Entregador não encontrado.'});list[i]={...list[i],...req.body,id:list[i].id};await db.updateConfig(req.params.slug,{drivers:list});res.json({driver:list[i]})}catch(e){res.status(500).json({error:'Não foi possível atualizar entregador.'})}});
 app.delete('/api/:slug/drivers/:id', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const list=data.restaurantConfig?.drivers||[];const next=list.filter(x=>x.id!==req.params.id);if(next.length===list.length)return res.status(404).json({error:'Entregador não encontrado.'});await db.updateConfig(req.params.slug,{drivers:next});res.json({ok:true})}catch(e){res.status(500).json({error:'Não foi possível remover entregador.'})}});
 app.patch('/api/:slug/orders/:id/payment', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const order=await db.getOrder(req.params.slug,req.params.id);if(!order)return res.status(404).json({error:'Pedido não encontrado.'});const status=['pendente','confirmado','recusado','reembolsado'].includes(req.body?.paymentStatus)?req.body.paymentStatus:null;if(!status)return res.status(400).json({error:'Status de pagamento inválido.'});const expectedUpdatedAt=req.body?.expectedUpdatedAt;const updated=await db.updateOrder(req.params.slug,req.params.id,{paymentStatus:status,paymentConfirmedAt:status==='confirmado'?new Date().toISOString():order.paymentConfirmedAt},expectedUpdatedAt);broadcastOrderEvent(req.params.slug,{type:'updated',orderId:updated.id,updatedAt:updated.updatedAt,customerId:updated.customerId||null});res.json({ok:true,order:updated})}catch(e){if(e?.code==='ORDER_CONFLICT')return res.status(409).json({error:e.message,order:e.currentOrder,code:e.code});logServerError('Erro ao atualizar pagamento',e,{restaurantSlug:req.params.slug,details:{requestId:req.requestId}});res.status(500).json({error:'Não foi possível atualizar o pagamento.'})}});
-app.post('/api/admin/logout',(req,res)=>{const t=bearerToken(req);if(t)adminTokens.delete(t);res.json({ok:true})});
-app.post('/api/customers/logout',(req,res)=>{const t=bearerToken(req);if(t)customerTokens.delete(t);res.json({ok:true})});
+app.post('/api/admin/logout',(req,res)=>{const t=bearerToken(req);if(t){const p=verifySession(t);revokeSession(t,p?.exp)}res.json({ok:true})});
+app.post('/api/customers/logout',(req,res)=>{const t=bearerToken(req);if(t){const p=verifySession(t);revokeSession(t,p?.exp)}res.json({ok:true})});
 
 // Em produção, o mesmo processo também serve os arquivos estáticos de dist/
 if (existsSync(DIST_DIR)) {
@@ -1504,6 +1531,19 @@ if (existsSync(DIST_DIR)) {
     res.sendFile(path.join(DIST_DIR, 'index.html'));
   });
 }
+
+// Última barreira: erros de JSON/middleware nunca devem virar HTML genérico.
+// Mantém o diagnóstico correlacionado ao request e evita vazar stack em produção.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const requestId = req.requestId || req.get?.('x-request-id') || crypto.randomUUID();
+  logServerError('Erro não tratado na API', err, { details: { requestId, method: req.method, path: req.path } });
+  const parseError = err?.type === 'entity.parse.failed';
+  res.status(parseError ? 400 : 500).json({
+    error: parseError ? 'JSON inválido na requisição.' : 'Erro interno do servidor.',
+    requestId,
+  });
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
