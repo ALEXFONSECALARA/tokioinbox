@@ -22,6 +22,7 @@ export const restaurantExists = impl.restaurantExists;
 export const restaurantIsActive = impl.restaurantIsActive;
 export const readRestaurantData = impl.readRestaurantData;
 export const listOrders = impl.listOrders;
+export const listOrdersAll = impl.listOrdersAll;
 export const getOrder = impl.getOrder;
 export const createOrder = impl.createOrder;
 export const updateOrder = impl.updateOrder;

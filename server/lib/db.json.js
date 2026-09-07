@@ -136,7 +136,15 @@ export async function readRestaurantData(slug) {
 }
 
 export async function listOrders(slug) {
-  return readJson(ordersPath(slug), []);
+  const orders = await readJson(ordersPath(slug), []);
+  return orders.map((o) => ({ ...o, restaurantSlug: slug }));
+}
+
+export async function listOrdersAll() {
+  const restaurants = await getRestaurantsAdmin();
+  const nameBySlug = new Map((restaurants || []).map((r) => [r.slug, r.name]));
+  const lists = await Promise.all((restaurants || []).map((r) => listOrders(r.slug)));
+  return lists.flat().map((o) => ({ ...o, restaurantName: nameBySlug.get(o.restaurantSlug || '') || o.restaurantSlug })).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export async function getOrder(slug, id) {
