@@ -443,10 +443,18 @@ app.post('/api/:slug/orders', async (req, res) => {
     if (schemaProblem) {
       return res.status(503).json({
         error: 'O banco do restaurante ainda não está atualizado para receber pedidos. Execute a migration 0022_production_repair.sql no Supabase.',
+        code: code || 'SCHEMA_PROBLEM',
         requestId: req.requestId,
       });
     }
-    res.status(500).json({ error: 'Não foi possível registrar o pedido. Tente novamente.', requestId: req.requestId });
+    // Em produção não expõe stack/segredos, mas devolve o código técnico e o
+    // requestId. Isso evita que o checkout masque um erro real como "conexão"
+    // e permite localizar a tentativa exata no log do Render.
+    res.status(500).json({
+      error: 'Não foi possível registrar o pedido. Tente novamente.',
+      code: code || 'ORDER_CREATE_FAILED',
+      requestId: req.requestId,
+    });
   }
 });
 
