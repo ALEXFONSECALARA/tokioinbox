@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #08080a;
+    color: #f1f5f9;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* 4K Matte Black & Gold Luxury Utilities */
+.bg-matte-black {
+  background-color: #09090d;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(217, 119, 6, 0.12) 0%, transparent 55%),
+    radial-gradient(circle at 100% 50%, rgba(180, 83, 9, 0.06) 0%, transparent 45%),
+    radial-gradient(circle at 0% 80%, rgba(245, 158, 11, 0.05) 0%, transparent 40%),
+    linear-gradient(to bottom, rgba(8, 8, 12, 0.98), rgba(6, 6, 8, 1));
+  background-attachment: fixed;
+}
+
+/* Luxury Gold Shimmer Animation */
+@keyframes goldShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-gold-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(245, 158, 11, 0.1) 0%,
+    rgba(251, 191, 36, 0.5) 50%,
+    rgba(245, 158, 11, 0.1) 100%
+  );
+  background-size: 200% 100%;
+  animation: goldShimmer 3.5s infinite linear;
+}
+
+/* Animated Golden Luxury Border */
+.border-gold-luxury {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 15px rgba(217, 119, 6, 0.12), inset 0 0 15px rgba(245, 158, 11, 0.03);
+}
+
+.border-gold-luxury:hover {
+  border-color: rgba(251, 191, 36, 0.7);
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.25), inset 0 0 20px rgba(245, 158, 11, 0.06);
+}
+
+/* Dark Glassmorphism with Gold Accents */
+.glass-gold-card {
+  background: rgba(12, 12, 16, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-gold-card:hover {
+  background: rgba(16, 16, 22, 0.88);
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.9), 0 0 24px rgba(245, 158, 11, 0.22);
+  transform: translateY(-3px);
+}
+
+/* Gold Text Gradient */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #fef08a 0%, #f59e0b 50%, #d97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Gold Metallic Foil Badge */
+.gold-badge {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.08) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.15);
+}
+
+/* Hide scrollbars cleanly while preserving scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
