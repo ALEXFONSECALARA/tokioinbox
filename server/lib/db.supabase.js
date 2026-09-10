@@ -245,7 +245,7 @@ function restaurantRowToSummary(r) {
   const cfg = Array.isArray(r.restaurant_configs) ? r.restaurant_configs[0] : r.restaurant_configs;
   return {
     slug: r.slug,
-    publicSlug: String(r.name || r.slug).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || r.slug,
+    publicSlug: String(r.name || r.slug).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'') || r.slug,
     name: r.name,
     emoji: r.emoji,
     color: cfg?.color || r.color,

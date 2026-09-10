@@ -63,7 +63,7 @@ async function getAllRestaurantsRaw() {
       if (!config) return { ...r, active };
       return {
         slug: r.slug,
-        publicSlug: (config?.name || r.name || r.slug).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || r.slug,
+        publicSlug: (config?.name || r.name || r.slug).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'') || r.slug,
         name: config.name || r.name,
         emoji: r.emoji,
         color: config.color || r.color,
