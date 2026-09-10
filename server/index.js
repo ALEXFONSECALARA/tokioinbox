@@ -273,9 +273,11 @@ const realtimeCursors = new Map();
 setInterval(async()=>{ if(db.backendName!=='supabase')return; try{const restaurants=await db.getRestaurantsAdmin(); for(const r of restaurants||[]){const after=Number(realtimeCursors.get(r.slug)||0); const events=await db.listRealtimeEvents(r.slug,after); for(const e of events){realtimeCursors.set(r.slug,Math.max(Number(realtimeCursors.get(r.slug)||0),Number(e.id))); const payload=e.payload||{}; if(payload.originInstanceId===INSTANCE_ID) continue; deliverOrderEvent(r.slug,payload);}}}catch(err){logServerError('Falha no relay realtime compartilhado',err)} },1500).unref();
 
 function publicSlug(name, fallback) {
+  // Sem hífen entre palavras — o link público é tipo /sakurasushihouse, não
+  // /sakura-sushi-house (item pedido: link curto, sem separadores).
   return String(name || fallback || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || fallback;
+    .toLowerCase().replace(/[^a-z0-9]+/g, '') || fallback;
 }
 
 
@@ -335,7 +337,7 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // ---------- Rotas públicas ----------
 
 app.post('/api/client-errors', async (req,res)=>{try{const message=String(req.body?.message||'Erro de cliente').slice(0,1000);await db.createErrorLog({level:'client',context:'frontend',message,details:req.body?.details||{}});res.status(204).end()}catch{res.status(204).end()}});
-app.get('/api/pwa/manifest', async (req,res)=>{ try{const slug=String(req.query.slug||'').trim();if(!slug||!(await db.restaurantExists(slug)))return res.status(404).json({error:'Restaurante não encontrado.'});const data=await db.readRestaurantData(slug);const cfg=data.restaurantConfig||{};res.set('Cache-Control','no-store');res.json({name:cfg.name||slug,short_name:cfg.name||slug,start_url:`/r/${publicSlug(cfg.name,slug)}`,scope:`/r/${publicSlug(cfg.name,slug)}/`,display:'standalone',background_color:'#070908',theme_color:cfg.color||'#c9a227',description:cfg.tagline||'Delivery',icons:[{src:cfg.logo||'/tokioinbox-mark.svg',sizes:'512x512',type:cfg.logo?'image/png':'image/svg+xml',purpose:'any maskable'}]});}catch(err){logServerError('Erro ao gerar manifesto PWA',err);res.status(500).json({error:'Não foi possível gerar o aplicativo.'})} });
+app.get('/api/pwa/manifest', async (req,res)=>{ try{const slug=String(req.query.slug||'').trim();if(!slug||!(await db.restaurantExists(slug)))return res.status(404).json({error:'Restaurante não encontrado.'});const data=await db.readRestaurantData(slug);const cfg=data.restaurantConfig||{};res.set('Cache-Control','no-store');res.json({name:cfg.name||slug,short_name:cfg.name||slug,start_url:`/${publicSlug(cfg.name,slug)}`,scope:`/${publicSlug(cfg.name,slug)}/`,display:'standalone',background_color:'#070908',theme_color:cfg.color||'#c9a227',description:cfg.tagline||'Delivery',icons:[{src:cfg.logo||'/tokioinbox-mark.svg',sizes:'512x512',type:cfg.logo?'image/png':'image/svg+xml',purpose:'any maskable'}]});}catch(err){logServerError('Erro ao gerar manifesto PWA',err);res.status(500).json({error:'Não foi possível gerar o aplicativo.'})} });
 
 app.get('/api/version', (req, res) => {
   res.json({ ok: true, version: '24.2.0', release: 'V24.2', features: ['atomic-order-persistence','production-schema-repair','shared-realtime-per-restaurant','stateless-sessions','payment-conflict-control','request-correlation','error-observability','print-bridge-claim'] });
@@ -541,6 +543,25 @@ app.post('/api/:slug/orders', async (req, res) => {
     order.customerId = session ? session.customerId : undefined;
     const saved = await db.createOrder(slug, order);
     broadcastOrderEvent(slug, { type: 'created', orderId: saved.id, orderNumber: saved.orderNumber, status: saved.status, updatedAt: saved.updatedAt || saved.createdAt, customerId: saved.customerId || null, requestId: req.requestId });
+    // Impressão automática (item pedido: sistema deve receber o pedido e
+    // imprimir ao mesmo tempo em que aparece no app/Kanban, sem precisar de
+    // clique manual). Se o restaurante ligou "Imprimir novos pedidos
+    // automaticamente" (config.printAutoNewOrders), já cria o print-job de
+    // cozinha na hora — o Print Bridge (agente rodando na impressora
+    // térmica real) fica de olho na fila e imprime em segundos, e qualquer
+    // Kanban/painel aberto também recebe o evento 'print-job-created' em
+    // tempo real (SSE), então impressão física e tela do app ficam em
+    // sincronia com o pedido chegando. Nunca deixa a criação do pedido
+    // falhar por causa da impressão — só loga se algo der errado.
+    try {
+      const cfg = (await db.readRestaurantData(slug))?.restaurantConfig;
+      if (cfg?.printAutoNewOrders) {
+        const job = await db.createPrintJob(slug, { orderId: saved.id, orderNumber: saved.orderNumber, variant: 'kitchen' });
+        if (job) broadcastOrderEvent(slug, { type: 'print-job-created', orderId: saved.id, printJobId: job.id, updatedAt: job.updatedAt, requestId: req.requestId });
+      }
+    } catch (printErr) {
+      logServerError(`Falha ao criar impressão automática ${slug}/${saved.id}:`, printErr, { restaurantSlug: slug, details: { requestId: req.requestId, orderId: saved.id } });
+    }
     res.status(201).json({ ok: true, order: saved });
   } catch (err) {
     logServerError(`Erro ao salvar pedido de ${slug}:`, err, {
@@ -580,7 +601,9 @@ app.post('/api/customers/register', rateLimit({windowMs:60000,max:6,key:'custome
   }
   if (String(name).trim().length < 2) return res.status(400).json({ error: 'Informe seu nome completo.' });
   if (cleanPhone.length < 10 || cleanPhone.length > 13) return res.status(400).json({ error: 'Informe um telefone válido com DDD.' });
-  if (String(password).length < 6) return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres.' });
+  // Senha do cliente = PIN numérico de 4 dígitos (mais rápido de digitar no
+  // celular na hora do pedido do que uma senha alfanumérica tradicional).
+  if (!/^\d{4}$/.test(String(password || ''))) return res.status(400).json({ error: 'A senha deve ter exatamente 4 dígitos numéricos.' });
   if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ error: 'Informe um e-mail válido ou deixe o campo vazio.' });
   try {
     const passwordHash = await hashPassword(password);
@@ -590,9 +613,29 @@ app.post('/api/customers/register', rateLimit({windowMs:60000,max:6,key:'custome
     if (err.code === 'PHONE_TAKEN') {
       return res.status(409).json({ error: 'Já existe uma conta com esse telefone.' });
     }
-    logServerError('Erro ao criar conta de cliente', err);
-    if (err.code === '42P01' || /relation .*customers.* does not exist/i.test(String(err.message || ''))) return res.status(503).json({ error: 'O cadastro de clientes ainda não foi ativado no banco. Execute a migração 0013_customers.sql.' });
-    res.status(500).json({ error: 'Não foi possível criar a conta. Verifique os dados e tente novamente.' });
+    logServerError('Erro ao criar conta de cliente', err, {
+      details: { requestId: req.requestId, code: err?.code || null, phoneLength: cleanPhone.length },
+    });
+    const code = String(err?.code || '');
+    const message = String(err?.message || '');
+    const schemaProblem = ['42P01', '42703', '42883', '23502'].includes(code) ||
+      /relation .* does not exist|column .* does not exist|function .* does not exist/i.test(message);
+    if (schemaProblem) {
+      return res.status(503).json({
+        error: 'O cadastro de clientes ainda não foi ativado no banco. Execute a migração 0013_customers.sql no Supabase.',
+        code: code || 'SCHEMA_PROBLEM',
+        requestId: req.requestId,
+      });
+    }
+    // Devolve o código técnico e o requestId (em vez de só uma mensagem
+    // genérica) pra dar pra achar a causa real no log do Render — antes essa
+    // rota escondia todo erro atrás de "verifique os dados", mesmo quando o
+    // problema não tinha nada a ver com os dados digitados pelo cliente.
+    res.status(500).json({
+      error: 'Não foi possível criar a conta. Tente novamente em instantes.',
+      code: code || 'CUSTOMER_CREATE_FAILED',
+      requestId: req.requestId,
+    });
   }
 });
 
@@ -630,7 +673,12 @@ app.patch('/api/customers/me', requireCustomer, async (req, res) => {
   const patch = {};
   if (name !== undefined) patch.name = name;
   if (email !== undefined) patch.email = email;
-  if (newPassword) patch.passwordHash = await hashPassword(newPassword);
+  if (newPassword) {
+    if (!/^\d{4}$/.test(String(newPassword))) {
+      return res.status(400).json({ error: 'A senha deve ter exatamente 4 dígitos numéricos.' });
+    }
+    patch.passwordHash = await hashPassword(newPassword);
+  }
   try {
     const updated = await db.updateCustomer(req.customerId, patch);
     res.json(publicCustomer(updated));
