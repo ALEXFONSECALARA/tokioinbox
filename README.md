@@ -1,55 +1,70 @@
-# Tokio inBox — Multicardápio
+# TokioInbox — V7 Operação Delivery
 
-Plataforma de delivery multi-restaurante com React + Vite no frontend, Node/Express no backend e Supabase/Postgres como persistência.
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+</div>
 
-## Arquitetura
+# Run and deploy your AI Studio app
 
-- **GitHub:** código-fonte e CI.
-- **Render:** serviço Web Node que serve API e frontend.
-- **Supabase:** banco PostgreSQL persistente.
-- **Cliente:** cardápio por restaurante, carrinho e checkout.
-- **Admin:** login único de super-admin e Kanban global com filtro por restaurante.
-- **Realtime:** SSE do servidor; os pedidos são sempre filtrados por `restaurant_slug`.
+This contains everything you need to run your app locally.
 
-## Restaurantes iniciais
+View your app in AI Studio: https://ai.studio/apps/d50af42b-1b9c-471c-9389-ec1caf300c9a
 
-- Japonês — Sakura Sushi House
-- Italiano — Cantina Bella Vista
-- Pizza — Forno D'Oro Pizzeria
-- Hamburgueria — Burger Craft & Beer
+## Run Locally
 
-## Desenvolvimento local
+**Prerequisites:**  Node.js
 
-```bash
-npm install
-cp .env.example .env
-npm run dev
-```
 
-Para desenvolvimento sem Supabase, o frontend mantém os dados de demonstração locais; para operação real, configure Supabase.
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Generate the seed data for the 4 restaurants (only needed once):
+   `node scripts/seed-restaurants.mjs`
+4. Run the backend (serves the multi-restaurant JSON API):
+   `npm run server`
+5. Run the app (in another terminal):
+   `npm run dev`
 
-## Supabase
+> Este é um sistema **multicardápio**: 4 restaurantes separados (Japonês,
+> Italiano, Pizza, Hamburgueria), cada um com sua própria URL
+> (`/japones`, `/italiano`, `/pizza`, `/hamburgueria`), e um painel único de
+> super-admin em `/admin` (uma senha só) pra gerenciar todos e ver os pedidos.
+> Veja [DEPLOY.md](DEPLOY.md) para detalhes e instruções de deploy no GitHub + Render.
 
-Execute **uma única vez**, no SQL Editor do projeto Supabase:
+## Realtime V6
 
-`supabase/migrations/0001_core.sql`
+Para Supabase, execute também `supabase/migrations/0018_order_realtime_versioning.sql`.
+A migração adiciona `updated_at` aos pedidos e impede que uma tela antiga sobrescreva uma alteração feita em outro dispositivo.
 
-Depois reinicie o serviço Render. Na primeira inicialização com banco vazio, o servidor cria os quatro restaurantes, categorias, produtos e clientes iniciais automaticamente.
 
-**Nunca** coloque `SUPABASE_SERVICE_ROLE_KEY` no frontend ou em variável `VITE_*`.
+## Evolução V7 — operação sem atalhos
 
-## Render
+- Fluxo operacional obrigatório: **Recebido → Em preparo → Pronto → Saiu para entrega → Entregue**.
+- Cancelamento continua separado e protegido por permissão.
+- O backend rejeita transições inválidas, inclusive quando feitas por outro cliente/painel.
+- `statusHistory` recebe a mudança de status no servidor para manter o histórico consistente.
+- Rastreamento do cliente agora mostra a etapa **Pronto** antes de **A caminho**.
+- Impressão ganhou estado visual por pedido: **Pendente → Imprimindo → Impresso**, com **Tentar novamente** em caso de falha de inicialização. O estado é mantido por restaurante na estação do navegador.
+- Kanban reduz a operação a uma ação principal por etapa, favorecendo uso em celular.
 
-O `render.yaml` já define:
+> V7 mantém SSE + polling de pedidos da V6 como mecanismo de sincronização.
 
-- build: `npm install && npm run build`
-- start: `npm start`
-- health check: `/api/health/ready`
+## Evolução V8 — Operação em produção
+- Diagnóstico autenticado por restaurante em `/api/:slug/health`.
+- Readiness separado em `/api/health/ready` para health checks de infraestrutura.
+- O painel agora exibe banco, armazenamento de imagens, Push, IA, conexões realtime, volume de pedidos e alertas operacionais.
+- O diagnóstico detecta cardápio vazio, categorias ausentes, produtos sem imagem, WhatsApp ausente e status operacional inválido.
+- Endpoint global `/api/health` passou a informar latência, uptime, backend de dados e capacidades ativas.
 
-Configure no Render:
+## Evolução V9 → V12
 
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `CORS_ORIGINS` e, opcionalmente, `GEMINI_API_KEY`.
+- **V9:** fila de impressão persistente por restaurante/dispositivo, com estados operacionais e retomada após reload.
+- **V10:** central unificada de notificações no painel.
+- **V11:** eventos realtime para pedidos, cardápio e configurações; polling permanece como fallback.
+- **V12:** PWA com shell offline, API nunca cacheada, health/readiness preservados e endpoint `/api/version`.
 
-## GitHub
+> A impressão térmica automática física continua dependendo de uma ponte/agente local de impressão. O navegador não recebe acesso direto e silencioso à impressora por segurança.
 
-O workflow `.github/workflows/ci.yml` executa TypeScript e build em pushes/PRs para `main`.
+## V19 — Hardening / Bugfix
+
+V19 corrige riscos encontrados na auditoria: senha/CORS obrigatórios em produção, correlation ID, realtime por restaurante, conflito em pagamento, claim/lease da fila de impressão e backup de segurança antes de restore.
