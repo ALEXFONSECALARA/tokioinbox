@@ -68,10 +68,11 @@ function authHeaders(token: string): HeadersInit {
 
 
 export function toPublicSlug(name: string): string {
+  // Sem hífen entre palavras — link público curto: /sakurasushihouse em vez
+  // de /sakura-sushi-house.
   return String(name || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'restaurante';
+    .toLowerCase().replace(/[^a-z0-9]+/g, '') || 'restaurante';
 }
 
 export interface OrderRealtimeEvent {
@@ -619,6 +620,12 @@ export async function fetchCustomerOrders(
 }
 
 export async function fetchDrivers(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/drivers`,{headers:authHeaders(token)});return handleResponse<{drivers:any[]}>(res);}
+// Exclusão dedicada de entregador (em vez de reaproveitar o PUT de config
+// inteiro) — o super-admin (ou qualquer admin autorizado) precisa poder
+// excluir um entregador a qualquer momento, com confirmação de sucesso/erro
+// de verdade, em vez de uma remoção só otimista na tela que podia não ter
+// sido salva de fato no servidor.
+export async function deleteDriverAdmin(slug:string,token:string,id:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/drivers/${encodeURIComponent(id)}`,{method:'DELETE',headers:authHeaders(token)}));}
 export async function fetchBackups(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/backups`,{headers:authHeaders(token)});return handleResponse<{backups:any[]}>(res);}
 export async function createBackup(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/backup`,{headers:authHeaders(token)});return handleResponse(res);}
 export async function restoreBackup(slug:string,token:string,id:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/backups/${id}/restore`,{method:'POST',headers:authHeaders(token)});return handleResponse(res);}
