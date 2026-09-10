@@ -2,91 +2,128 @@
 
 @layer base {
   body {
-    background-color: #08080a;
-    color: #f1f5f9;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   }
 }
 
-/* 4K Matte Black & Gold Luxury Utilities */
-.bg-matte-black {
-  background-color: #09090d;
-  background-image: 
-    radial-gradient(circle at 50% 0%, rgba(217, 119, 6, 0.12) 0%, transparent 55%),
-    radial-gradient(circle at 100% 50%, rgba(180, 83, 9, 0.06) 0%, transparent 45%),
-    radial-gradient(circle at 0% 80%, rgba(245, 158, 11, 0.05) 0%, transparent 40%),
-    linear-gradient(to bottom, rgba(8, 8, 12, 0.98), rgba(6, 6, 8, 1));
-  background-attachment: fixed;
-}
-
-/* Luxury Gold Shimmer Animation */
-@keyframes goldShimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.animate-gold-shimmer {
-  background: linear-gradient(
-    90deg,
-    rgba(245, 158, 11, 0.1) 0%,
-    rgba(251, 191, 36, 0.5) 50%,
-    rgba(245, 158, 11, 0.1) 100%
-  );
-  background-size: 200% 100%;
-  animation: goldShimmer 3.5s infinite linear;
-}
-
-/* Animated Golden Luxury Border */
-.border-gold-luxury {
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  box-shadow: 0 0 15px rgba(217, 119, 6, 0.12), inset 0 0 15px rgba(245, 158, 11, 0.03);
-}
-
-.border-gold-luxury:hover {
-  border-color: rgba(251, 191, 36, 0.7);
-  box-shadow: 0 0 25px rgba(245, 158, 11, 0.25), inset 0 0 20px rgba(245, 158, 11, 0.06);
-}
-
-/* Dark Glassmorphism with Gold Accents */
-.glass-gold-card {
-  background: rgba(12, 12, 16, 0.78);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(245, 158, 11, 0.22);
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.glass-gold-card:hover {
-  background: rgba(16, 16, 22, 0.88);
-  border-color: rgba(251, 191, 36, 0.55);
-  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.9), 0 0 24px rgba(245, 158, 11, 0.22);
-  transform: translateY(-3px);
-}
-
-/* Gold Text Gradient */
-.text-gold-gradient {
-  background: linear-gradient(135deg, #fef08a 0%, #f59e0b 50%, #d97706 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* Gold Metallic Foil Badge */
-.gold-badge {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.08) 100%);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  color: #fbbf24;
-  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.15);
-}
-
-/* Hide scrollbars cleanly while preserving scrolling */
-.no-scrollbar::-webkit-scrollbar {
+/* Custom utility for clean hidden scrollbars while maintaining scroll functionality */
+.scrollbar-none::-webkit-scrollbar {
   display: none;
 }
-.no-scrollbar {
+.scrollbar-none {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* ---------- Splash Screen (tela de abertura em tela cheia) ---------- */
+@keyframes splash-kenburns {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.12); }
+}
+.animate-splash-kenburns {
+  animation: splash-kenburns 4.5s ease-out forwards;
+}
+
+@keyframes splash-fade-up {
+  0% { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-splash-fade-up {
+  animation: splash-fade-up 0.7s ease-out forwards;
+}
+
+@keyframes splash-pop {
+  0% { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-splash-pop {
+  animation: splash-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes splash-progress {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+.animate-splash-progress {
+  animation: splash-progress linear forwards;
+}
+
+/* ---------- Impressão de pedidos (cozinha / entrega / cliente) ---------- */
+/* O conteúdo a imprimir é montado num portal fora da árvore do app (ver
+   PrintPortal.tsx), como irmão direto de <body>. Isso evita depender de
+   "visibility" atravessando ancestrais com position:fixed/overflow/flex do
+   modal — que é exatamente o que cortava/zerava impressões antes. */
+@media print {
+  body > *:not(#print-portal-root) {
+    display: none !important;
+  }
+  #print-portal-root {
+    display: block !important;
+    position: static !important;
+  }
+  .printable-receipt {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  @page {
+    margin: 0;
+    size: auto;
+  }
+}
+
+
+/* ================================================================
+   JAPANESE DELIVERY — PREMIUM + MODERN
+   A identidade pública do restaurante é deliberadamente independente.
+   ================================================================ */
+.jpn-premium {
+  --jpn-ink: #070908;
+  --jpn-surface: #0d1212;
+  --jpn-surface-2: #121919;
+  --jpn-line: rgba(201,162,39,.20);
+  --jpn-gold: #c9a227;
+  --jpn-gold-soft: #e2c55d;
+  --jpn-cream: #f4f0e5;
+  --jpn-muted: #a8aaa2;
+  background:
+    radial-gradient(circle at 80% 0%, rgba(24,64,62,.22), transparent 28%),
+    linear-gradient(180deg, #070908 0%, #0a0d0d 38%, #080a0a 100%);
+  color: var(--jpn-cream);
+}
+.jpn-display { font-family: Georgia, 'Times New Roman', serif; letter-spacing: .02em; }
+.jpn-no-scrollbar::-webkit-scrollbar { display:none; }
+.jpn-no-scrollbar { scrollbar-width:none; -ms-overflow-style:none; }
+.jpn-glass {
+  background: rgba(10,14,14,.76);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.jpn-gold-line { border-color: var(--jpn-line); }
+@keyframes jpn-fade-up { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+.jpn-reveal { animation:jpn-fade-up .55s ease both; }
+@media (prefers-reduced-motion: reduce) { .jpn-reveal { animation:none; } }
+
+@media (max-width:767px){.admin-kanban{display:flex!important;overflow-x:auto;scroll-snap-type:x mandatory;gap:.75rem;padding-bottom:.35rem;-webkit-overflow-scrolling:touch}.admin-kanban>*{flex:0 0 88vw;max-width:88vw;min-width:88vw;scroll-snap-align:start;min-height:58vh}button,[role="button"]{touch-action:manipulation}}
+
+@media (max-width:767px){.admin-kanban{scrollbar-width:none}.admin-kanban>*{min-height:520px}.admin-kanban .space-y-3{overflow:visible!important;max-height:none}.admin-kanban button{min-height:44px}.admin-kanban .p-3\.5{padding:1rem}}
+
+/* Mobile operations */
+@media (max-width: 767px) {
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .admin-kanban { display:flex!important; overflow-x:auto; scroll-snap-type:x mandatory; gap:.75rem; padding:.25rem .1rem 5rem; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .admin-kanban::-webkit-scrollbar { display:none; }
+  .admin-kanban > * { flex:0 0 88vw; max-width:88vw; min-width:88vw; scroll-snap-align:start; min-height:520px; }
+  .admin-kanban button { min-height:46px; }
+  input, select, textarea { font-size:16px; }
+}
+
+
+/* V20 — Kanban mobile: cada coluna é uma página horizontal, mas a coluna
+   "Novos Pedidos" continua visível e rolável sem ser cortada pelo viewport. */
+@media (max-width:767px){
+  .admin-kanban{align-items:stretch;overflow-x:auto!important;overflow-y:visible!important;overscroll-behavior-x:contain;scroll-padding-inline:.25rem;}
+  .admin-kanban>*{box-sizing:border-box;flex:0 0 calc(100vw - 2rem)!important;width:calc(100vw - 2rem)!important;max-width:calc(100vw - 2rem)!important;min-width:calc(100vw - 2rem)!important;}
+  .admin-kanban>*:first-child{scroll-snap-align:start;}
+  .admin-kanban .space-y-3{overflow:visible!important;}
 }
