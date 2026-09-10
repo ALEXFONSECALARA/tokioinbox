@@ -1,264 +1,370 @@
-import React, { useState } from 'react';
-import { MenuItem, CartItemOptionSelected } from '../types/restaurant';
-import { useStore } from '../context/StoreContext';
-import { X, Plus, Minus, Check, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { MenuItem, SelectedChoice, SelectedExtra, CartItem, RestaurantConfig } from '../types';
+import { formatCurrency, getBadgeInfo, playSoundEffect } from '../utils/helpers';
+import { X, Plus, Minus, Check, Clock, Users, Flame, ShoppingBag } from 'lucide-react';
 
 interface ProductModalProps {
-  item?: MenuItem;
-  product?: MenuItem;
+  item: MenuItem | null;
+  isOpen: boolean;
   onClose: () => void;
+  onAddToCart: (cartItem: CartItem) => void;
+  restaurantConfig?: Pick<RestaurantConfig, 'badges'>;
 }
 
-export const ProductModal: React.FC<ProductModalProps> = ({ item: propItem, product, onClose }) => {
-  const item = propItem || product;
-  if (!item) return null;
-  const { addToCart } = useStore();
+export const ProductModal: React.FC<ProductModalProps> = ({
+  item,
+  isOpen,
+  onClose,
+  onAddToCart,
+  restaurantConfig,
+}) => {
   const [quantity, setQuantity] = useState(1);
-  const [notes, setNotes] = useState('');
-  const [selectedOptions, setSelectedOptions] = useState<CartItemOptionSelected[]>([]);
+  const [selectedChoices, setSelectedChoices] = useState<SelectedChoice[]>([]);
+  const [selectedExtras, setSelectedExtras] = useState<SelectedExtra[]>([]);
+  const [specialNotes, setSpecialNotes] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
 
-  const basePrice = item.promoPrice ?? item.price;
-  const optionsTotal = selectedOptions.reduce((sum, opt) => sum + opt.price, 0);
-  const unitPrice = basePrice + optionsTotal;
-  const totalPrice = unitPrice * quantity;
+  // Initialize modal state when item changes
+  useEffect(() => {
+    if (item) {
+      setQuantity(1);
+      setSpecialNotes('');
+      setValidationError(null);
 
-  const toggleOption = (
-    groupId: string,
-    groupTitle: string,
-    optionId: string,
-    optionName: string,
-    optionPrice: number,
-    maxSelections?: number
-  ) => {
-    setSelectedOptions((prev) => {
-      const isAlreadySelected = prev.some(
-        (o) => o.groupId === groupId && o.optionId === optionId
-      );
+      // Pre-select required choices default first option
+      const initialChoices: SelectedChoice[] = [];
+      if (item.choices) {
+        item.choices.forEach((group) => {
+          if (group.required && group.options.length > 0) {
+            initialChoices.push({
+              groupId: group.id,
+              groupTitle: group.title,
+              optionId: group.options[0].id,
+              optionName: group.options[0].name,
+              price: group.options[0].price,
+            });
+          }
+        });
+      }
+      setSelectedChoices(initialChoices);
+      setSelectedExtras([]);
+    }
+  }, [item]);
 
-      if (isAlreadySelected) {
-        return prev.filter((o) => !(o.groupId === groupId && o.optionId === optionId));
+  if (!isOpen || !item) return null;
+
+  // Handle single choice selection per group
+  const handleChoiceSelect = (groupId: string, groupTitle: string, optionId: string, optionName: string, price: number) => {
+    setSelectedChoices((prev) => {
+      const filtered = prev.filter((c) => c.groupId !== groupId);
+      return [...filtered, { groupId, groupTitle, optionId, optionName, price }];
+    });
+    setValidationError(null);
+  };
+
+  // Handle extra options quantity increment/decrement
+  const handleExtraQuantityChange = (extra: { id: string; name: string; price: number; maxQuantity?: number }, delta: number) => {
+    setSelectedExtras((prev) => {
+      const existing = prev.find((e) => e.id === extra.id);
+      const currentQty = existing ? existing.quantity : 0;
+      const nextQty = Math.max(0, currentQty + delta);
+      const max = extra.maxQuantity || 5;
+
+      if (nextQty > max) return prev;
+
+      if (nextQty === 0) {
+        return prev.filter((e) => e.id !== extra.id);
       }
 
-      // If maxSelections is 1 (radio-like behavior)
-      if (maxSelections === 1) {
-        const filtered = prev.filter((o) => o.groupId !== groupId);
-        return [
-          ...filtered,
-          {
-            groupId,
-            groupTitle,
-            optionId,
-            name: optionName,
-            price: optionPrice,
-          },
-        ];
+      if (existing) {
+        return prev.map((e) => (e.id === extra.id ? { ...e, quantity: nextQty } : e));
+      } else {
+        return [...prev, { id: extra.id, name: extra.name, price: extra.price, quantity: nextQty }];
       }
-
-      // Check max selections limit
-      const currentInGroup = prev.filter((o) => o.groupId === groupId);
-      if (maxSelections && currentInGroup.length >= maxSelections) {
-        return prev;
-      }
-
-      return [
-        ...prev,
-        {
-          groupId,
-          groupTitle,
-          optionId,
-          name: optionName,
-          price: optionPrice,
-        },
-      ];
     });
   };
 
+  // Calculate dynamic unit price and total
+  const choicesExtraPrice = selectedChoices.reduce((acc, curr) => acc + curr.price, 0);
+  const extrasTotalPerUnit = selectedExtras.reduce((acc, curr) => acc + curr.price * curr.quantity, 0);
+  const unitPrice = item.price + choicesExtraPrice + extrasTotalPerUnit;
+  const totalPrice = unitPrice * quantity;
+
   const handleAdd = () => {
-    addToCart(item, quantity, selectedOptions, notes.trim() || undefined);
+    // Validate required choice groups
+    if (item.choices) {
+      for (const group of item.choices) {
+        if (group.required) {
+          const selected = selectedChoices.find((c) => c.groupId === group.id);
+          if (!selected) {
+            setValidationError(`Por favor, selecione uma opção em "${group.title}".`);
+            return;
+          }
+        }
+      }
+    }
+
+    const cartItem: CartItem = {
+      id: `${item.id}-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      menuItem: item,
+      quantity,
+      selectedChoices,
+      selectedExtras,
+      specialNotes: specialNotes.trim() || undefined,
+      unitPrice,
+      totalPrice,
+    };
+
+    playSoundEffect('success');
+    onAddToCart(cartItem);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
-        {/* Header Image */}
-        <div className="relative h-56 sm:h-64 w-full bg-slate-800 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div
+        id="product-customization-modal"
+        className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-stone-200 animate-in slide-in-from-bottom duration-300"
+      >
+        {/* Modal Header / Media */}
+        <div className="relative h-48 sm:h-56 bg-stone-100 flex-shrink-0">
           <img
             src={item.image}
             alt={item.name}
-            className="w-full h-full object-cover object-center"
+            className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-black/40" />
-
-          {/* Close button */}
           <button
+            id="close-product-modal-btn"
             onClick={onClose}
-            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-slate-950/80 hover:bg-slate-900 text-white border border-slate-700/60 backdrop-blur-md flex items-center justify-center transition-all shadow-md"
+            className="absolute top-3 right-3 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white transition-all border border-white/20"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
 
-          {/* Tags */}
-          <div className="absolute bottom-3 left-4 flex gap-1.5 flex-wrap">
-            {item.tags?.includes('mais_vendido') && (
-              <span className="px-2.5 py-1 rounded-full bg-amber-500 text-slate-950 font-extrabold text-[11px] shadow-sm flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Mais Vendido
-              </span>
-            )}
-            {item.tags?.includes('promocao') && (
-              <span className="px-2.5 py-1 rounded-full bg-rose-600 text-white font-extrabold text-[11px] shadow-sm">
-                Oferta Especial
-              </span>
-            )}
-            {item.tags?.includes('vegetariano') && (
-              <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-extrabold text-[11px] shadow-sm">
-                Vegetariano
-              </span>
-            )}
+          <div className="absolute bottom-3 left-3 right-3 flex flex-wrap gap-1.5">
+            {item.tags.map((tag) => {
+              const info = getBadgeInfo(tag, restaurantConfig);
+              return (
+                <span
+                  key={tag}
+                  className="backdrop-blur-md text-white text-[11px] font-semibold px-2.5 py-0.5 rounded-lg"
+                  style={{ backgroundColor: `${info.color}cc` }}
+                >
+                  {info.emoji ? `${info.emoji} ` : ''}
+                  {info.label}
+                </span>
+              );
+            })}
           </div>
         </div>
 
-        {/* Content Body */}
-        <div className="p-5 sm:p-6 max-h-[60vh] overflow-y-auto space-y-5">
+        {/* Modal Scrollable Body */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
           <div>
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
-                {item.name}
-              </h2>
-              <div className="text-right shrink-0">
-                {item.promoPrice ? (
-                  <div>
-                    <span className="text-xs text-slate-400 line-through block">
-                      R$ {item.price.toFixed(2)}
-                    </span>
-                    <span className="text-lg font-black text-amber-400">
-                      R$ {item.promoPrice.toFixed(2)}
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-lg font-black text-amber-400">
-                    R$ {item.price.toFixed(2)}
-                  </span>
-                )}
-              </div>
+            <h2 className="text-xl font-bold text-stone-900 leading-snug">{item.name}</h2>
+            <p className="text-stone-600 text-xs sm:text-sm mt-1 leading-relaxed">{item.description}</p>
+
+            <div className="flex items-center gap-4 text-xs text-stone-400 mt-2">
+              {item.preparationTimeMinutes && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5" />
+                  {item.preparationTimeMinutes} min de preparo
+                </span>
+              )}
+              {item.servesCount && (
+                <span className="flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5" />
+                  Serve {item.servesCount} {item.servesCount > 1 ? 'pessoas' : 'pessoa'}
+                </span>
+              )}
+              {item.calories && (
+                <span className="flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-[var(--brand)]" />
+                  {item.calories} kcal
+                </span>
+              )}
             </div>
-            <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
-              {item.description}
-            </p>
           </div>
 
-          {/* Option Groups (Adicionais) */}
-          {item.optionGroups && item.optionGroups.length > 0 && (
-            <div className="space-y-4 pt-2 border-t border-slate-800">
-              {item.optionGroups.map((group) => (
-                <div key={group.id} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                      {group.title}
-                    </h3>
-                    <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded">
-                      {group.maxSelections === 1
-                        ? 'Escolha 1 opção'
-                        : group.maxSelections
-                        ? `Até ${group.maxSelections} opções`
-                        : 'Opcional'}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    {group.options.map((option) => {
-                      const isSelected = selectedOptions.some(
-                        (o) => o.groupId === group.id && o.optionId === option.id
-                      );
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() =>
-                            toggleOption(
-                              group.id,
-                              group.title,
-                              option.id,
-                              option.name,
-                              option.price,
-                              group.maxSelections
-                            )
-                          }
-                          className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                            isSelected
-                              ? 'bg-amber-500/10 border-amber-500/60 text-white'
-                              : 'bg-slate-950/60 hover:bg-slate-800/80 border-slate-800 text-slate-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div
-                              className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
-                                isSelected
-                                  ? 'bg-amber-500 border-amber-400 text-slate-950'
-                                  : 'border-slate-600 bg-slate-800'
-                              }`}
-                            >
-                              {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                            </div>
-                            <span className="text-xs font-medium">{option.name}</span>
-                          </div>
-                          <span className="text-xs font-bold text-amber-400">
-                            {option.price > 0 ? `+ R$ ${option.price.toFixed(2)}` : 'Grátis'}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+          {/* Validation Alert */}
+          {validationError && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-xl font-medium">
+              {validationError}
             </div>
           )}
 
-          {/* Observations */}
-          <div className="pt-2 border-t border-slate-800">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
-              Alguma observação? (Opcional)
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ex: Tirar cebola, ponto da carne ao ponto, molho à parte..."
-              maxLength={140}
-              rows={2}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors resize-none"
-            />
-          </div>
+          {/* Choice Groups (e.g. Ponto da carne, Escolha do Pão) */}
+          {item.choices &&
+            item.choices.map((group) => (
+              <div key={group.id} className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-stone-800">
+                    {group.title}
+                  </h4>
+                  {group.required ? (
+                    <span className="text-[10px] uppercase font-extrabold bg-[var(--brand-tint)] text-amber-900 px-2 py-0.5 rounded-md">
+                      Obrigatório
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-stone-400 font-medium">Opcional</span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  {group.options.map((opt) => {
+                    const isSelected = selectedChoices.some(
+                      (c) => c.groupId === group.id && c.optionId === opt.id
+                    );
+                    return (
+                      <label
+                        key={opt.id}
+                        className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-white border-[var(--brand)] shadow-xs ring-1 ring-[var(--brand)]'
+                            : 'bg-white border-stone-200 hover:border-stone-300'
+                        }`}
+                        onClick={() =>
+                          handleChoiceSelect(group.id, group.title, opt.id, opt.name, opt.price)
+                        }
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                              isSelected
+                                ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
+                                : 'border-stone-300'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                          <span className="text-xs font-medium text-stone-800">{opt.name}</span>
+                        </div>
+                        {opt.price > 0 && (
+                          <span className="text-xs font-bold text-stone-700">
+                            +{formatCurrency(opt.price)}
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+          {/* Extras / Adicionais */}
+          {item.extras && item.extras.length > 0 && (
+            <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
+              <div className="flex items-center justify-between mb-2.5">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-stone-800">
+                  Adicionais & Extras
+                </h4>
+                <span className="text-[10px] text-stone-400 font-medium">Opcional</span>
+              </div>
+
+              <div className="space-y-2">
+                {item.extras.map((extra) => {
+                  const selected = selectedExtras.find((e) => e.id === extra.id);
+                  const currentQty = selected ? selected.quantity : 0;
+                  return (
+                    <div
+                      key={extra.id}
+                      className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200"
+                    >
+                      <div>
+                        <p className="text-xs font-medium text-stone-800">{extra.name}</p>
+                        <p className="text-xs font-bold text-[var(--brand-dark)] mt-0.5">
+                          +{formatCurrency(extra.price)}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {currentQty > 0 && (
+                          <>
+                            <button
+                              id={`extra-minus-${extra.id}`}
+                              onClick={() => handleExtraQuantityChange(extra, -1)}
+                              className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-800 flex items-center justify-center font-bold"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="text-xs font-bold w-4 text-center">{currentQty}</span>
+                          </>
+                        )}
+                        <button
+                          id={`extra-plus-${extra.id}`}
+                          onClick={() => handleExtraQuantityChange(extra, 1)}
+                          className="w-7 h-7 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-light)] text-slate-950 flex items-center justify-center font-bold shadow-xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Observações / Observações Especiais */}
+          {item.allowSpecialNotes !== false && (
+            <div>
+              <label htmlFor="modal-special-notes" className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-1.5">
+                Alguma observação especial?
+              </label>
+              <textarea
+                id="modal-special-notes"
+                value={specialNotes}
+                onChange={(e) => setSpecialNotes(e.target.value)}
+                placeholder="Ex: Tirar cebola, molho à parte, bem passado, sem picles..."
+                rows={2}
+                maxLength={160}
+                className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] focus:bg-white transition-all"
+              />
+              <span className="text-[10px] text-stone-400 text-right block mt-0.5">
+                {specialNotes.length}/160 caracteres
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Footer / Add Action */}
-        <div className="p-4 sm:p-5 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-4">
-          {/* Quantity Controls */}
-          <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5">
+        {/* Modal Sticky Bottom Controls: Quantity + Add CTA */}
+        <div className="p-4 sm:p-5 bg-white border-t border-stone-200 flex items-center gap-3">
+          {/* Quantity selector */}
+          <div className="flex items-center bg-stone-100 rounded-xl p-1 border border-stone-200">
             <button
+              id="modal-qty-minus"
               onClick={() => setQuantity((q) => Math.max(1, q - 1))}
               disabled={quantity <= 1}
-              className="text-slate-400 hover:text-white disabled:opacity-30 p-1"
+              className="w-8 h-8 rounded-lg bg-white text-stone-800 disabled:opacity-40 flex items-center justify-center font-bold shadow-2xs"
             >
-              <Minus className="w-4 h-4" />
+              <Minus className="w-3.5 h-3.5" />
             </button>
-            <span className="text-sm font-extrabold text-white min-w-[20px] text-center">
+            <span className="w-8 text-center text-xs sm:text-sm font-extrabold text-stone-900">
               {quantity}
             </span>
             <button
+              id="modal-qty-plus"
               onClick={() => setQuantity((q) => q + 1)}
-              className="text-slate-400 hover:text-white p-1"
+              className="w-8 h-8 rounded-lg bg-white text-stone-800 flex items-center justify-center font-bold shadow-2xs"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
 
           {/* Add to Cart CTA */}
           <button
+            id="modal-add-to-cart-cta"
             onClick={handleAdd}
-            className="flex-1 py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-between shadow-lg hover:shadow-amber-500/20 transition-all active:scale-[0.98]"
+            className="flex-1 py-3 px-4 rounded-xl bg-[var(--brand)] hover:bg-[var(--brand-light)] active:scale-[0.98] text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-between transition-all shadow-md"
           >
-            <span>Adicionar ao Pedido</span>
-            <span>R$ {totalPrice.toFixed(2)}</span>
+            <span className="flex items-center gap-1.5">
+              <ShoppingBag className="w-4 h-4" />
+              <span>Adicionar ao Pedido</span>
+            </span>
+            <span className="bg-slate-950 text-[var(--brand-light)] px-2.5 py-1 rounded-lg text-xs font-black">
+              {formatCurrency(totalPrice)}
+            </span>
           </button>
         </div>
       </div>

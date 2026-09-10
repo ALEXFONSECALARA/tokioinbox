@@ -1,132 +1,163 @@
-import React, { useState, useEffect } from 'react';
-import { RestaurantConfig } from '../types/restaurant';
-import { ChevronRight, ArrowRight, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useEffect, useState } from 'react';
+import { RestaurantConfig } from '../types';
+import { normalizeSplashImage } from '../utils/helpers';
 
 interface SplashScreenProps {
-  restaurant: RestaurantConfig;
-  onClose: () => void;
+  config: RestaurantConfig;
+  onFinish: () => void;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ restaurant, onClose }) => {
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+// Tela de abertura em tela cheia: mostra fotos do restaurante (pratos, ambiente,
+// promoções) em sequência, com transição suave (crossfade + leve zoom "Ken Burns"),
+// por alguns segundos, antes de abrir o cardápio — estilo iFood / Uber Eats / Airbnb.
+export const SplashScreen: React.FC<SplashScreenProps> = ({ config, onFinish }) => {
+  // Aceita o formato novo (objeto com ajuste individual) e o antigo (string[])
+  // ao mesmo tempo — normalizeSplashImage() cuida da conversão dos dois.
+  const images = (config.splashImages || [])
+    .filter(Boolean)
+    .map(normalizeSplashImage)
+    .filter((img) => img.enabled !== false && img.url);
+  const secondsPerImage = config.splashDurationSeconds || 3;
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isLeaving, setIsLeaving] = useState(false);
 
-  const slides = restaurant.splashSlides && restaurant.splashSlides.length > 0
-    ? restaurant.splashSlides
-    : [
-        {
-          image: restaurant.banner,
-          title: restaurant.name,
-          subtitle: restaurant.tagline,
-        },
-      ];
+  const finish = () => {
+    if (isLeaving) return;
+    setIsLeaving(true);
+    // Aguarda a transição de saída (fade) terminar antes de remover a tela
+    setTimeout(onFinish, 450);
+  };
 
-  // Auto-advance slides every 4 seconds
   useEffect(() => {
-    if (slides.length <= 1) return;
-    const interval = setInterval(() => {
-      setCurrentSlideIndex((prev) => (prev + 1) % slides.length);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [slides.length]);
+    if (images.length === 0) {
+      finish();
+      return;
+    }
+    const advanceTimer = setInterval(() => {
+      setActiveIndex((prev) => {
+        if (prev >= images.length - 1) {
+          clearInterval(advanceTimer);
+          finish();
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, secondsPerImage * 1000);
+    return () => clearInterval(advanceTimer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const currentSlide = slides[currentSlideIndex];
+  if (images.length === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col justify-between overflow-hidden">
-      {/* Background Image with animated transition */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentSlideIndex}
-          initial={{ opacity: 0, scale: 1.05 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.98 }}
-          transition={{ duration: 0.8 }}
-          className="absolute inset-0 z-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${currentSlide.image})` }}
+    <div
+      className={`fixed inset-0 z-[100] bg-slate-950 overflow-hidden transition-opacity duration-500 ${
+        isLeaving ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      }`}
+      role="dialog"
+      aria-label={`Abrindo ${config.name}`}
+    >
+      {/* Fotos em crossfade com leve zoom contínuo (Ken Burns) — cada uma com
+          seu próprio enquadramento/zoom/escurecimento e legenda opcional.
+          Tocar na foto avança pro próximo slide (ou pula pro cardápio na última),
+          do jeito Instagram/WhatsApp Stories — substitui o botão "Pular" fixo. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          setActiveIndex((prev) => {
+            if (prev >= images.length - 1) {
+              finish();
+              return prev;
+            }
+            return prev + 1;
+          });
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setActiveIndex((prev) => {
+              if (prev >= images.length - 1) {
+                finish();
+                return prev;
+              }
+              return prev + 1;
+            });
+          }
+        }}
+        aria-label="Toque para avançar"
+        className="absolute inset-0 w-full h-full cursor-pointer"
+      >
+        {images.map((img, idx) => (
+        <div
+          key={img.url + idx}
+          className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
+            idx === activeIndex ? 'opacity-100' : 'opacity-0'
+          }`}
         >
-          {/* Gradient Overlays */}
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-slate-950/40" />
-          <div className="absolute inset-0 bg-radial-at-c from-transparent to-slate-950/80" />
-        </motion.div>
-      </AnimatePresence>
+          <img
+            src={img.url}
+            alt=""
+            className={`w-full h-full object-cover ${idx === activeIndex ? 'animate-splash-kenburns' : ''}`}
+            style={{
+              objectPosition: `${img.positionX ?? 50}% ${img.positionY ?? 50}%`,
+              transform: `scale(${(img.zoom ?? 100) / 100})`,
+            }}
+          />
+          {(img.overlay ?? 0) > 0 && (
+            <div className="absolute inset-0 bg-black" style={{ opacity: (img.overlay ?? 0) / 100 }} />
+          )}
+          {img.text && (
+            <div className="absolute bottom-24 inset-x-0 text-center px-6">
+              <p className="text-white text-base sm:text-lg font-bold drop-shadow-lg">{img.text}</p>
+            </div>
+          )}
+        </div>
+        ))}
 
-      {/* Top Bar: Brand & Skip Button */}
-      <div className="relative z-10 px-6 py-6 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-slate-900/80 border border-slate-700/80 backdrop-blur-md flex items-center justify-center text-xl shadow-lg">
-            {restaurant.emoji}
-          </div>
-          <div>
-            <h2 className="text-sm font-bold text-white tracking-wide uppercase">
-              {restaurant.name}
-            </h2>
-            <p className="text-[11px] text-amber-400 font-medium">{restaurant.cuisine}</p>
-          </div>
+        {/* Camada escura para o texto ficar legível */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-slate-950/60" />
+
+        {/* Conteúdo: logo + nome + slogan */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+          {config.logo && (
+            <img
+              src={config.logo}
+              alt={config.name}
+              className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl object-cover shadow-2xl ring-4 ring-white/20 mb-5 animate-splash-pop"
+            />
+          )}
+          <h1 className="text-white text-2xl sm:text-4xl font-black tracking-tight drop-shadow-lg animate-splash-fade-up">
+            {config.name}
+          </h1>
+          {config.tagline && (
+            <p className="text-white/85 text-sm sm:text-base font-medium mt-2 max-w-md drop-shadow animate-splash-fade-up [animation-delay:120ms]">
+              {config.tagline}
+            </p>
+          )}
         </div>
 
-        <button
-          onClick={onClose}
-          className="px-3.5 py-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 backdrop-blur-md text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md"
-        >
-          <span>Pular</span>
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Bottom Content Area */}
-      <div className="relative z-10 px-6 pb-10 max-w-2xl mx-auto w-full flex flex-col items-center text-center">
-        {/* Slide Indicator Dots */}
-        {slides.length > 1 && (
-          <div className="flex items-center gap-2 mb-6">
-            {slides.map((_, idx) => (
-              <button
-                key={idx}
-                onClick={() => setCurrentSlideIndex(idx)}
-                className={`h-1.5 rounded-full transition-all ${
-                  idx === currentSlideIndex
-                    ? 'w-8 bg-amber-400'
-                    : 'w-2 bg-slate-600 hover:bg-slate-400'
+        {/* Barra de progresso (uma seção por foto) */}
+        <div className="absolute top-0 inset-x-0 flex gap-1.5 p-3 sm:p-4">
+          {images.map((_, idx) => (
+            <div key={idx} className="h-1 flex-1 rounded-full bg-white/25 overflow-hidden">
+              <div
+                className={`h-full bg-white rounded-full ${
+                  idx < activeIndex
+                    ? 'w-full'
+                    : idx === activeIndex
+                    ? 'w-full animate-splash-progress'
+                    : 'w-0'
                 }`}
-                aria-label={`Slide ${idx + 1}`}
+                style={idx === activeIndex ? { animationDuration: `${secondsPerImage}s` } : undefined}
               />
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
 
-        {/* Dynamic Titles */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentSlideIndex}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.5 }}
-            className="space-y-3 mb-8"
-          >
-            <span className="inline-block px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold uppercase tracking-wider">
-              {restaurant.tagline}
-            </span>
-            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
-              {currentSlide.title}
-            </h1>
-            <p className="text-sm sm:text-base text-slate-300 max-w-lg mx-auto">
-              {currentSlide.subtitle}
-            </p>
-          </motion.div>
-        </AnimatePresence>
-
-        {/* Enter Menu CTA Button */}
-        <button
-          onClick={onClose}
-          className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold text-base flex items-center justify-center gap-3 shadow-xl hover:shadow-amber-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
-        >
-          <span>Acessar Cardápio Completo</span>
-          <ArrowRight className="w-5 h-5" />
-        </button>
-
-        <p className="text-[11px] text-slate-400 mt-4">
-          Faça seu pedido para Delivery, Retirada ou Mesa no salão
+        {/* Dica sutil de que a tela responde ao toque (sem botão de pular) */}
+        <p className="absolute bottom-6 inset-x-0 text-center text-white/60 text-[11px] font-semibold tracking-wide pointer-events-none">
+          Toque para avançar
         </p>
       </div>
     </div>
