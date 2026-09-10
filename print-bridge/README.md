@@ -1,4 +1,4 @@
-# TokioInbox Print Bridge V14
+# TokioInbox Print Bridge
 Agente local opcional para impressão térmica ESC/POS via TCP (porta 9100 por padrão).
 
 Variáveis: `TOKIO_API_URL`, `TOKIO_RESTAURANT_SLUG`, `TOKIO_ADMIN_TOKEN`, `PRINTER_HOST`, `PRINTER_PORT=9100`, `POLL_MS=2000`.
