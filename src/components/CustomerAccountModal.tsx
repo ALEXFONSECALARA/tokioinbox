@@ -107,7 +107,7 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
         const res = await loginCustomer(normalizePhone(phone), password);
         onLoggedIn(res.token, res.customer);
       } else {
-        const cleanName=name.trim(); const cleanPhone=normalizePhone(phone); const cleanEmail=email.trim().toLowerCase(); if(cleanName.length<2) throw new Error('Informe seu nome completo.'); if(cleanPhone.length<10||cleanPhone.length>13) throw new Error('Informe um telefone válido com DDD.'); if(password.length<6) throw new Error('A senha deve ter pelo menos 6 caracteres.'); const res = await registerCustomer({ name:cleanName, phone:cleanPhone, email:cleanEmail||undefined, password });
+        const cleanName=name.trim(); const cleanPhone=normalizePhone(phone); const cleanEmail=email.trim().toLowerCase(); if(cleanName.length<2) throw new Error('Informe seu nome completo.'); if(cleanPhone.length<10||cleanPhone.length>13) throw new Error('Informe um telefone válido com DDD.'); if(!/^\d{4}$/.test(password)) throw new Error('A senha deve ter exatamente 4 dígitos numéricos.'); const res = await registerCustomer({ name:cleanName, phone:cleanPhone, email:cleanEmail||undefined, password });
         onLoggedIn(res.token, res.customer);
       }
       setPassword('');
@@ -209,22 +209,32 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
             )}
             <input
               type="password"
+              inputMode="numeric"
+              pattern="\d*"
+              maxLength={4}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Senha"
-              className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm"
+              onChange={(e) => setPassword(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder={authMode === 'register' ? 'Crie uma senha de 4 dígitos' : 'Senha (4 dígitos)'}
+              className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm tracking-[0.5em] text-center"
             />
             {authError && <p className="text-xs text-red-600">{authError}</p>}
             <button
               type="submit"
-              disabled={authLoading || !phone || !password || (authMode === 'register' && !name)}
+              disabled={
+                authLoading ||
+                !phone ||
+                password.length !== 4 ||
+                (authMode === 'register' && !name)
+              }
               className="w-full bg-stone-900 text-white rounded-xl py-2.5 font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
               {authLoading && <Loader2 className="w-4 h-4 animate-spin" />}
               {authMode === 'login' ? 'Entrar' : 'Criar conta'}
             </button>
             <p className="text-[11px] text-stone-400 text-center">
-              Guarde seus dados pra pedir mais rápido nas próximas vezes.
+              {authMode === 'register'
+                ? 'Sua senha é um PIN de 4 dígitos — fácil de digitar e lembrar na hora do pedido.'
+                : 'Guarde seus dados pra pedir mais rápido nas próximas vezes.'}
             </p>
           </form>
         ) : (

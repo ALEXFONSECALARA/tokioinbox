@@ -25,7 +25,7 @@ import {
   getAlertVolume,
   setAlertVolume,
 } from '../utils/helpers';
-import { fetchMenu, toPublicSlug } from '../utils/api';
+import { fetchMenu, toPublicSlug, deleteDriverAdmin, uploadImage } from '../utils/api';
 import { LAYOUTS } from '../utils/layouts';
 import { ToolsHub } from './ToolsHub';
 import { ReceiptPrintModal } from './ReceiptPrintModal';
@@ -72,7 +72,7 @@ import {
   ChevronDown,
   Copy
 } from 'lucide-react';
-import { Tag, Music, CheckSquare, Bell, Lock } from 'lucide-react';
+import { Tag, Music, CheckSquare, Bell, Lock, Upload, Loader2 } from 'lucide-react';
 import { NotificationsPanel } from './NotificationsPanel';
 import { AdminAiPanel } from './AdminAiPanel';
 
@@ -259,6 +259,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<Order | null>(null);
+  // Impressão automática de novos pedidos (config.printAutoNewOrders):
+  // recebe o aviso disparado pelo AdminPortal quando um pedido novo chega
+  // por realtime e abre o recibo sozinho — o ReceiptPrintModal já chama
+  // window.print() assim que abre, então isso imprime o pedido sem
+  // depender de ninguém clicar em nada, ao mesmo tempo em que ele aparece
+  // no Kanban. Um pedido de cada vez: se já tem um recibo aberto (o
+  // funcionário está reimprimindo outro pedido manualmente, por exemplo),
+  // não atropela — o próximo evento tenta de novo.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const order = (e as CustomEvent<{ order?: Order }>).detail?.order;
+      if (order) setSelectedReceiptOrder((current) => current ?? order);
+    };
+    window.addEventListener('tokio:auto-print-order', handler as EventListener);
+    return () => window.removeEventListener('tokio:auto-print-order', handler as EventListener);
+  }, []);
   // Pedidos já impressos nesta sessão do painel (troca o botão pra
   // "Reimprimir" e deixa claro que os dados usados são os mesmos salvos).
   const [printStates, setPrintStates] = useState<Record<string, 'pendente' | 'imprimindo' | 'impresso' | 'erro'>>({});
@@ -843,13 +859,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleDeleteDriver = (id: string) => {
+  // Item pedido: clicar direto na foto já cadastrada na sequência de splash
+  // troca ela no lugar (mantendo zoom/posição/overlay/texto configurados),
+  // em vez de precisar excluir e recadastrar do zero. `splashUploadingIdx`
+  // controla o spinner de qual foto específica está sendo trocada.
+  const [splashUploadingIdx, setSplashUploadingIdx] = useState<number | null>(null);
+  const [splashUploadError, setSplashUploadError] = useState<string | null>(null);
+  const handleReplaceSplashImage = async (idx: number, file: File | undefined) => {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) {
+      setSplashUploadError('Envie um arquivo de imagem (jpg, png, webp, gif ou avif).');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setSplashUploadError(`Imagem muito grande (${(file.size / 1024 / 1024).toFixed(1)}MB). O limite é 8MB.`);
+      return;
+    }
+    if (!token || !slug) return;
+    setSplashUploadError(null);
+    setSplashUploadingIdx(idx);
+    try {
+      const url = await uploadImage(slug, token, file, { kind: 'splash', entityType: 'restaurant', entityId: slug, altText: 'Splash' });
+      if (!url) throw new Error('O servidor não retornou a URL da imagem enviada.');
+      const images = (localConfig.splashImages || []).map(normalizeSplashImage);
+      if (!images[idx]) return;
+      images[idx] = { ...images[idx], url };
+      const updated = { ...localConfig, splashImages: images };
+      setLocalConfig(updated);
+      await onUpdateConfig(updated);
+    } catch (err: any) {
+      setSplashUploadError(err?.message || 'Não foi possível trocar a foto. Tente novamente.');
+    } finally {
+      setSplashUploadingIdx(null);
+    }
+  };
+
+  const [driverDeletingId, setDriverDeletingId] = useState<string | null>(null);
+  const handleDeleteDriver = async (id: string) => {
+    if (!window.confirm('Excluir este entregador? Essa ação não pode ser desfeita.')) return;
     const currentDrivers = localConfig.drivers || [];
-    const updatedDrivers = currentDrivers.filter((d) => d.id !== id);
-    const updatedConfig = { ...localConfig, drivers: updatedDrivers };
-    setLocalConfig(updatedConfig);
-    onUpdateConfig(updatedConfig);
-    playSoundEffect('beep');
+    setDriverDeletingId(id);
+    try {
+      // Rota dedicada (em vez de reaproveitar o PUT de config inteiro) — o
+      // super-admin precisa poder excluir um entregador a qualquer momento,
+      // com confirmação real de que foi salvo no servidor. A versão antiga
+      // só removia da tela e mandava o config inteiro de volta; se esse PUT
+      // falhasse silenciosamente, o entregador "excluído" reaparecia no
+      // próximo carregamento.
+      if (token && slug) {
+        await deleteDriverAdmin(slug, token, id);
+      }
+      const updatedDrivers = currentDrivers.filter((d) => d.id !== id);
+      const updatedConfig = { ...localConfig, drivers: updatedDrivers };
+      setLocalConfig(updatedConfig);
+      playSoundEffect('beep');
+    } catch (err: any) {
+      alert(err?.message || 'Não foi possível excluir o entregador. Tente novamente.');
+    } finally {
+      setDriverDeletingId(null);
+    }
   };
 
   const handleToggleDriverStatus = (id: string) => {
@@ -1449,7 +1517,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={handleClearHistoryClick} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5"/> Limpar histórico ({orders.filter(o=>['entregue','cancelado'].includes(o.status)).length})</button>
-              <button onClick={async()=>{const url=`${window.location.origin}/r/${toPublicSlug(localConfig.name || slug)}`;try{await navigator.clipboard.writeText(url);alert(`Link exclusivo copiado:
+              <button onClick={async()=>{const url=`${window.location.origin}/${toPublicSlug(localConfig.name || slug)}`;try{await navigator.clipboard.writeText(url);alert(`Link exclusivo copiado:
 ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-stone-300 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5"><ExternalLink className="w-3.5 h-3.5"/> Copiar link exclusivo</button>
             </div>
 
@@ -3133,7 +3201,8 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                       </button>
                       <button
                         onClick={() => handleDeleteDriver(driver.id)}
-                        className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50"
+                        disabled={driverDeletingId === driver.id}
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50"
                         title="Excluir"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -3575,7 +3644,7 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                             <ChevronDown className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                        <div className="relative w-24 h-24 shrink-0 rounded-lg overflow-hidden border border-stone-200">
+                        <div className="relative w-24 h-24 shrink-0 rounded-lg overflow-hidden border border-stone-200 group">
                           <img
                             src={img.url}
                             alt={`Splash ${idx + 1}`}
@@ -3588,6 +3657,30 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                           {(img.overlay ?? 0) > 0 && (
                             <div className="absolute inset-0 bg-black" style={{ opacity: (img.overlay ?? 0) / 100 }} />
                           )}
+                          {/* Clicar na foto abre o seletor de arquivo e troca essa
+                              foto específica no lugar (mantém zoom/posição/overlay). */}
+                          <label
+                            htmlFor={`splash-replace-${idx}`}
+                            aria-disabled={splashUploadingIdx === idx}
+                            title="Clique para trocar esta foto"
+                            className={`absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/45 transition-colors ${
+                              splashUploadingIdx === idx ? 'bg-black/45 cursor-default' : 'cursor-pointer'
+                            }`}
+                          >
+                            {splashUploadingIdx === idx ? (
+                              <Loader2 className="w-5 h-5 text-white animate-spin" />
+                            ) : (
+                              <Upload className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            )}
+                          </label>
+                          <input
+                            id={`splash-replace-${idx}`}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={splashUploadingIdx === idx}
+                            onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; handleReplaceSplashImage(idx, file); }}
+                          />
                         </div>
                         <div className="flex-1 min-w-0 grid grid-cols-2 gap-2">
                           <label className="text-[10px] font-bold text-stone-600 col-span-2 flex items-center gap-1.5">
@@ -3671,6 +3764,7 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
                   );
                 })}
               </div>
+              {splashUploadError && <p className="text-[11px] text-red-600 font-medium">⚠️ {splashUploadError}</p>}
 
               <ImageUploadField
                 slug={slug}

@@ -328,6 +328,11 @@ export const AdminPortal: React.FC = () => {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [restaurantConfig, setRestaurantConfig] = useState<RestaurantConfig | null>(null);
+  // Ref sincronizado com restaurantConfig pra usar dentro do listener SSE
+  // sem precisar recriar a inscrição (EventSource) toda vez que a config
+  // muda — só precisamos do valor mais atual no momento do evento.
+  const restaurantConfigRef = useRef<RestaurantConfig | null>(null);
+  useEffect(() => { restaurantConfigRef.current = restaurantConfig; }, [restaurantConfig]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   // Alerta sonoro de "pedido chegando" (persistido no dispositivo, não no
@@ -599,6 +604,18 @@ export const AdminPortal: React.FC = () => {
         const scopedNext = onlyRestaurantOrders(next, selectedSlug);
         knownOrderIdsRef.current = new Set(scopedNext.map(o => o.id));
         setOrders(scopedNext);
+        // Impressão automática (item pedido: o sistema deve receber o pedido
+        // e imprimir ao mesmo tempo em que ele aparece no app/Kanban, sem
+        // depender de clique manual). Se "Imprimir novos pedidos
+        // automaticamente" estiver ligado nas configurações deste
+        // restaurante, assim que o pedido novo chega por realtime a gente
+        // avisa o AdminDashboard (que já cuida da impressora térmica real
+        // via Print Bridge no backend, e também pode imprimir direto pelo
+        // navegador se este painel estiver aberto).
+        if (event.type === 'created' && event.orderId && restaurantConfigRef.current?.printAutoNewOrders) {
+          const newOrder = scopedNext.find(o => o.id === event.orderId);
+          if (newOrder) window.dispatchEvent(new CustomEvent('tokio:auto-print-order', { detail: { order: newOrder } }));
+        }
       }).catch(() => {});
     }, undefined, 'admin', setRealtimeState);
     return stop;
