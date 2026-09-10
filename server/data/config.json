@@ -1,0 +1,28 @@
+{
+  "name": "Trattoria Bella Massa",
+  "tagline": "Massas artesanais como na Itália",
+  "logo": "https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=300&q=80",
+  "bannerImage": "https://images.unsplash.com/photo-1595295333158-4742f28fbd85?auto=format&fit=crop&w=1200&q=80",
+  "phone": "(11) 98765-4321",
+  "whatsapp": "5511987654321",
+  "address": "Rua Exemplo, 123 - Centro",
+  "isOpen": true,
+  "openingHours": "18:00 - 23:30",
+  "deliveryFee": 6.5,
+  "minimumOrder": 35,
+  "estimatedDeliveryTime": "35-50 min",
+  "deliveryZones": [],
+  "drivers": [],
+  "pixKey": "",
+  "pixKeyType": "random",
+  "instagram": "",
+  "allowTableOrders": false,
+  "totalTables": 0,
+  "splashEnabled": true,
+  "splashImages": [
+    "https://images.unsplash.com/photo-1595295333158-4742f28fbd85?auto=format&fit=crop&w=1400&q=80",
+    "https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=1400&q=80",
+    "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=1400&q=80"
+  ],
+  "splashDurationSeconds": 3
+}
