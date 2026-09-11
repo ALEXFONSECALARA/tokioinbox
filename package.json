@@ -1,7 +1,7 @@
 {
-  "name": "react-example",
+  "name": "tokioinbox",
   "private": true,
-  "version": "24.2.0",
+  "version": "27.0.0",
   "type": "module",
   "engines": {
     "node": ">=22.0.0 <23.0.0"
@@ -12,11 +12,11 @@
     "build": "vite build",
     "start": "node server/index.js",
     "preview": "vite preview",
-    "test": "for f in tests/server/*.mjs; do node \"$f\" || exit 1; done",
+    "test": "for f in docs/tests/server/*.mjs; do node \"$f\" || exit 1; done",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:server": "node --test tests/server/*.test.mjs",
-    "smoke": "node tests/server/smoke.mjs"
+    "test:server": "node --test docs/tests/server/*.test.mjs",
+    "smoke": "node docs/tests/server/smoke.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
