@@ -83,6 +83,12 @@ function configRowToApi(restaurantRow, configRow) {
     operationalStatus: configRow.operational_status || undefined,
     operationalAdjustmentMinutes: configRow.operational_adjustment_minutes != null ? Number(configRow.operational_adjustment_minutes) : undefined,
     operationalAdjustmentHistory: configRow.operational_adjustment_history || [],
+    // Senhas de segurança por restaurante (Kanban individual / limpeza de
+    // histórico) — os hashes em si; a rota que devolve isso pro frontend
+    // (PUT/GET /api/:slug/config) sempre troca por um booleano "isSet"
+    // antes de responder, então o hash nunca vaza pro cliente.
+    kanbanPasswordHash: configRow.kanban_password_hash ?? undefined,
+    historyClearPasswordHash: configRow.history_clear_password_hash ?? undefined,
   };
 }
 
@@ -135,6 +141,12 @@ function configApiToRow(incoming) {
     operationalStatus: 'operational_status',
     operationalAdjustmentMinutes: 'operational_adjustment_minutes',
     operationalAdjustmentHistory: 'operational_adjustment_history',
+    // Senhas de segurança por restaurante — ver nota em configRowToApi.
+    // Precisavam estar nesse mapa pra sobreviver ao configApiToRow(); antes
+    // disso o campo era descartado ANTES de tentar o upsert (nem chegava a
+    // dar erro de coluna ausente — só sumia mesmo com a coluna já existindo).
+    kanbanPasswordHash: 'kanban_password_hash',
+    historyClearPasswordHash: 'history_clear_password_hash',
   };
   for (const [apiKey, col] of Object.entries(map)) {
     if (incoming[apiKey] !== undefined) row[col] = incoming[apiKey];
