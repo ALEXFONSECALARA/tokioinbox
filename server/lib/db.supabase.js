@@ -43,6 +43,7 @@ function configRowToApi(restaurantRow, configRow) {
     color: configRow.color || restaurantRow?.color,
     secondaryColor: configRow.secondary_color ?? undefined,
     layout: configRow.layout ?? undefined,
+    premiumTheme: configRow.premium_theme ?? undefined,
     // Ativo/inativo mora na tabela `restaurants` (lista mestre), não em
     // restaurant_configs — restaurante sem o campo (linha antiga) é ativo.
     active: restaurantRow?.active !== false,
@@ -106,6 +107,7 @@ function configApiToRow(incoming) {
     color: 'color',
     secondaryColor: 'secondary_color',
     layout: 'layout',
+    premiumTheme: 'premium_theme',
     phone: 'phone',
     whatsapp: 'whatsapp',
     address: 'address',
