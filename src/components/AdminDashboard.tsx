@@ -358,7 +358,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
     if (!window.confirm(`Excluir ${n} pedido(s) do histórico deste restaurante? Esta ação não pode ser desfeita.`)) return;
-    if (onClearOrderHistory) await onClearOrderHistory();
+    // Bug corrigido aqui: essa chamada não tinha try/catch nenhum — se o
+    // servidor recusasse (ex: 403 por falta da permissão "Excluir
+    // histórico" na conta) ou desse qualquer outro erro, a promise rejeitada
+    // ficava sem tratamento nenhum e o usuário não via NADA na tela. Parecia
+    // que "o sistema ignorou o pedido de excluir", quando na verdade a
+    // exclusão tinha sido recusada silenciosamente.
+    try {
+      if (onClearOrderHistory) await onClearOrderHistory();
+    } catch (err: any) {
+      alert(err?.message || 'Não foi possível excluir o histórico. Verifique se sua conta tem a permissão "Excluir histórico".');
+    }
   };
 
   const handleConfirmClearHistoryWithPassword = async () => {

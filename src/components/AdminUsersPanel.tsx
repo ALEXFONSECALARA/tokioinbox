@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AdminUser, RestaurantSummary, fetchAdminUsers, createAdminUser, updateAdminUser, fetchAdminCustomers, deleteAdminCustomer, CustomerAdmin } from '../utils/api';
-import { PERMISSION_GROUPS } from '../utils/permissions';
+import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS } from '../utils/permissions';
 import { Users, Plus, X, Check, ShieldCheck, KeyRound, Power } from 'lucide-react';
 
 // "🔒 Usuários e Permissões" (Fase 4, itens 17-19): cria/edita usuários
@@ -319,6 +319,30 @@ export const AdminUsersPanel: React.FC<{ token: string; restaurants: RestaurantS
                     />
                   </div>
 
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-stone-400 text-[11px] font-bold uppercase tracking-wide">Permissões</p>
+                    {/* Atalho pra não precisar marcar ~25 caixinhas uma por uma
+                        (era fácil esquecer alguma — ex: "Excluir histórico" —
+                        e a conta ficar sem conseguir fazer ações básicas sem
+                        nenhum aviso claro do motivo). */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditing({ ...editing, permissions: Object.fromEntries(ALL_PERMISSION_KEYS.map((k) => [k, true])) })}
+                        className="text-[11px] font-bold text-amber-400 hover:text-amber-300"
+                      >
+                        Marcar todas
+                      </button>
+                      <span className="text-stone-600">·</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditing({ ...editing, permissions: {} })}
+                        className="text-[11px] font-bold text-stone-400 hover:text-stone-300"
+                      >
+                        Desmarcar todas
+                      </button>
+                    </div>
+                  </div>
                   <div className="space-y-3">
                     {PERMISSION_GROUPS.map((group) => (
                       <div key={group.id}>

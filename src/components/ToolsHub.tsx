@@ -302,11 +302,10 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
     setTimeout(() => setExportSuccess(null), 3000);
   };
 
-  const productionCards = activeSubTool==='production' ? <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"><div className="rounded-2xl border p-4"><ShieldCheck size={20}/><b>Segurança</b><p className="text-sm opacity-70 mt-1">Rate limit, CORS obrigatório em produção, correlação de requisições e proteção de sessão.</p></div><div className="rounded-2xl border p-4"><ArchiveRestore size={20}/><b>Backups</b><p className="text-sm opacity-70 mt-1">{backups.length} backup(s) persistente(s).</p><button onClick={doBackup} className="mt-3 px-3 py-2 rounded-xl bg-black text-white">Criar backup agora</button></div><div className="rounded-2xl border p-4"><Printer size={20}/><b>Impressão</b><p className="text-sm opacity-70 mt-1">Fila persistente + Print Bridge com fila e recuperação de jobs.</p></div></div> : null;
-  const driverCards = activeSubTool==='drivers' ? <div className="rounded-2xl border p-4 mb-6"><div className="flex items-center gap-2 mb-3"><UsersRound size={20}/><b>Entregadores</b></div><div className="grid gap-2">{drivers.map(d=><div key={d.id} className="flex justify-between border rounded-xl p-3"><span>{d.name} · {d.phone}</span><span>{d.status}</span></div>)}{!drivers.length&&<p className="text-sm opacity-60">Nenhum entregador cadastrado.</p>}</div></div> : null;
+  const productionCards = <div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div className="rounded-2xl border p-4"><ShieldCheck size={20}/><b>Segurança</b><p className="text-sm opacity-70 mt-1">Rate limit, CORS obrigatório em produção, correlação de requisições e proteção de sessão.</p></div><div className="rounded-2xl border p-4"><ArchiveRestore size={20}/><b>Backups</b><p className="text-sm opacity-70 mt-1">{backups.length} backup(s) persistente(s).</p><button onClick={doBackup} className="mt-3 px-3 py-2 rounded-xl bg-black text-white">Criar backup agora</button></div><div className="rounded-2xl border p-4"><Printer size={20}/><b>Impressão</b><p className="text-sm opacity-70 mt-1">Fila persistente + Print Bridge com fila e recuperação de jobs.</p></div></div>;
+  const driverCards = <div className="rounded-2xl border p-4"><div className="flex items-center gap-2 mb-3"><UsersRound size={20}/><b>Entregadores</b></div><div className="grid gap-2">{drivers.map(d=><div key={d.id} className="flex justify-between border rounded-xl p-3"><span>{d.name} · {d.phone}</span><span>{d.status}</span></div>)}{!drivers.length&&<p className="text-sm opacity-60">Nenhum entregador cadastrado.</p>}</div></div>;
   return (
     <div className="space-y-6">
-      {productionCards}{driverCards}
       {/* Header of Tools */}
       <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -782,6 +781,29 @@ export const ToolsHub: React.FC<ToolsHubProps> = ({
             <div className="flex items-center justify-between gap-2"><div><h3 className="font-extrabold text-stone-900 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-rose-600"/> Logs de erro</h3><p className="text-[11px] text-stone-500">Falhas registradas pelo servidor para diagnóstico.</p></div><button onClick={async()=>{if(!token||!window.confirm('Excluir todos os logs de erro?'))return;await clearErrorLogs(token);setErrorLogs([])}} className="text-[11px] font-bold text-rose-700 px-2 py-1 rounded-lg bg-rose-50">Limpar tudo</button></div>
             {logsLoading?<p className="text-xs text-stone-400">Carregando...</p>:errorLogs.length===0?<p className="text-xs text-stone-400">Nenhum erro registrado.</p>:<div className="max-h-80 overflow-y-auto space-y-1">{errorLogs.map(l=><div key={l.id} className="flex items-start justify-between gap-2 border border-stone-100 rounded-xl p-2.5 text-[11px]"><div className="min-w-0"><b className="text-rose-700">{l.context||'Erro'}</b><p className="text-stone-700 break-words">{l.message}</p><div className="text-stone-400">{new Date(l.createdAt).toLocaleString('pt-BR')}{l.restaurantSlug?` · ${l.restaurantSlug}`:''}</div></div><button onClick={async()=>{if(!token)return;await deleteErrorLog(token,l.id);setErrorLogs(x=>x.filter(a=>a.id!==l.id))}} className="p-2 rounded-lg bg-stone-100 text-rose-700 shrink-0" title="Excluir log"><Trash2 size={13}/></button></div>)}</div>}
           </div>
+        </div>
+      )}
+
+      {activeSubTool === 'production' && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="font-extrabold text-stone-900 text-sm flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-amber-600"/> Produção</h3>
+            <p className="text-xs text-stone-500 mt-1">Visão geral de segurança, backup persistente e status da fila de impressão deste restaurante.</p>
+          </div>
+          {productionCards}
+        </div>
+      )}
+
+      {activeSubTool === 'drivers' && (
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="font-extrabold text-stone-900 text-sm flex items-center gap-2"><UsersRound className="w-4 h-4 text-amber-600"/> Entregadores</h3>
+              <p className="text-xs text-stone-500 mt-1">Status atual dos entregadores cadastrados. Cadastro, edição e exclusão ficam em Configurações → Entregadores.</p>
+            </div>
+            <button onClick={loadOps} className="px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-xs font-bold flex items-center gap-1.5 shrink-0"><RefreshCw className="w-3.5 h-3.5"/> Atualizar</button>
+          </div>
+          {driverCards}
         </div>
       )}
 
