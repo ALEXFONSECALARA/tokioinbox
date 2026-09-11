@@ -61,3 +61,72 @@
 - Testes existentes em `tests/server/` continuam passando (exceto `smoke.mjs`, que já falhava antes
   destas mudanças por checar uma string que nunca existiu em `server/index.js` — bug pré-existente,
   não relacionado a este pacote de correções).
+
+---
+
+# Rodada 2 de correções
+
+## 8. "Não foi possível listar backups" e erros genéricos sem pista nenhuma
+- Vários endpoints (`/api/:slug/backups`, `/api/:slug/backup`, restore, entregadores) engoliam
+  qualquer erro do banco e devolviam só uma mensagem genérica, sem logar e sem dizer o motivo.
+- Criado um helper central `sendDbError()` (`server/index.js`) que agora é usado nesses endpoints.
+  Ele loga o erro de verdade, devolve `código técnico` + `requestId`, e **detecta especificamente
+  os códigos PGRST205/PGRST204** (PostgREST com o cache de schema desatualizado depois de uma
+  migration) — nesse caso a mensagem já orienta a rodar `NOTIFY pgrst, 'reload schema';` no SQL
+  Editor do Supabase (ou Settings → API → Reload schema), que é a causa real mais provável desses
+  erros aparecerem do nada depois de aplicar uma migration nova.
+
+## 9. Causa raiz do erro "código: PGRST205" ao criar conta / senhas de segurança nunca salvavam
+Bug real encontrado: os campos **"Senha do Kanban individual"** e **"Senha de limpeza de
+histórico"** (Configurações → 🔒 Senhas de segurança) já existiam na tela e a rota do servidor já
+sabia gerar o hash certinho — mas **nenhuma migration jamais criou as colunas correspondentes no
+Supabase**, e a função que traduz os campos da API pro banco (`configApiToRow` em
+`db.supabase.js`) nem tinha essas duas chaves no mapa. Resultado: a senha era descartada
+**silenciosamente antes mesmo de tentar gravar** — a tela mostrava "Configurações salvas com
+sucesso!", mas nada era persistido.
+- Nova migration: `supabase/migrations/0023_restaurant_security_passwords.sql` — cria
+  `kanban_password_hash` e `history_clear_password_hash` em `restaurant_configs` e já recarrega o
+  cache de schema do PostgREST.
+- `server/lib/db.supabase.js`: adicionado o mapeamento das duas colunas em `configApiToRow` (API →
+  banco) e `configRowToApi` (banco → API).
+- **Ação necessária**: rodar essa migration no SQL Editor do MESMO projeto Supabase usado pelo
+  Render.
+
+## 10. "Excluir histórico" não fazia nada — erro engolido silenciosamente
+- O botão de confirmar exclusão de histórico (fluxo sem senha extra) chamava
+  `await onClearOrderHistory()` **sem nenhum try/catch**. Se o servidor recusasse (por exemplo,
+  403 por falta da permissão "Excluir histórico" na conta logada) ou desse qualquer outro erro, a
+  promise rejeitada ficava sem tratamento nenhum — o usuário não via absolutamente nada, parecendo
+  que "o sistema ignorou o pedido de excluir". Corrigido com try/catch + alerta visível com a
+  mensagem real do servidor. Arquivo: `src/components/AdminDashboard.tsx`.
+- Relacionado: criar um usuário no painel (Usuários e Permissões) exigia marcar manualmente umas
+  25 caixinhas de permissão uma por uma, sem nenhum atalho — fácil esquecer alguma (como "Excluir
+  histórico") e a conta ficar sem conseguir fazer ações básicas, sem nenhum aviso claro do motivo
+  na hora. Adicionados botões "Marcar todas" / "Desmarcar todas" em
+  `src/components/AdminUsersPanel.tsx` (+ `ALL_PERMISSION_KEYS` exportado em
+  `src/utils/permissions.ts`).
+
+## 11. Botões "Produção" e "Entregadores" do Central de Ferramentas não faziam nada
+- Achado: o conteúdo dessas duas abas (`productionCards`/`driverCards`) estava renderizado **fora
+  do lugar** — logo no topo do componente, antes até do cabeçalho "Central de Ferramentas" e da
+  barra de abas — em vez de aparecer na área de conteúdo abaixo delas, como as outras abas
+  (Diagnóstico, Históricos & Logs etc.). Clicar nessas duas abas destacava o botão mas não mudava
+  nada visível na tela. Corrigido: conteúdo movido pro lugar certo, dentro do fluxo normal de abas,
+  com um cabeçalho próprio e botão de atualizar em "Entregadores". Arquivo:
+  `src/components/ToolsHub.tsx`.
+
+## Verificação (rodada 2)
+- `npm run build` (vite build) rodou sem erros.
+- `npx tsc --noEmit` não introduziu nenhum erro novo (os 2 erros pré-existentes, não relacionados
+  a este pacote, continuam os mesmos: `AdminPortal.tsx:387` e `main.tsx:18`).
+- `node --check` em todos os arquivos do backend alterados.
+
+## ⚠️ Ação manual necessária no Supabase
+Depois de subir este código, rode no SQL Editor do Supabase, na ordem:
+1. `supabase/migrations/0022_production_repair.sql` (se ainda não tiver rodado)
+2. `supabase/migrations/0023_restaurant_security_passwords.sql` (novo)
+
+E confirme que o cache de schema foi recarregado (a própria migration 0023 já faz isso, mas se
+continuar vendo erros PGRST204/PGRST205 em qualquer rota, rode manualmente:
+`NOTIFY pgrst, 'reload schema';` no SQL Editor, ou Settings → API → "Reload schema" no painel do
+Supabase).
