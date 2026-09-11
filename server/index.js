@@ -58,7 +58,12 @@ function sendDbError(res, err, req, fallbackMessage, context, meta = {}) {
   }
   if (schemaProblem) {
     return res.status(503).json({
-      error: 'O banco ainda não está atualizado para esta operação. Confira se todas as migrations do Supabase foram executadas.',
+      // Cita um exemplo de nome de arquivo pra quem for procurar na pasta
+      // supabase/migrations/ (ex: 0022_production_repair.sql,
+      // 0023_restaurant_config_extras.sql) — sem certeza de qual delas
+      // exatamente falta, mas já direciona pra pasta certa em vez de só
+      // dizer "banco desatualizado" sem nenhuma pista de onde olhar.
+      error: 'O banco ainda não está atualizado para esta operação. Confira se todas as migrations de supabase/migrations/ (ex: 0022_production_repair.sql, 0023_restaurant_config_extras.sql) foram executadas no Supabase.',
       code: code || 'SCHEMA_PROBLEM',
       requestId: req?.requestId || null,
     });
