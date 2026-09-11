@@ -1,4 +1,4 @@
-import { CartItem, Order, RestaurantConfig, SplashImageConfig, RestaurantBadge, DeliveryAddress, DeliveryCalcMethod } from '../types';
+import { CartItem, Order, RestaurantConfig, SplashImageConfig, RestaurantBadge, DeliveryAddress, DeliveryCalcMethod } from '@/src/types';
 
 // Restaurantes antigos guardam splashImages como string[] (só a URL). Esta
 // função normaliza qualquer item (string OU objeto) pro formato novo, com

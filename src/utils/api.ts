@@ -1,4 +1,4 @@
-import { Category, MenuItem, Order, RestaurantConfig, LayoutId, CustomerAccount, SavedAddress } from '../types';
+import { Category, MenuItem, Order, RestaurantConfig, LayoutId, CustomerAccount, SavedAddress } from '@/src/types';
 
 const API_BASE = String(import.meta.env.VITE_API_URL || '')
   .trim()
@@ -617,6 +617,22 @@ export async function fetchCustomerOrders(
 ): Promise<(Order & { restaurantSlug: string; restaurantName: string })[]> {
   const res = await fetch(`${API_PREFIX}/customers/me/orders`, { headers: customerAuthHeaders(token) });
   return handleResponse(res);
+}
+
+export async function cancelCustomerOrder(token: string, slug: string, orderId: string, reason = 'Cancelado pelo cliente'): Promise<Order> {
+  const res = await fetch(`${API_PREFIX}/customers/me/orders/${encodeURIComponent(slug)}/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST', headers: customerAuthHeaders(token), body: JSON.stringify({ reason }),
+  });
+  const data = await handleResponse<{ order: Order }>(res);
+  return data.order;
+}
+
+export async function clearCustomerOrderHistory(token: string, password: string): Promise<number> {
+  const res = await fetch(`${API_PREFIX}/customers/me/orders/history`, {
+    method: 'DELETE', headers: customerAuthHeaders(token), body: JSON.stringify({ password }),
+  });
+  const data = await handleResponse<{ removed: number }>(res);
+  return data.removed;
 }
 
 export async function fetchDrivers(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/drivers`,{headers:authHeaders(token)});return handleResponse<{drivers:any[]}>(res);}
