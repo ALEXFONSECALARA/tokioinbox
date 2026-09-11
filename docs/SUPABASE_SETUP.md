@@ -80,10 +80,10 @@ o `.env`.)
 
 Depois do deploy com Supabase ativo, testar manualmente:
 
-- [ ] `GET /api/restaurants` retorna os 4 restaurantes.
-- [ ] Abrir o cardápio de cada restaurante (`/japones`, `/pizza`, `/italiano`,
-      `/hamburgueria`) e comparar visualmente com a versão em JSON — preços,
-      fotos, categorias e disponibilidade batendo.
+- [ ] `GET /api/restaurants` retorna os restaurantes cadastrados.
+- [ ] Abrir o cardápio de cada restaurante ativo (`/seu-slug`) e comparar
+      visualmente com a versão em JSON — preços, fotos, categorias e
+      disponibilidade batendo.
 - [ ] Fazer um pedido de teste em cada restaurante e confirmar que ele
       aparece no painel admin (Kanban) daquele restaurante e **não** aparece
       no painel de outro restaurante.
