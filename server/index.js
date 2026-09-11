@@ -28,6 +28,49 @@ async function logServerError(context, err, meta = {}) {
   process.stderr.write(`[${context}] ${message}\n`);
 }
 
+// Resposta padrão pra erro de banco (Supabase/Postgres) — usada em qualquer
+// rota que hoje só devolvia um "Não foi possível..." genérico sem logar nem
+// devolver código/requestId. Isso escondia problemas reais (schema cache do
+// PostgREST desatualizado, tabela/coluna faltando etc.) atrás de uma
+// mensagem que parecia erro de dados do usuário, quando na verdade era
+// infraestrutura — foi a causa real de "Não foi possível listar backups"
+// e afins não darem nenhuma pista do que checar no Supabase.
+//
+// PGRST205/PGRST204 (PostgREST não encontra a tabela/coluna no cache de
+// schema) acontecem sobretudo quando uma migration é aplicada direto no
+// SQL Editor do Supabase sem recarregar o cache da API — a correção nesse
+// caso é rodar `NOTIFY pgrst, 'reload schema';` no SQL Editor (ou Settings →
+// API → "Reload schema" no painel do Supabase), não mexer no código.
+function sendDbError(res, err, req, fallbackMessage, context, meta = {}) {
+  logServerError(context || fallbackMessage, err, { ...meta, details: { requestId: req?.requestId || null, code: err?.code || null, ...(meta.details || {}) } });
+  const code = String(err?.code || '');
+  const message = String(err?.message || '');
+  const schemaCacheStale = ['PGRST205', 'PGRST204'].includes(code) || /schema cache/i.test(message);
+  const schemaProblem = schemaCacheStale ||
+    ['42P01', '42703', '42883', '23502'].includes(code) ||
+    /relation .* does not exist|column .* does not exist|function .* does not exist/i.test(message);
+  if (schemaCacheStale) {
+    return res.status(503).json({
+      error: 'O Supabase ainda não atualizou o cache de schema depois da última migration. No painel do Supabase, rode "NOTIFY pgrst, \'reload schema\';" no SQL Editor (ou Settings → API → Reload schema) e tente de novo.',
+      code: code || 'SCHEMA_CACHE_STALE',
+      requestId: req?.requestId || null,
+    });
+  }
+  if (schemaProblem) {
+    return res.status(503).json({
+      error: 'O banco ainda não está atualizado para esta operação. Confira se todas as migrations do Supabase foram executadas.',
+      code: code || 'SCHEMA_PROBLEM',
+      requestId: req?.requestId || null,
+    });
+  }
+  return res.status(500).json({
+    error: fallbackMessage,
+    code: code || undefined,
+    requestId: req?.requestId || null,
+  });
+}
+
+
 
 // Senha única do super-admin. Em produção, defina ADMIN_PASSWORD nas variáveis
 // de ambiente do Render. Em desenvolvimento local, usa "admin123" por padrão.
@@ -564,28 +607,9 @@ app.post('/api/:slug/orders', async (req, res) => {
     }
     res.status(201).json({ ok: true, order: saved });
   } catch (err) {
-    logServerError(`Erro ao salvar pedido de ${slug}:`, err, {
+    sendDbError(res, err, req, 'Não foi possível registrar o pedido. Tente novamente.', `Erro ao salvar pedido de ${slug}:`, {
       restaurantSlug: slug,
-      details: { requestId: req.requestId, orderId: req.body?.id || null, code: err?.code || null },
-    });
-    const code = String(err?.code || '');
-    const message = String(err?.message || '');
-    const schemaProblem = ['42P01', '42703', '42883', '23502'].includes(code) ||
-      /relation .* does not exist|column .* does not exist|function .* does not exist/i.test(message);
-    if (schemaProblem) {
-      return res.status(503).json({
-        error: 'O banco do restaurante ainda não está atualizado para receber pedidos. Execute a migration 0022_production_repair.sql no Supabase.',
-        code: code || 'SCHEMA_PROBLEM',
-        requestId: req.requestId,
-      });
-    }
-    // Em produção não expõe stack/segredos, mas devolve o código técnico e o
-    // requestId. Isso evita que o checkout masque um erro real como "conexão"
-    // e permite localizar a tentativa exata no log do Render.
-    res.status(500).json({
-      error: 'Não foi possível registrar o pedido. Tente novamente.',
-      code: code || 'ORDER_CREATE_FAILED',
-      requestId: req.requestId,
+      details: { orderId: req.body?.id || null },
     });
   }
 });
@@ -613,28 +637,8 @@ app.post('/api/customers/register', rateLimit({windowMs:60000,max:6,key:'custome
     if (err.code === 'PHONE_TAKEN') {
       return res.status(409).json({ error: 'Já existe uma conta com esse telefone.' });
     }
-    logServerError('Erro ao criar conta de cliente', err, {
-      details: { requestId: req.requestId, code: err?.code || null, phoneLength: cleanPhone.length },
-    });
-    const code = String(err?.code || '');
-    const message = String(err?.message || '');
-    const schemaProblem = ['42P01', '42703', '42883', '23502'].includes(code) ||
-      /relation .* does not exist|column .* does not exist|function .* does not exist/i.test(message);
-    if (schemaProblem) {
-      return res.status(503).json({
-        error: 'O cadastro de clientes ainda não foi ativado no banco. Execute a migração 0013_customers.sql no Supabase.',
-        code: code || 'SCHEMA_PROBLEM',
-        requestId: req.requestId,
-      });
-    }
-    // Devolve o código técnico e o requestId (em vez de só uma mensagem
-    // genérica) pra dar pra achar a causa real no log do Render — antes essa
-    // rota escondia todo erro atrás de "verifique os dados", mesmo quando o
-    // problema não tinha nada a ver com os dados digitados pelo cliente.
-    res.status(500).json({
-      error: 'Não foi possível criar a conta. Tente novamente em instantes.',
-      code: code || 'CUSTOMER_CREATE_FAILED',
-      requestId: req.requestId,
+    sendDbError(res, err, req, 'Não foi possível criar a conta. Tente novamente em instantes.', 'Erro ao criar conta de cliente', {
+      details: { phoneLength: cleanPhone.length },
     });
   }
 });
@@ -1764,13 +1768,13 @@ app.patch('/api/:slug/orders/:id', requireAdminOrKanban, requireOwnRestaurant, a
 });
 
 // V14-V18: backup/restore, entregadores e conciliação de pagamento
-app.get('/api/:slug/backup', requireAdmin, requireOwnRestaurant, async (req,res)=>{try{const [data,orders,media]=await Promise.all([db.readRestaurantData(req.params.slug),db.listOrders(req.params.slug),db.listMediaAssets(req.params.slug)]);const payload={restaurantConfig:data.restaurantConfig,categories:data.categories||[],menuItems:data.menuItems||[],orders,media,exportedAt:new Date().toISOString()};const saved=await db.createRestaurantBackup(req.params.slug,payload,req.adminUser?.id||'master');res.json({ok:true,backup:saved});}catch(e){logServerError('Backup falhou',e,{restaurantSlug:req.params.slug});res.status(500).json({error:'Não foi possível gerar o backup.'})}});
-app.get('/api/:slug/backups', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{res.json({backups:await db.listRestaurantBackups(req.params.slug)})}catch(e){res.status(500).json({error:'Não foi possível listar backups.'})}});
-app.post('/api/:slug/backups/:id/restore', requireAdmin, requireOwnRestaurant, async(req,res)=>{let safety=null;try{const slug=req.params.slug;const b=await db.getRestaurantBackup(slug,req.params.id);if(!b)return res.status(404).json({error:'Backup não encontrado.'});const [data]=await Promise.all([db.readRestaurantData(slug)]);safety=await db.createRestaurantBackup(slug,{restaurantConfig:data.restaurantConfig,categories:data.categories||[],menuItems:data.menuItems||[],orders:[],media:[],exportedAt:new Date().toISOString(),safetyBackup:true},req.adminUser?.id||'master');const p=b.payload||{};if(p.restaurantConfig)await db.updateConfig(slug,p.restaurantConfig);if(Array.isArray(p.categories))await db.updateCategories(slug,p.categories);if(Array.isArray(p.menuItems))await db.updateMenuItems(slug,p.menuItems);broadcastOrderEvent(slug,{type:'config-updated',updatedAt:new Date().toISOString()});broadcastOrderEvent(slug,{type:'menu-updated',updatedAt:new Date().toISOString()});res.json({ok:true,safetyBackupId:safety?.id||null,message:'Configuração e cardápio restaurados com backup de segurança criado antes da operação.'})}catch(e){logServerError('Restore falhou',e,{restaurantSlug:req.params.slug,details:{requestId:req.requestId,safetyBackupId:safety?.id||null}});res.status(500).json({error:'Não foi possível restaurar o backup.',safetyBackupId:safety?.id||null})}});
-app.get('/api/:slug/drivers', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const d=(await db.readRestaurantData(req.params.slug)).restaurantConfig?.drivers||[];res.json({drivers:d})}catch(e){res.status(500).json({error:'Não foi possível carregar entregadores.'})}});
-app.post('/api/:slug/drivers', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const cfg=data.restaurantConfig||{};const d={id:crypto.randomUUID(),name:String(req.body?.name||'').trim(),phone:String(req.body?.phone||'').trim(),vehicle:String(req.body?.vehicle||'moto'),plate:String(req.body?.plate||'').trim(),photo:req.body?.photo||'',status:['available','busy','offline'].includes(req.body?.status)?req.body.status:'offline',rating:Number(req.body?.rating)||0};if(!d.name||!d.phone)return res.status(400).json({error:'Nome e telefone são obrigatórios.'});cfg.drivers=[...(cfg.drivers||[]),d];await db.updateConfig(req.params.slug,{drivers:cfg.drivers});res.status(201).json({driver:d})}catch(e){res.status(500).json({error:'Não foi possível criar entregador.'})}});
-app.patch('/api/:slug/drivers/:id', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const list=data.restaurantConfig?.drivers||[];const i=list.findIndex(x=>x.id===req.params.id);if(i<0)return res.status(404).json({error:'Entregador não encontrado.'});list[i]={...list[i],...req.body,id:list[i].id};await db.updateConfig(req.params.slug,{drivers:list});res.json({driver:list[i]})}catch(e){res.status(500).json({error:'Não foi possível atualizar entregador.'})}});
-app.delete('/api/:slug/drivers/:id', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const list=data.restaurantConfig?.drivers||[];const next=list.filter(x=>x.id!==req.params.id);if(next.length===list.length)return res.status(404).json({error:'Entregador não encontrado.'});await db.updateConfig(req.params.slug,{drivers:next});res.json({ok:true})}catch(e){res.status(500).json({error:'Não foi possível remover entregador.'})}});
+app.get('/api/:slug/backup', requireAdmin, requireOwnRestaurant, async (req,res)=>{try{const [data,orders,media]=await Promise.all([db.readRestaurantData(req.params.slug),db.listOrders(req.params.slug),db.listMediaAssets(req.params.slug)]);const payload={restaurantConfig:data.restaurantConfig,categories:data.categories||[],menuItems:data.menuItems||[],orders,media,exportedAt:new Date().toISOString()};const saved=await db.createRestaurantBackup(req.params.slug,payload,req.adminUser?.id||'master');res.json({ok:true,backup:saved});}catch(e){sendDbError(res,e,req,'Não foi possível gerar o backup.','Backup falhou',{restaurantSlug:req.params.slug});}});
+app.get('/api/:slug/backups', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{res.json({backups:await db.listRestaurantBackups(req.params.slug)})}catch(e){sendDbError(res,e,req,'Não foi possível listar backups.','Erro ao listar backups',{restaurantSlug:req.params.slug});}});
+app.post('/api/:slug/backups/:id/restore', requireAdmin, requireOwnRestaurant, async(req,res)=>{let safety=null;try{const slug=req.params.slug;const b=await db.getRestaurantBackup(slug,req.params.id);if(!b)return res.status(404).json({error:'Backup não encontrado.'});const [data]=await Promise.all([db.readRestaurantData(slug)]);safety=await db.createRestaurantBackup(slug,{restaurantConfig:data.restaurantConfig,categories:data.categories||[],menuItems:data.menuItems||[],orders:[],media:[],exportedAt:new Date().toISOString(),safetyBackup:true},req.adminUser?.id||'master');const p=b.payload||{};if(p.restaurantConfig)await db.updateConfig(slug,p.restaurantConfig);if(Array.isArray(p.categories))await db.updateCategories(slug,p.categories);if(Array.isArray(p.menuItems))await db.updateMenuItems(slug,p.menuItems);broadcastOrderEvent(slug,{type:'config-updated',updatedAt:new Date().toISOString()});broadcastOrderEvent(slug,{type:'menu-updated',updatedAt:new Date().toISOString()});res.json({ok:true,safetyBackupId:safety?.id||null,message:'Configuração e cardápio restaurados com backup de segurança criado antes da operação.'})}catch(e){sendDbError(res,e,req,'Não foi possível restaurar o backup.','Restore falhou',{restaurantSlug:req.params.slug});}});
+app.get('/api/:slug/drivers', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const d=(await db.readRestaurantData(req.params.slug)).restaurantConfig?.drivers||[];res.json({drivers:d})}catch(e){sendDbError(res,e,req,'Não foi possível carregar entregadores.','Erro ao carregar entregadores',{restaurantSlug:req.params.slug});}});
+app.post('/api/:slug/drivers', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const cfg=data.restaurantConfig||{};const d={id:crypto.randomUUID(),name:String(req.body?.name||'').trim(),phone:String(req.body?.phone||'').trim(),vehicle:String(req.body?.vehicle||'moto'),plate:String(req.body?.plate||'').trim(),photo:req.body?.photo||'',status:['available','busy','offline'].includes(req.body?.status)?req.body.status:'offline',rating:Number(req.body?.rating)||0};if(!d.name||!d.phone)return res.status(400).json({error:'Nome e telefone são obrigatórios.'});cfg.drivers=[...(cfg.drivers||[]),d];await db.updateConfig(req.params.slug,{drivers:cfg.drivers});res.status(201).json({driver:d})}catch(e){sendDbError(res,e,req,'Não foi possível criar entregador.','Erro ao criar entregador',{restaurantSlug:req.params.slug});}});
+app.patch('/api/:slug/drivers/:id', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const list=data.restaurantConfig?.drivers||[];const i=list.findIndex(x=>x.id===req.params.id);if(i<0)return res.status(404).json({error:'Entregador não encontrado.'});list[i]={...list[i],...req.body,id:list[i].id};await db.updateConfig(req.params.slug,{drivers:list});res.json({driver:list[i]})}catch(e){sendDbError(res,e,req,'Não foi possível atualizar entregador.','Erro ao atualizar entregador',{restaurantSlug:req.params.slug});}});
+app.delete('/api/:slug/drivers/:id', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const data=await db.readRestaurantData(req.params.slug);const list=data.restaurantConfig?.drivers||[];const next=list.filter(x=>x.id!==req.params.id);if(next.length===list.length)return res.status(404).json({error:'Entregador não encontrado.'});await db.updateConfig(req.params.slug,{drivers:next});res.json({ok:true})}catch(e){sendDbError(res,e,req,'Não foi possível remover entregador.','Erro ao remover entregador',{restaurantSlug:req.params.slug});}});
 app.patch('/api/:slug/orders/:id/payment', requireAdmin, requireOwnRestaurant, async(req,res)=>{try{const order=await db.getOrder(req.params.slug,req.params.id);if(!order)return res.status(404).json({error:'Pedido não encontrado.'});const status=['pendente','confirmado','recusado','reembolsado'].includes(req.body?.paymentStatus)?req.body.paymentStatus:null;if(!status)return res.status(400).json({error:'Status de pagamento inválido.'});const expectedUpdatedAt=req.body?.expectedUpdatedAt;const updated=await db.updateOrder(req.params.slug,req.params.id,{paymentStatus:status,paymentConfirmedAt:status==='confirmado'?new Date().toISOString():order.paymentConfirmedAt},expectedUpdatedAt);broadcastOrderEvent(req.params.slug,{type:'updated',orderId:updated.id,updatedAt:updated.updatedAt,customerId:updated.customerId||null});res.json({ok:true,order:updated})}catch(e){if(e?.code==='ORDER_CONFLICT')return res.status(409).json({error:e.message,order:e.currentOrder,code:e.code});logServerError('Erro ao atualizar pagamento',e,{restaurantSlug:req.params.slug,details:{requestId:req.requestId}});res.status(500).json({error:'Não foi possível atualizar o pagamento.'})}});
 app.post('/api/admin/logout',(req,res)=>{const t=bearerToken(req);if(t){const p=verifySession(t);revokeSession(t,p?.exp)}res.json({ok:true})});
 app.post('/api/customers/logout',(req,res)=>{const t=bearerToken(req);if(t){const p=verifySession(t);revokeSession(t,p?.exp)}res.json({ok:true})});
