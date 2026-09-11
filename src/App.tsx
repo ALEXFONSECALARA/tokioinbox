@@ -9,29 +9,29 @@ import {
   DeliveryAddress,
   CustomerAccount,
   SavedAddress
-} from './types';
+} from '@/src/types';
 import { 
   INITIAL_CATEGORIES, 
   INITIAL_MENU_ITEMS, 
   INITIAL_RESTAURANT_CONFIG 
-} from './data/initialData';
-import { fetchMenu, createOrder, fetchOrder, fetchOperationalStatus, fetchCustomerProfile, subscribeToOrderEvents } from './utils/api';
-import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from './utils/push';
-import { formatCurrency, playSoundEffect, COUPONS } from './utils/helpers';
-import { SplashScreen } from './components/SplashScreen';
-import { Header } from './components/Header';
-import { ConnectionBanner } from './components/ConnectionBanner';
-import { CategoryNav } from './components/CategoryNav';
-import { ProductCard } from './components/ProductCard';
-import { ProductModal } from './components/ProductModal';
-import { CartDrawer } from './components/CartDrawer';
-import { CheckoutModal } from './components/CheckoutModal';
-import { OrderStatusModal } from './components/OrderStatusModal';
-import { DeliveryAddressModal } from './components/DeliveryAddressModal';
-import { FavoritesModal } from './components/FavoritesModal';
-import { CustomerAccountModal } from './components/CustomerAccountModal';
-import { AssistantChat } from './components/AssistantChat';
-import { InstallPrompt } from './components/InstallPrompt';
+} from '@/src/data/initialData';
+import { fetchMenu, createOrder, fetchOrder, fetchOperationalStatus, fetchCustomerProfile, subscribeToOrderEvents } from '@/src/utils/api';
+import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
+import { formatCurrency, playSoundEffect, COUPONS } from '@/src/utils/helpers';
+import { SplashScreen } from '@/src/components/restaurant/SplashScreen';
+import { Header } from '@/src/components/restaurant/Header';
+import { ConnectionBanner } from '@/src/components/system/ConnectionBanner';
+import { CategoryNav } from '@/src/components/order/CategoryNav';
+import { ProductCard } from '@/src/components/order/ProductCard';
+import { ProductModal } from '@/src/components/order/ProductModal';
+import { CartDrawer } from '@/src/components/order/CartDrawer';
+import { CheckoutModal } from '@/src/components/order/CheckoutModal';
+import { OrderStatusModal } from '@/src/components/order/OrderStatusModal';
+import { DeliveryAddressModal } from '@/src/components/customer/DeliveryAddressModal';
+import { FavoritesModal } from '@/src/components/customer/FavoritesModal';
+import { CustomerAccountModal } from '@/src/components/customer/CustomerAccountModal';
+import { AssistantChat } from '@/src/components/restaurant/AssistantChat';
+import { InstallPrompt } from '@/src/components/customer/InstallPrompt';
 import { 
   ShoppingBag, 
   Bike,
@@ -141,15 +141,8 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
   // Saved Delivery Address State
   const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress | null>(() => {
     const saved = localStorage.getItem(storageKey('delivery_address'));
-    return saved ? JSON.parse(saved) : {
-      street: 'Av. Paulista',
-      number: '1578',
-      complement: 'Apt 42B',
-      neighborhood: 'Bela Vista',
-      city: 'São Paulo',
-      state: 'SP',
-      cep: '01310-200'
-    };
+    if (!saved) return null;
+    try { return JSON.parse(saved); } catch { localStorage.removeItem(storageKey('delivery_address')); return null; }
   });
 
   // Conta do cliente (Fase 4, itens 20-22) — GLOBAL, não isolada por

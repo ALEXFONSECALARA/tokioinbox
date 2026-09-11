@@ -1,11 +1,10 @@
 import React from 'react';
-import App from './App';
-import { Landing } from './components/Landing';
-import { AdminPortal } from './components/AdminPortal';
-import { CustomerAccountPage } from './components/CustomerAccountPage';
-import { KanbanOnlyPortal } from './components/KanbanOnlyPortal';
-import { UnifiedKanbanPortal } from './components/UnifiedKanbanPortal';
-import { fetchRestaurants, toPublicSlug } from './utils/api';
+import App from '@/src/App';
+import { Landing } from '@/src/components/restaurant/Landing';
+import { AdminPortal } from '@/src/components/admin/AdminPortal';
+import { CustomerAccountPage } from '@/src/components/customer/CustomerAccountPage';
+import { KanbanOnlyPortal, UnifiedKanbanPortal } from '@/src/components/kanban/KanbanPortal';
+import { fetchRestaurants, toPublicSlug } from '@/src/utils/api';
 
 // Roteador bem simples baseado em window.location.pathname — não usamos uma
 // biblioteca de rotas pra manter o projeto leve. Como cada navegação aqui é
