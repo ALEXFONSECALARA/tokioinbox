@@ -237,3 +237,47 @@ de mudanças.
   testar manualmente em DevTools (modo responsivo) depois do deploy.
 - Correção dos 2 erros de `tsc --noEmit` pré-existentes (não bloqueiam
   build nem funcionamento, mas seria bom limpar).
+
+---
+
+# Rodada 4 — Servidor não iniciava no Render (crash no boot)
+
+## 18. `Error: Node.js detected but native WebSocket not found` — servidor não subia
+Log de erro real em produção:
+
+```
+⚠️  Node.js 20 and below are deprecated ... Please upgrade to Node.js 22 or later.
+Error: Node.js detected but native WebSocket not found.
+```
+
+**Causa:** a Rodada 3 fixou `NODE_VERSION=20.11.0` no `render.yaml` (só pra
+padronizar dev/produção, sem saber ainda desse detalhe). Só que
+`@supabase/supabase-js` (o pacote que o backend usa pra falar com o banco)
+exige **Node 22+** — o submódulo `realtime-js` dele checa por um
+`WebSocket` global assim que o cliente é criado (`createClient(...)` em
+`server/lib/supabaseClient.js`), e lança essa exceção e derruba o processo
+inteiro **mesmo sem o projeto usar nenhum canal realtime do Supabase**
+(este projeto usa uma tabela própria `realtime_events` com polling, não o
+`.channel()` do supabase-js — mas o import já falha antes de chegar nesse
+detalhe).
+
+**Corrigido:**
+- `render.yaml`: `NODE_VERSION` de `20.11.0` → `22.22.2`, com comentário
+  explicando por que nunca deve voltar pra Node 20 enquanto o projeto usar
+  `@supabase/supabase-js`.
+- `.nvmrc`: `22.22.2` (era `20.11.0`).
+- `package.json`: `engines.node` ajustado pra `>=22.0.0 <23.0.0`.
+
+**Verificação real (não só suposição):** subi o servidor localmente sob
+Node 22.22.2 com `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` configurados
+(mesmo cenário que quebrava) e confirmei o boot limpo:
+`Servidor multicardápio rodando na porta 3999 — backend de dados: supabase`.
+Rodei de novo `npm run build`, `npm test` (5/5) e `node --check` em todo o
+backend depois da mudança — tudo passando.
+
+## ⚠️ Ação manual necessária no Render
+Depois de subir este código, confirme em Render → seu serviço →
+**Environment** que a variável `NODE_VERSION` está em `22.22.2` (o
+`render.yaml` já traz isso, mas se você tiver sobrescrito manualmente no
+painel do Render antes, o valor manual tem prioridade sobre o do
+`render.yaml` — vale conferir).

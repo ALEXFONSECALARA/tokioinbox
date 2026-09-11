@@ -7,7 +7,16 @@ services:
     startCommand: npm run start
     envVars:
       - key: NODE_VERSION
-        value: 20.11.0
+        value: 22.22.2
+        # @supabase/supabase-js (biblioteca do backend) exige Node 22+ —
+        # sem isso o servidor NEM INICIA no Render, mesmo sem usar canais
+        # realtime do Supabase (o pacote realtime-js exige WebSocket nativo
+        # do Node assim que é importado, e isso só existe a partir do Node
+        # 22). Bug real corrigido aqui: uma rodada anterior tinha fixado
+        # NODE_VERSION=20.11.0, o que derrubava o processo logo no boot com
+        # "Error: Node.js detected but native WebSocket not found." Mantenha
+        # esse valor em Node 22.x — nunca volte pra Node 20 enquanto o
+        # projeto usar @supabase/supabase-js.
       - key: ADMIN_PASSWORD
         sync: false
         # ⚠️ Defina o valor real dessa senha direto no painel do Render
