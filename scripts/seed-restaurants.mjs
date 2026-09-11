@@ -80,6 +80,11 @@ const restaurants = {
       logo: 'https://images.unsplash.com/photo-1553621042-f6e147245754?auto=format&fit=crop&w=300&q=80',
       bannerImage: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=1200&q=80',
       minimumOrder: 30,
+      // Este restaurante de exemplo usa o tema "premium" (fundo escuro,
+      // tipografia serifada) só pra mostrar essa opção — qualquer outro
+      // restaurante pode ligar o mesmo toggle em Configurações → Aparência,
+      // não é algo exclusivo deste slug.
+      premiumTheme: true,
     }),
   },
   italiano: {
