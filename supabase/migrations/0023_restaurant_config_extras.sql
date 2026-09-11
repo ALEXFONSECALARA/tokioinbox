@@ -26,4 +26,15 @@ alter table restaurant_configs
   add column if not exists history_clear_password_hash text,
   add column if not exists premium_theme boolean not null default false;
 
+-- Lacuna de segurança encontrada nesta auditoria: `customers` e
+-- `customer_addresses` (migration 0013) nunca tiveram RLS ligado — todas as
+-- outras tabelas do projeto têm (ver 0002_rls_policies.sql). Como o backend
+-- sempre usa a service_role key (que ignora RLS), isso nunca quebrou nada
+-- funcionalmente, mas deixava essas duas tabelas sem a segunda camada de
+-- defesa que as outras têm. RLS ligado sem nenhuma policy permissiva =
+-- "negado por padrão" pra qualquer client que não seja service_role —
+-- exatamente o mesmo padrão já usado no resto do projeto.
+alter table customers enable row level security;
+alter table customer_addresses enable row level security;
+
 notify pgrst, 'reload schema';
