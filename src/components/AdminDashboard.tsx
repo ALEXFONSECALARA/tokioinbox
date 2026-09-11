@@ -3550,6 +3550,34 @@ ${url}`)}catch{window.prompt('Copie o link exclusivo deste restaurante:',url)}}}
               </div>
             </div>
 
+            {/* Tema Premium do cardápio (fundo escuro, tipografia serifada,
+                animações suaves) — opcional, qualquer restaurante pode
+                ligar. Antes esse visual só existia fixo no código pro
+                restaurante de exemplo "japones"; agora é uma configuração
+                normal, salva junto com o resto desta página. */}
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-stone-200 shadow-xs space-y-1 text-xs sm:text-sm">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(localConfig.premiumTheme)}
+                  onChange={(e) => {
+                    const updated = { ...localConfig, premiumTheme: e.target.checked };
+                    setLocalConfig(updated);
+                    onUpdateConfig(updated);
+                  }}
+                  className="mt-1 w-4 h-4 accent-amber-500 shrink-0"
+                />
+                <span>
+                  <span className="font-black text-stone-900 block">Tema Premium do Cardápio</span>
+                  <span className="text-[11px] text-stone-500">
+                    Fundo escuro, tipografia serifada e animações suaves no cardápio deste
+                    restaurante (não muda a vitrine "Escolha seu restaurante", só a página do
+                    cardápio em si). A cor principal configurada acima continua sendo usada.
+                  </span>
+                </span>
+              </label>
+            </div>
+
             {showLayoutPreview && (
               <LayoutPreviewModal
                 open={showLayoutPreview}
