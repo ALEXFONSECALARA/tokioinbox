@@ -333,6 +333,12 @@ export interface RestaurantConfig {
   secondaryColor?: string;
   // Estilo visual escolhido pelo restaurante entre os 10 disponíveis.
   layout?: LayoutId;
+  // Tema "premium" do cardápio em si (fundo escuro, tipografia serifada,
+  // animações suaves) — opcional, qualquer restaurante pode ligar em
+  // Configurações → Aparência. Antes esse visual só existia hardcoded pro
+  // restaurante de slug 'japones'; agora é uma opção de configuração como
+  // qualquer outra, sem nenhum if/else amarrado a um nome de restaurante.
+  premiumTheme?: boolean;
   phone: string;
   whatsapp: string;
   address: string;

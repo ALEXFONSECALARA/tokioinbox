@@ -42,11 +42,12 @@ import {
   X
 } from 'lucide-react';
 
-// Tema visual por restaurante. Prioridade: cor cadastrada pelo próprio
+// Tema visual do cardápio. Prioridade: cor cadastrada pelo próprio
 // restaurante em Configurações → Aparência (config.color/secondaryColor) —
-// vem primeiro, é a identidade real dele. Sem isso, cai no mapa fixo antigo
-// (hoje só o "japones" tem tema próprio) e, por fim, no dourado padrão.
-// Isso é só a cor — nenhuma lógica de cardápio/checkout/pedido muda aqui.
+// vem primeiro, é a identidade real dele. Sem isso, e com o toggle "Tema
+// Premium" ligado (Configurações → Aparência → premiumTheme), cai no tema
+// dourado/escuro; senão, dourado padrão genérico. Isso é só a cor —
+// nenhuma lógica de cardápio/checkout/pedido muda aqui.
 const DEFAULT_THEME = {
   brand: '#F59E0B',
   brandLight: '#FBBF24',
@@ -55,14 +56,12 @@ const DEFAULT_THEME = {
   accentRed: '#F43F5E',
 };
 
-const RESTAURANT_THEMES: Record<string, typeof DEFAULT_THEME> = {
-  japones: {
-    brand: '#C9A227', // dourado
-    brandLight: '#E0B94D',
-    brandDark: '#8A6D1D',
-    brandTint: '#FBF3D9',
-    accentRed: '#B91C1C', // vermelho tradicional
-  },
+const PREMIUM_THEME = {
+  brand: '#C9A227', // dourado
+  brandLight: '#E0B94D',
+  brandDark: '#8A6D1D',
+  brandTint: '#FBF3D9',
+  accentRed: '#B91C1C', // vermelho tradicional
 };
 
 // Clareia/escurece um hex simples (sem libs extras) pra derivar brandLight/
@@ -76,8 +75,8 @@ function shadeHex(hex: string, percent: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
-function getThemeStyle(slug: string, config?: RestaurantConfig | null): React.CSSProperties {
-  let theme = RESTAURANT_THEMES[slug] || DEFAULT_THEME;
+function getThemeStyle(config?: RestaurantConfig | null): React.CSSProperties {
+  let theme = config?.premiumTheme ? PREMIUM_THEME : DEFAULT_THEME;
   if (config?.color) {
     try {
       theme = {
@@ -89,7 +88,7 @@ function getThemeStyle(slug: string, config?: RestaurantConfig | null): React.CS
       };
     } catch {
       // hex inválido (raro, ex. campo salvo de forma inesperada) — mantém o tema padrão
-      theme = RESTAURANT_THEMES[slug] || DEFAULT_THEME;
+      theme = config?.premiumTheme ? PREMIUM_THEME : DEFAULT_THEME;
     }
   }
   return {
@@ -102,8 +101,10 @@ function getThemeStyle(slug: string, config?: RestaurantConfig | null): React.CS
 }
 
 interface AppProps {
-  // Identifica qual restaurante esta loja representa (ex: 'japones', 'pizza').
-  // Cada restaurante tem seu próprio cardápio, carrinho e pedidos isolados.
+  // Identifica qual restaurante esta loja representa (ex: 'tokio-sushi',
+  // 'pizza-do-bairro'). Cada restaurante tem seu próprio cardápio, carrinho
+  // e pedidos isolados. Nenhuma lógica de tema/layout depende deste valor —
+  // tudo isso vem de restaurantConfig (ver getThemeStyle acima).
   restaurantSlug: string;
   onExit?: () => void;
 }
@@ -618,7 +619,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
 
   // Customer Delivery View
   return (
-    <div className={`min-h-screen text-[#f4f0e5] flex flex-col font-sans ${restaurantSlug === 'japones' ? 'jpn-premium' : 'bg-stone-100 text-stone-900'}`} style={getThemeStyle(restaurantSlug, restaurantConfig)}>
+    <div className={`min-h-screen text-[#f4f0e5] flex flex-col font-sans ${restaurantConfig?.premiumTheme ? 'jpn-premium' : 'bg-stone-100 text-stone-900'}`} style={getThemeStyle(restaurantConfig)}>
       {/* Alerta de conexão (evolução v25) — só visual pro cliente final, sem
           alarme sonoro (ninguém quer um alarme tocando enquanto navega o
           cardápio). O polling de pedidos já existente resincroniza sozinho
@@ -633,7 +634,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
           {menuLoadError}
         </div>
       )}
-      <div className={`flex-1 flex flex-col mx-auto w-full max-w-full ${restaurantSlug === 'japones' ? 'bg-transparent' : 'bg-white'}`}>
+      <div className={`flex-1 flex flex-col mx-auto w-full max-w-full ${restaurantConfig?.premiumTheme ? 'bg-transparent' : 'bg-white'}`}>
         {/* Restaurant Header */}
         <Header
           config={restaurantConfig}
@@ -717,7 +718,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
             {(restaurantConfig.promoBadges || []).map((badge) => (
               <div
                 key={badge.id}
-                className={`${restaurantSlug === 'japones' ? 'bg-[#101716] text-[#f4f0e5] border-[#c9a227]/20' : 'bg-gradient-to-r from-[var(--brand)] via-[var(--brand-light)] to-[var(--brand)] text-slate-950 border-[var(--brand-light)]'} rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg border`}
+                className={`${restaurantConfig?.premiumTheme ? 'bg-[#101716] text-[#f4f0e5] border-[#c9a227]/20' : 'bg-gradient-to-r from-[var(--brand)] via-[var(--brand-light)] to-[var(--brand)] text-slate-950 border-[var(--brand-light)]'} rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg border`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-slate-950 text-[var(--brand-light)] flex items-center justify-center flex-shrink-0 text-lg">
@@ -746,7 +747,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
         )}
 
         {/* Main Menu Grid Content */}
-        <main id="menu-content" className={`max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 sm:py-10 flex-1 space-y-8 ${restaurantSlug === 'japones' ? 'jpn-reveal' : ''}`}>
+        <main id="menu-content" className={`max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 sm:py-10 flex-1 space-y-8 ${restaurantConfig?.premiumTheme ? 'jpn-reveal' : ''}`}>
           {/* Active Filter indicator */}
           {(searchQuery || selectedTag || activeCategoryId !== 'all') && (
             <div className="flex items-center justify-between bg-stone-50 p-3 rounded-2xl border border-stone-200 text-xs">
@@ -786,7 +787,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
                   <section key={cat.id} id={`category-section-${cat.id}`} className="space-y-3">
                     <div className="border-b border-white/10 pb-3 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <h2 className={`${restaurantSlug === 'japones' ? 'jpn-display text-[#f4f0e5]' : 'text-stone-900'} text-xl sm:text-2xl font-semibold tracking-wide`}>
+                        <h2 className={`${restaurantConfig?.premiumTheme ? 'jpn-display text-[#f4f0e5]' : 'text-stone-900'} text-xl sm:text-2xl font-semibold tracking-wide`}>
                           {cat.name}
                         </h2>
                         <span className="text-xs bg-white/5 border border-white/10 text-[#a8aaa2] px-2 py-0.5 rounded-full font-bold">
@@ -876,7 +877,7 @@ export default function App({ restaurantSlug, onExit }: AppProps) {
         )}
 
         {/* Delivery Footer */}
-        <footer className={`${restaurantSlug === 'japones' ? 'bg-[#050707] text-[#858a83] border-white/5' : 'bg-stone-900 text-stone-400 border-stone-800'} text-xs py-10 px-4 sm:px-6 border-t mt-14`}>
+        <footer className={`${restaurantConfig?.premiumTheme ? 'bg-[#050707] text-[#858a83] border-white/5' : 'bg-stone-900 text-stone-400 border-stone-800'} text-xs py-10 px-4 sm:px-6 border-t mt-14`}>
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
             <div>
               <p className="jpn-display font-semibold text-[#f4f0e5] text-base flex items-center justify-center sm:justify-start gap-2">
