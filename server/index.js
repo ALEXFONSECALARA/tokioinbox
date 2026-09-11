@@ -220,7 +220,16 @@ async function requireAdminOrKanban(req, res, next) {
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   const payload = verifySession(token);
   if (payload?.type === 'kanban' && payload.slug === req.params.slug) {
-    req.adminUser = { isMaster: false, isKanbanOnly: true, restaurantSlug: payload.slug, permissions: {} };
+    // Bug real corrigido aqui: esse token tinha `permissions: {}` (vazio),
+    // e `updateOrderStatusHandler` exige a permissão 'cancelar_pedido' pra
+    // qualquer cancelamento — resultado: quem usa o Kanban (cozinha/balcão,
+    // o uso principal desta tela) NUNCA conseguia cancelar um pedido, sempre
+    // batia em 403. Cancelar e limpar histórico de pedidos ENTREGUES/
+    // CANCELADOS são parte normal de operar o quadro de pedidos — não são
+    // "cardápio, configurações, usuários ou financeiro" (o que esse token
+    // continua sem acessar, porque essas rotas exigem requireAdmin puro,
+    // não requireAdminOrKanban).
+    req.adminUser = { isMaster: false, isKanbanOnly: true, restaurantSlug: payload.slug, permissions: { cancelar_pedido: true, gerenciar_historico: true } };
     return next();
   }
   return requireAdmin(req, res, next);
@@ -233,7 +242,9 @@ async function requireAdminOrKanbanAll(req, res, next) {
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   const payload = verifySession(token);
   if (payload?.type === 'kanban-all') {
-    req.adminUser = { isMaster: false, isKanbanOnly: true, restaurantSlug: null, permissions: {} };
+    // Mesmo ajuste do Kanban individual acima — cancelar pedido e limpar
+    // histórico fazem parte de operar o quadro, não são acesso "extra".
+    req.adminUser = { isMaster: false, isKanbanOnly: true, restaurantSlug: null, permissions: { cancelar_pedido: true, gerenciar_historico: true } };
     return next();
   }
   return requireAdmin(req, res, next);
@@ -1704,7 +1715,7 @@ app.post('/api/:slug/print-jobs/claim', requireAdmin, requireOwnRestaurant, asyn
 
 // Exclusão consciente: somente histórico finalizado/cancelado.
 app.delete('/api/:slug/orders/:id', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug,id}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{const existing=await db.getOrder(slug,id);if(!existing)return res.status(404).json({error:'Pedido não encontrado.'});if(!['entregue','cancelado'].includes(existing.status))return res.status(409).json({error:'Só pedidos finalizados ou cancelados podem ser excluídos.'});const order=await db.deleteOrder(slug,id);broadcastOrderEvent(slug,{type:'deleted',orderId:id,updatedAt:new Date().toISOString(),customerId:order?.customerId||null});res.json({ok:true,order});}catch(err){logServerError(`Erro ao excluir pedido ${slug}/${id}`,err,{restaurantSlug:slug});res.status(500).json({error:'Não foi possível excluir o pedido.'});} });
-app.delete('/api/:slug/orders/history', requireAdmin, requireOwnRestaurant, async (req,res)=>{ const {slug}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{
+app.delete('/api/:slug/orders/history', requireAdminOrKanban, requireOwnRestaurant, async (req,res)=>{ const {slug}=req.params; if(!hasPermission(req,'gerenciar_historico')&&!req.adminUser?.isMaster)return res.status(403).json({error:'Você não tem permissão para excluir histórico.'}); try{
   // Senha extra específica deste restaurante (evolução v24_2) — reforço
   // além da permissão de conta: útil quando várias pessoas compartilham o
   // mesmo dispositivo/login e não se quer que qualquer uma apague o
