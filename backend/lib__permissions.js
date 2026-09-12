@@ -12,7 +12,7 @@
 //   - ADMIN_GERENCIAR_USUARIOS / RESTAURANTE_USUARIOS → rotas /api/admin/users
 //   - ADMIN_ATIVAR_DESATIVAR_RESTAURANTES → PATCH /api/admin/restaurants/:slug/active
 //   - ADMIN_GERENCIAR_RESTAURANTES → usada como "bypass" do isolamento por
-//     restaurante (ver requireOwnRestaurant em server/index.js)
+//     restaurante (ver requireOwnRestaurant em backend/index.js)
 //   - Isolamento por restaurante (item 19/44): qualquer usuário vinculado a
 //     um restaurante não acessa dados de outro restaurante, em nenhuma rota
 //     protegida por :slug, a menos que tenha ADMIN_GERENCIAR_RESTAURANTES.

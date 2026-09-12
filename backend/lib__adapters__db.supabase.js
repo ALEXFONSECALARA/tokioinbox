@@ -1,5 +1,5 @@
 // Backend de dados no Supabase — mesma interface pública de db.json.js,
-// pra server/lib/db.js poder trocar de um pro outro sem o resto do server/
+// pra backend/lib__db.js poder trocar de um pro outro sem o resto do server/
 // (nem o frontend) perceber diferença nenhuma na resposta das rotas.
 //
 // Isolamento entre restaurantes (seção 47/48 do prompt mestre): toda função

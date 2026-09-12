@@ -305,7 +305,7 @@ app.use(rateLimit({windowMs:60000,max:300,key:'api'}));
 // quando o Render expõe essa variável; cai pro timestamp de boot senão.
 const SERVER_BOOT_ID = process.env.RENDER_GIT_COMMIT || String(Date.now());
 app.get('/api/version', (req, res) => {
-  res.json({ bootId: SERVER_BOOT_ID });
+  res.json({ ok: true, version: '27.0.0', release: 'V27', bootId: SERVER_BOOT_ID });
 });
 
 
@@ -398,9 +398,6 @@ app.get('/uploads/:filename', async (req, res) => {
 app.post('/api/client-errors', async (req,res)=>{try{const message=String(req.body?.message||'Erro de cliente').slice(0,1000);await db.createErrorLog({level:'client',context:'frontend',message,details:req.body?.details||{}});res.status(204).end()}catch{res.status(204).end()}});
 app.get('/api/pwa/manifest', async (req,res)=>{ try{const slug=String(req.query.slug||'').trim();if(!slug||!(await db.restaurantExists(slug)))return res.status(404).json({error:'Restaurante não encontrado.'});const data=await db.readRestaurantData(slug);const cfg=data.restaurantConfig||{};res.set('Cache-Control','no-store');res.json({name:cfg.name||slug,short_name:cfg.name||slug,start_url:`/${publicSlug(cfg.name,slug)}`,scope:`/${publicSlug(cfg.name,slug)}/`,display:'standalone',background_color:'#070908',theme_color:cfg.color||'#c9a227',description:cfg.tagline||'Delivery',icons:[{src:cfg.logo||'/tokioinbox-mark.svg',sizes:'512x512',type:cfg.logo?'image/png':'image/svg+xml',purpose:'any maskable'}]});}catch(err){logServerError('Erro ao gerar manifesto PWA',err);res.status(500).json({error:'Não foi possível gerar o aplicativo.'})} });
 
-app.get('/api/version', (req, res) => {
-  res.json({ ok: true, version: '24.2.0', release: 'V24.2', features: ['atomic-order-persistence','production-schema-repair','shared-realtime-per-restaurant','stateless-sessions','payment-conflict-control','request-correlation','error-observability','print-bridge-claim'] });
-});
 
 app.get('/api/health', async (req, res) => {
   const startedAt = Date.now();

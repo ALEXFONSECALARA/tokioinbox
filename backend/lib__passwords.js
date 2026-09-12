@@ -1,6 +1,6 @@
 // Hash de senha dos usuários do painel (Fase 4, itens 17-19).
 //
-// Usa crypto.scrypt (nativo do Node, já importado em server/index.js) em vez
+// Usa crypto.scrypt (nativo do Node, já importado em backend/index.js) em vez
 // de bcrypt/argon2 — não é preciso instalar nenhuma dependência nova. scrypt
 // é um algoritmo de derivação de chave adequado pra senhas (memory-hard,
 // resistente a força bruta em GPU), amplamente recomendado como alternativa
