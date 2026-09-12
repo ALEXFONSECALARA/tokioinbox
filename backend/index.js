@@ -278,7 +278,7 @@ app.use(rateLimit({windowMs:60000,max:300,key:'api'}));
 // quando o Render expõe essa variável; cai pro timestamp de boot senão.
 const SERVER_BOOT_ID = process.env.RENDER_GIT_COMMIT || String(Date.now());
 app.get('/api/version', (req, res) => {
-  res.json({ ok: true, version: '27.3.0', release: 'V27.3', bootId: SERVER_BOOT_ID });
+  res.json({ ok: true, version: '27.4.0', release: 'V27.3', bootId: SERVER_BOOT_ID });
 });
 
 

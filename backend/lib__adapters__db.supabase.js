@@ -606,9 +606,16 @@ export async function updateOrder(slug, id, patch, expectedUpdatedAt) {
   }
   if (Object.keys(row).length === 0) return getOrder(slug, id);
 
+  // Bancos antigos podem ainda não ter orders.updated_at. Tenta a atualização
+  // otimista primeiro; se o PostgREST denunciar coluna inexistente/cache antigo,
+  // repete sem a condição de updated_at para não bloquear a operação do restaurante.
   let query = supabase.from('orders').update(row).eq('restaurant_id', restaurantId).eq('id', id);
   if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
-  const { data, error } = await query.select('*').maybeSingle();
+  let { data, error } = await query.select('*').maybeSingle();
+  const schemaMissingUpdatedAt = /updated_at.*does not exist|Could not find the column.*updated_at|schema cache.*updated_at/i.test(String(error?.message || ''));
+  if (error && expectedUpdatedAt && schemaMissingUpdatedAt) {
+    ({ data, error } = await supabase.from('orders').update(row).eq('restaurant_id', restaurantId).eq('id', id).select('*').maybeSingle());
+  }
   if (error) throw error;
   if (!data) {
     const current = await getOrder(slug, id);
