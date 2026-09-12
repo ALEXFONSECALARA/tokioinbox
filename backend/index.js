@@ -192,24 +192,11 @@ function requireOwnRestaurant(req, res, next) {
   return res.status(403).json({ error: 'Você não tem acesso a este restaurante.' });
 }
 
-// ---------- Kanban com senha própria (evolução v24_2) ----------
-// Dois acessos NOVOS, mais restritos que o login completo do admin — pra
-// quem só precisa acompanhar/atualizar pedidos (cozinha, balcão, garçom),
-// sem enxergar cardápio, configurações, usuários ou financeiro:
-//   - Kanban INDIVIDUAL: senha própria de UM restaurante (kanbanPasswordHash
-//     salvo na config daquele restaurante). Token só vale pra aquele slug.
-//   - Kanban ÚNICO (todos os restaurantes): uma senha de autorização à parte
-//     (KANBAN_ALL_PASSWORD, ou a própria ADMIN_PASSWORD) que enxerga os
-//     pedidos de TODOS os restaurantes agrupados numa tela só.
-// Os dois reaproveitam a mesma assinatura HMAC dos outros tokens (sem
-// estado em memória, funciona em qualquer instância do Render).
-const KANBAN_ALL_PASSWORD = process.env.KANBAN_ALL_PASSWORD || '';
+// ---------- Kanban individual com senha própria ----------
+// Acesso restrito ao quadro de pedidos de um restaurante.
 
 function issueKanbanToken(slug) {
   return signSession({ v: 1, type: 'kanban', slug, exp: Date.now() + TOKEN_TTL_MS });
-}
-function issueKanbanAllToken() {
-  return signSession({ v: 1, type: 'kanban-all', exp: Date.now() + TOKEN_TTL_MS });
 }
 
 // Autoriza a rota pra um admin normal (com todas as regras de sempre) OU
@@ -235,20 +222,6 @@ async function requireAdminOrKanban(req, res, next) {
   return requireAdmin(req, res, next);
 }
 
-// Mesma ideia, mas pro Kanban ÚNICO — não tem :slug na rota (vê todos os
-// restaurantes), então não reaproveita requireOwnRestaurant.
-async function requireAdminOrKanbanAll(req, res, next) {
-  const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  const payload = verifySession(token);
-  if (payload?.type === 'kanban-all') {
-    // Mesmo ajuste do Kanban individual acima — cancelar pedido e limpar
-    // histórico fazem parte de operar o quadro, não são acesso "extra".
-    req.adminUser = { isMaster: false, isKanbanOnly: true, restaurantSlug: null, permissions: { cancelar_pedido: true, gerenciar_historico: true } };
-    return next();
-  }
-  return requireAdmin(req, res, next);
-}
 
 // ---------- Sessão do CLIENTE final (Fase 4, itens 20-22) ----------
 // Também é assinada para funcionar em qualquer instância do Render. A conta
@@ -305,7 +278,7 @@ app.use(rateLimit({windowMs:60000,max:300,key:'api'}));
 // quando o Render expõe essa variável; cai pro timestamp de boot senão.
 const SERVER_BOOT_ID = process.env.RENDER_GIT_COMMIT || String(Date.now());
 app.get('/api/version', (req, res) => {
-  res.json({ ok: true, version: '27.0.0', release: 'V27', bootId: SERVER_BOOT_ID });
+  res.json({ ok: true, version: '27.2.0', release: 'V27.2', bootId: SERVER_BOOT_ID });
 });
 
 
@@ -518,8 +491,6 @@ app.get('/api/:slug/order-events', async (req, res, next) => {
     } catch (err) { return next(err); }
   } else if (kanbanPayload?.type === 'kanban' && kanbanPayload.slug === slug) {
     role = 'admin'; // mesmo canal de eventos do admin — só enxerga pedidos deste restaurante mesmo
-  } else if (kanbanPayload?.type === 'kanban-all') {
-    role = 'admin';
   } else if (customerSession) {
     role = 'customer'; customerId = customerSession.customerId;
   } else {
@@ -532,40 +503,6 @@ app.get('/api/:slug/order-events', async (req, res, next) => {
   addOrderEventClient(slug, client);
   const heartbeat = setInterval(() => { try { res.write(': heartbeat\n\n'); } catch {} }, 25000);
   req.on('close', () => { clearInterval(heartbeat); removeOrderEventClient(slug, client); });
-});
-
-// Kanban único — pedidos de TODOS os restaurantes numa lista só, cada um
-// marcado com restaurantSlug/restaurantName pra o frontend agrupar/filtrar.
-// Só pedidos ainda em andamento (evita carregar meses de histórico de
-// vários restaurantes de uma vez só).
-app.get('/api/kanban-all/orders', requireAdminOrKanbanAll, async (req, res) => {
-  try {
-    const restaurants = (await db.getRestaurantsAdmin()) || [];
-    const active = restaurants.filter((r) => r.active !== false);
-    const perRestaurant = await Promise.all(
-      active.map(async (r) => {
-        try {
-          const orders = await db.listOrders(r.slug);
-          return orders
-            .filter((o) => !['entregue', 'cancelado'].includes(o.status))
-            .map((o) => ({ ...o, restaurantSlug: r.slug, restaurantName: r.name }));
-        } catch {
-          return [];
-        }
-      })
-    );
-    res.json({ orders: perRestaurant.flat(), restaurants: active.map((r) => ({ slug: r.slug, name: r.name })) });
-  } catch (err) {
-    logServerError('Erro ao carregar Kanban único:', err);
-    res.status(500).json({ error: 'Não foi possível carregar os pedidos de todos os restaurantes.' });
-  }
-});
-
-// Atualizar status de um pedido a partir do Kanban único — mesma regra de
-// transição e mesma proteção contra cancelamento sem permissão (reaproveita
-// a função compartilhada acima, sem truques de reroteamento).
-app.patch('/api/kanban-all/:slug/orders/:id', requireAdminOrKanbanAll, async (req, res) => {
-  await updateOrderStatusHandler(req.params.slug, req.params.id, req, res);
 });
 
 
@@ -790,9 +727,11 @@ app.post('/api/customers/me/orders/:slug/:id/cancel', requireCustomer, async (re
   const { slug, id } = req.params;
   const reason = String(req.body?.reason || 'Cancelado pelo cliente').trim().slice(0, 300);
   try {
-    const current = await db.getOrder(slug, id);
-    if (!current) return res.status(404).json({ error: 'Pedido não encontrado.' });
-    if (current.customerId !== req.customerId) return res.status(403).json({ error: 'Este pedido não pertence à sua conta.' });
+    // Localiza pelo ID + cliente autenticado, sem depender do slug enviado pelo navegador.
+    // Isso evita o falso "Pedido não encontrado" quando o slug muda ou vem de um
+    // link antigo, mantendo a autorização vinculada ao token do cliente.
+    const current = await db.getCustomerOrderById(req.customerId, id);
+    if (!current) return res.status(404).json({ error: 'Pedido não encontrado ou não pertence à sua conta.' });
     if (!['recebido', 'em_preparo'].includes(current.status)) {
       return res.status(409).json({ error: 'Este pedido não pode mais ser cancelado pelo cliente.' });
     }
@@ -800,9 +739,10 @@ app.post('/api/customers/me/orders/:slug/:id/cancel', requireCustomer, async (re
       ...(Array.isArray(current.statusHistory) ? current.statusHistory : []),
       { status: 'cancelado', timestamp: new Date().toISOString(), note: reason || 'Cancelado pelo cliente' },
     ];
-    const updated = await db.updateOrder(slug, id, { status: 'cancelado', cancelReason: reason || 'Cancelado pelo cliente', statusHistory }, current.updatedAt);
+    const resolvedSlug = current.restaurantSlug || slug;
+    const updated = await db.updateOrder(resolvedSlug, id, { status: 'cancelado', cancelReason: reason || 'Cancelado pelo cliente', statusHistory }, current.updatedAt);
     if (!updated) return res.status(404).json({ error: 'Pedido não encontrado.' });
-    broadcastOrderEvent(slug, { type: 'updated', orderId: updated.id, status: updated.status, updatedAt: updated.updatedAt || new Date().toISOString(), customerId: updated.customerId || null });
+    broadcastOrderEvent(resolvedSlug, { type: 'updated', orderId: updated.id, status: updated.status, updatedAt: updated.updatedAt || new Date().toISOString(), customerId: updated.customerId || null });
     res.json({ ok: true, order: updated });
   } catch (err) {
     if (err?.code === 'ORDER_CONFLICT') return res.status(409).json({ error: 'O pedido mudou enquanto você cancelava. Atualize e tente novamente.', order: err.currentOrder });
@@ -1280,18 +1220,6 @@ app.post('/api/:slug/kanban-login', rateLimit({windowMs:60000,max:10,key:'kanban
     logServerError(`Erro no login do Kanban individual de ${slug}:`, err);
     res.status(500).json({ error: 'Não foi possível entrar no Kanban.' });
   }
-});
-
-// Kanban único — todos os restaurantes numa tela só (evolução v24_2).
-// Senha de autorização própria (KANBAN_ALL_PASSWORD), com ADMIN_PASSWORD
-// sempre aceita também, já que quem tem acesso mestre óbvio tem acesso a
-// isto também.
-app.post('/api/kanban-all/login', rateLimit({windowMs:60000,max:10,key:'kanban-all-login'}), (req, res) => {
-  const { password } = req.body || {};
-  const ok = Boolean(password) && (password === ADMIN_PASSWORD || (KANBAN_ALL_PASSWORD && password === KANBAN_ALL_PASSWORD));
-  void db.createAdminLoginLog({login:'kanban-all',success:ok,mode:'kanban-all',ip:req.ip,userAgent:req.get('user-agent')}).catch(()=>{});
-  if (!ok) return res.status(401).json({ error: 'Senha incorreta.' });
-  res.json({ token: issueKanbanAllToken() });
 });
 
 // Login individual (Fase 4, item 17) — login + senha de um usuário criado

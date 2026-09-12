@@ -140,6 +140,16 @@ export async function listOrders(slug) {
   return orders.map((order) => ({ ...order, restaurantSlug: slug }));
 }
 
+export async function getCustomerOrderById(customerId, id) {
+  const restaurants = await readJson(RESTAURANTS_FILE, []);
+  for (const r of restaurants) {
+    const orders = await readJson(path.join(DATA_DIR, `storage__legacy-json__restaurants__${r.slug}__orders.json`), []);
+    const found = orders.find((o) => o.id === id && o.customerId === customerId);
+    if (found) return { ...found, restaurantSlug: r.slug, restaurantName: r.name };
+  }
+  return null;
+}
+
 export async function getOrder(slug, id) {
   const orders = await readJson(ordersPath(slug), []);
   const order = orders.find((o) => o.id === id) || null;

@@ -370,6 +370,56 @@ export async function listOrders(slug) {
   return orderRows.map((o) => orderRowToApi(o, itemsByOrder.get(o.id), slug));
 }
 
+function normalizePhoneForOwnership(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+export async function getCustomerOrderById(customerId, id) {
+  // Pedido é identificado pelo UUID. Pedidos antigos podem não ter
+  // customer_id preenchido, então primeiro buscamos pelo ID e depois
+  // validamos a posse pelo customer_id OU pelo telefone salvo no pedido.
+  // Isso corrige o falso "Pedido não encontrado" sem abrir acesso a pedidos
+  // de outro cliente.
+  const { data: orderRow, error } = await supabase
+    .from('orders')
+    .select('*, restaurants(slug, name)')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!orderRow) return null;
+
+  let ownsOrder = orderRow.customer_id === customerId;
+  if (!ownsOrder && !orderRow.customer_id) {
+    const { data: customerRow, error: customerErr } = await supabase
+      .from('customers')
+      .select('phone')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (customerErr) throw customerErr;
+    ownsOrder = !!customerRow?.phone &&
+      normalizePhoneForOwnership(customerRow.phone) === normalizePhoneForOwnership(orderRow.customer?.phone);
+  }
+  if (!ownsOrder) return null;
+
+  // Vincula o pedido legado à conta depois da validação por telefone.
+  if (!orderRow.customer_id) {
+    const { error: linkErr } = await supabase
+      .from('orders')
+      .update({ customer_id: customerId })
+      .eq('id', id)
+      .is('customer_id', null);
+    if (linkErr) throw linkErr;
+    orderRow.customer_id = customerId;
+  }
+
+  const { data: itemRows, error: itemErr } = await supabase
+    .from('order_items')
+    .select('*')
+    .eq('order_id', id);
+  if (itemErr) throw itemErr;
+  return { ...orderRowToApi(orderRow, itemRows, orderRow.restaurants?.slug), restaurantName: orderRow.restaurants?.name };
+}
+
 export async function getOrder(slug, id) {
   const restaurantId = await resolveRestaurantId(slug);
   if (!restaurantId) return null;
@@ -953,20 +1003,40 @@ export async function deleteCustomerAddress(id, customerId) {
 }
 
 export async function listCustomerOrders(customerId) {
-  const { data: orderRows, error } = await supabase
-    .from('orders')
-    .select('*, restaurants(slug, name)')
-    .eq('customer_id', customerId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  if (!orderRows || orderRows.length === 0) return [];
+  const { data: customerRow, error: customerErr } = await supabase
+    .from('customers').select('phone').eq('id', customerId).maybeSingle();
+  if (customerErr) throw customerErr;
+
+  const queries = [
+    supabase.from('orders').select('*, restaurants(slug, name)').eq('customer_id', customerId).order('created_at', { ascending: false })
+  ];
+  // Inclui pedidos antigos criados antes da conta existir, desde que o
+  // telefone salvo no pedido seja exatamente do cliente autenticado.
+  const phone = normalizePhoneForOwnership(customerRow?.phone);
+  if (phone) {
+    queries.push(supabase.from('orders').select('*, restaurants(slug, name)').eq('customer->>phone', phone).order('created_at', { ascending: false }));
+  }
+
+  const results = await Promise.all(queries);
+  for (const result of results) if (result.error) throw result.error;
+  const byId = new Map();
+  for (const result of results) for (const row of result.data || []) {
+    if (!byId.has(row.id)) byId.set(row.id, row);
+  }
+  const orderRows = [...byId.values()].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (!orderRows.length) return [];
+
+  // Corrige automaticamente o vínculo dos pedidos legados encontrados por telefone.
+  const legacyIds = orderRows.filter(o => !o.customer_id).map(o => o.id);
+  if (legacyIds.length) {
+    const { error: linkErr } = await supabase.from('orders').update({ customer_id: customerId }).in('id', legacyIds).is('customer_id', null);
+    if (linkErr) throw linkErr;
+    orderRows.forEach(o => { if (!o.customer_id && legacyIds.includes(o.id)) o.customer_id = customerId; });
+  }
 
   const { data: itemRows, error: itemErr } = await supabase
-    .from('order_items')
-    .select('*')
-    .in('order_id', orderRows.map((o) => o.id));
+    .from('order_items').select('*').in('order_id', orderRows.map((o) => o.id));
   if (itemErr) throw itemErr;
-
   const itemsByOrder = new Map();
   for (const it of itemRows || []) {
     if (!itemsByOrder.has(it.order_id)) itemsByOrder.set(it.order_id, []);
@@ -977,17 +1047,6 @@ export async function listCustomerOrders(customerId) {
     restaurantSlug: o.restaurants?.slug,
     restaurantName: o.restaurants?.name,
   }));
-}
-
-export async function clearCustomerOrderHistory(customerId) {
-  const { data, error } = await supabase
-    .from('orders')
-    .delete()
-    .eq('customer_id', customerId)
-    .in('status', ['entregue', 'cancelado'])
-    .select('id');
-  if (error) throw error;
-  return { removed: (data || []).length };
 }
 
 // ---------- Notificações push + campanhas automáticas (Fase 4, itens 27-30) ----------
