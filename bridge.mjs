@@ -1,0 +1,10 @@
+import net from 'node:net';
+const base=String(process.env.TOKIO_API_URL||'http://localhost:3001').replace(/\/$/,'');
+const slug=process.env.TOKIO_RESTAURANT_SLUG; const token=process.env.TOKIO_ADMIN_TOKEN; const workerId=process.env.TOKIO_WORKER_ID||`bridge-${process.pid}`;
+const host=process.env.PRINTER_HOST; const port=Number(process.env.PRINTER_PORT||9100); const poll=Number(process.env.POLL_MS||2000);
+if(!slug||!token||!host) throw new Error('Defina TOKIO_RESTAURANT_SLUG, TOKIO_ADMIN_TOKEN e PRINTER_HOST.');
+async function api(path, options={}) { const r=await fetch(`${base}/api/${slug}${path}`,{...options,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',...(options.headers||{})}}); if(!r.ok) throw new Error(await r.text()); if(r.status===204)return null; return r.json(); }
+function escpos(order){const out=['\x1b@','\x1ba\x01','TOKIOINBOX\n',`PEDIDO #${order.orderNumber}\n`,'\x1ba\x00',`${order.customer?.name||'Cliente'}\n`,`${order.customer?.phone||''}\n`,'--------------------------------\n'];for(const i of order.items||[])out.push(`${i.quantity}x ${i.menuItem?.name||'Item'}  R$ ${Number(i.totalPrice||0).toFixed(2)}\n`);out.push('--------------------------------\n',`TOTAL: R$ ${Number(order.total||0).toFixed(2)}\n`,'\n\n\x1dV\x00');return Buffer.from(out.join(''),'utf8');}
+function print(buf){return new Promise((resolve,reject)=>{const s=net.createConnection({host,port},()=>s.end(buf));s.on('error',reject);s.on('close',resolve);});}
+async function tick(){try{const claim=await api('/print-jobs/claim',{method:'POST',body:JSON.stringify({workerId})});const job=claim?.job;if(!job)return;const order=await api(`/orders/${encodeURIComponent(job.orderId)}`);try{await print(escpos(order));await api(`/print-jobs/${job.id}`,{method:'PATCH',body:JSON.stringify({status:'impresso',error:''})});}catch(e){await api(`/print-jobs/${job.id}`,{method:'PATCH',body:JSON.stringify({status:'erro',error:String(e?.message||e)})});}}catch(e){console.error('[bridge]',e?.message||e)}}
+setInterval(tick,poll);tick();
