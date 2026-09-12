@@ -1,1 +1,0 @@
-{"name":"tokioinbox-print-bridge","private":true,"type":"module","version":"18.0.0","scripts":{"start":"node bridge.mjs"}}
