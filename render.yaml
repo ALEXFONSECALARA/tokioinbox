@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: tokioinbox-multicardapio
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
+        # @supabase/supabase-js (biblioteca do backend) exige Node 22+ —
+        # sem isso o servidor NEM INICIA no Render, mesmo sem usar canais
+        # realtime do Supabase (o pacote realtime-js exige WebSocket nativo
+        # do Node assim que é importado, e isso só existe a partir do Node
+        # 22). Bug real corrigido aqui: uma rodada anterior tinha fixado
+        # NODE_VERSION=20.11.0, o que derrubava o processo logo no boot com
+        # "Error: Node.js detected but native WebSocket not found." Mantenha
+        # esse valor em Node 22.x — nunca volte pra Node 20 enquanto o
+        # projeto usar @supabase/supabase-js.
+      - key: ADMIN_PASSWORD
+        sync: false
+        # ⚠️ Defina o valor real dessa senha direto no painel do Render
+        # (Environment). É a senha do ADMIN MASTER — dá acesso total ao
+        # painel em /PAINELRESTAURANTE (endereço oficial; /admin continua
+        # aceito por compatibilidade com links antigos), incluindo todos os
+        # restaurantes cadastrados (a quantidade é dinâmica, não fixa).
+      - key: SUPABASE_URL
+        sync: false
+        # O backend usa Supabase em produção. Se faltar qualquer uma das duas
+        # variáveis, o processo encerra com erro em vez de usar armazenamento efêmero.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+        # A chave "service_role" do seu projeto Supabase (Dashboard → Project
+        # Settings → API). NUNCA a chave "anon". Ver docs/SUPABASE_SETUP.md.
+        # Defina só aqui no painel do Render — nunca no repositório.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+        # Opcional quando Supabase Storage estiver configurado. Cloudinary pode
+        # servir como fallback persistente para imagens.
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+        # Nunca comitar o valor real. Usada só pelo backend, nunca enviada
+        # ao frontend.
+    autoDeploy: true
+    # PRODUÇÃO: Supabase é obrigatório para dados.
+    # IMAGENS: Supabase Storage é o padrão; Cloudinary é fallback persistente.
