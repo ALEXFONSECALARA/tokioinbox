@@ -127,3 +127,25 @@
   .admin-kanban>*:first-child{scroll-snap-align:start;}
   .admin-kanban .space-y-3{overflow:visible!important;}
 }
+
+/* V27.4 — Conta do cliente: garante contraste dos campos em qualquer tema/reset global. */
+.customer-account-modal input,
+.customer-account-modal textarea,
+.customer-account-modal select {
+  color: #1c1917 !important;
+  background-color: #ffffff !important;
+  -webkit-text-fill-color: #1c1917 !important;
+  caret-color: #1c1917 !important;
+}
+.customer-account-modal input::placeholder,
+.customer-account-modal textarea::placeholder {
+  color: #a8a29e !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #a8a29e !important;
+}
+.customer-account-modal input:disabled,
+.customer-account-modal textarea:disabled,
+.customer-account-modal select:disabled {
+  color: #78716c !important;
+  -webkit-text-fill-color: #78716c !important;
+}

@@ -199,7 +199,7 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+    <div className="customer-account-modal fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
       <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[92dvh] overflow-y-auto p-4 sm:p-5 space-y-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between border-b border-stone-100 pb-3">
           <h2 className="font-black text-lg text-stone-900 flex items-center gap-2">
@@ -235,21 +235,21 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Nome"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm"
+                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm text-stone-900 bg-white placeholder:text-stone-400"
               />
             )}
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="Telefone (com DDD)"
-              className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm"
+              className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm text-stone-900 bg-white placeholder:text-stone-400"
             />
             {authMode === 'register' && (
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="E-mail (opcional)"
-                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm"
+                className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm text-stone-900 bg-white placeholder:text-stone-400"
               />
             )}
             <input
@@ -260,7 +260,7 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
               value={password}
               onChange={(e) => setPassword(e.target.value.replace(/\D/g, '').slice(0, 4))}
               placeholder={authMode === 'register' ? 'Crie uma senha de 4 dígitos' : 'Senha (4 dígitos)'}
-              className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm tracking-[0.5em] text-center"
+              className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm tracking-[0.5em] text-center text-stone-900 bg-white placeholder:text-stone-400"
             />
             {authError && <p className="text-xs text-red-600">{authError}</p>}
             <button
