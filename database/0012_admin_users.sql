@@ -10,7 +10,7 @@
 -- restaurante, a menos que tenha a permissão admin_gerenciar_restaurantes.
 --
 -- Senha nunca em texto puro: password_hash guarda "salt:hash" (scrypt,
--- ver server/lib/passwords.js). Não existe coluna de senha em texto puro.
+-- ver backend/lib__passwords.js). Não existe coluna de senha em texto puro.
 -- ═══════════════════════════════════════════════════════════════════════
 
 create table if not exists admin_users (
@@ -32,8 +32,8 @@ create index if not exists admin_users_restaurant_slug_idx on admin_users (resta
 comment on table admin_users is
   'Usuários individuais do painel administrativo (Fase 4, itens 17-19). Independente do login mestre por senha única (ADMIN_PASSWORD), que continua ativo.';
 comment on column admin_users.password_hash is
-  'Formato "salt:hash" (scrypt) — nunca texto puro. Ver server/lib/passwords.js.';
+  'Formato "salt:hash" (scrypt) — nunca texto puro. Ver backend/lib__passwords.js.';
 comment on column admin_users.restaurant_slug is
   'NULL = usuário com escopo de super-admin. Preenchido = usuário restrito àquele restaurante (isolamento reforçado no backend, não só no frontend).';
 comment on column admin_users.permissions is
-  'Mapa {chave: true} das permissões concedidas (catálogo em server/lib/permissions.js). Ausente/false = sem a permissão.';
+  'Mapa {chave: true} das permissões concedidas (catálogo em backend/lib__permissions.js). Ausente/false = sem a permissão.';

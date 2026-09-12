@@ -49,4 +49,4 @@ create index if not exists notification_campaigns_restaurant_idx on notification
 comment on table push_subscriptions is
   'Inscrições de push do navegador/dispositivo do visitante ou cliente (Fase 4, item 27).';
 comment on table notification_campaigns is
-  'Notificação agendada ou campanha recorrente (Fase 4, itens 28-30). Disparo controlado pelo agendador em server/index.js.';
+  'Notificação agendada ou campanha recorrente (Fase 4, itens 28-30). Disparo controlado pelo agendador em backend/index.js.';

@@ -8,7 +8,7 @@
 -- service role IGNORA RLS por padrão — é o Postgres confiando 100% no
 -- backend. O isolamento real entre restaurantes, hoje, é feito pelo próprio
 -- código do backend (toda rota deriva o restaurante do :slug da URL, nunca
--- aceita restaurant_id vindo solto do cliente — ver server/lib/db.supabase.js).
+-- aceita restaurant_id vindo solto do cliente — ver backend/lib__adapters__db.supabase.js).
 --
 -- Essas políticas de RLS abaixo são a segunda camada de defesa, pensada pra
 -- quando o app passar a falar com o Supabase diretamente do navegador (ex:

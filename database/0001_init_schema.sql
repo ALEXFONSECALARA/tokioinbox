@@ -7,7 +7,7 @@
 --      (ou via CLI: supabase db push, se o projeto estiver linkado)
 --   2. Depois rode 0002_rls_policies.sql
 --   3. Depois rode o script scripts/migrate-to-supabase.mjs pra importar os
---      dados que já existem em server/storage/legacy-json/restaurants/*.json
+--      dados que já existem em backend/storage__legacy-json__restaurants/*.json
 --
 -- Este arquivo só CRIA estrutura. Não apaga nada. Pode ser rodado num
 -- projeto Supabase vazio com segurança.
@@ -25,7 +25,7 @@ end;
 $$ language plpgsql;
 
 -- ---------------------------------------------------------------------
--- restaurants — identidade básica (equivalente a server/storage/legacy-json/restaurants.json)
+-- restaurants — identidade básica (equivalente a backend/storage__legacy-json__restaurants.json)
 -- ---------------------------------------------------------------------
 create table if not exists restaurants (
   id uuid primary key default gen_random_uuid(),

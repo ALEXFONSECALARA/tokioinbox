@@ -3,7 +3,7 @@
 -- ═══════════════════════════════════════════════════════════════════════
 -- Aditivo e opcional: ausente = 'normal' / +0min, tempo padrão exibido puro
 -- (comportamento de sempre). O histórico é capado em 50 entradas pelo
--- backend (server/index.js), não aqui — a coluna aceita qualquer array.
+-- backend (backend/index.js), não aqui — a coluna aceita qualquer array.
 -- ═══════════════════════════════════════════════════════════════════════
 
 alter table restaurant_configs

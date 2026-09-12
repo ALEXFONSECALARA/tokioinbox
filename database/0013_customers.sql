@@ -7,7 +7,7 @@
 -- cliente pode pedir em vários restaurantes com a mesma conta (item 20).
 --
 -- Senha nunca em texto puro — mesmo esquema "salt:hash" (scrypt) usado em
--- admin_users, via server/lib/passwords.js.
+-- admin_users, via backend/lib__passwords.js.
 -- ═══════════════════════════════════════════════════════════════════════
 
 create table if not exists customers (
@@ -52,6 +52,6 @@ create index if not exists orders_customer_id_idx on orders (customer_id);
 comment on table customers is
   'Conta permanente do cliente final (Fase 4, item 20) — global à plataforma, não por restaurante.';
 comment on column customers.password_hash is
-  'Formato "salt:hash" (scrypt) — nunca texto puro. Ver server/lib/passwords.js.';
+  'Formato "salt:hash" (scrypt) — nunca texto puro. Ver backend/lib__passwords.js.';
 comment on table customer_addresses is
   'Endereços salvos do cliente (Fase 4, item 21) — vários por cliente, com rótulo (Casa/Trabalho/Outro).';
