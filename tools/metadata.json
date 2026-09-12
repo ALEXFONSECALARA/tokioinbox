@@ -1,0 +1,7 @@
+{
+  "name": "Tokio inBox - Multicardápio",
+  "description": "Plataforma multi-restaurante (Japonês, Italiano, Pizza, Hamburgueria) com cardápio online, painel único de super-admin para gerenciar todos os restaurantes e receber pedidos em tempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
