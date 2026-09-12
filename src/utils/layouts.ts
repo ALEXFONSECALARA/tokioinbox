@@ -1,4 +1,4 @@
-import { LayoutId } from '@/src/types';
+import { LayoutId } from '../types';
 
 // Definição de cada um dos 10 estilos visuais disponíveis. Em vez de criar 10
 // páginas/componentes duplicados, a Landing e o seletor do painel usam este
