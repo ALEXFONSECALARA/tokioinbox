@@ -1,0 +1,90 @@
+{
+  "menuItems": [
+    {
+      "id": "p1",
+      "name": "Pizza Margherita (G)",
+      "categoryId": "salgadas",
+      "description": "Molho de tomate, mussarela e manjericão",
+      "price": 44.9,
+      "image": "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=600&q=80",
+      "available": true,
+      "tags": [
+        "mais_vendido"
+      ]
+    },
+    {
+      "id": "p2",
+      "name": "Pizza Calabresa (G)",
+      "categoryId": "salgadas",
+      "description": "Calabresa fatiada, cebola e azeitona",
+      "price": 46.9,
+      "image": "https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&w=600&q=80",
+      "available": true,
+      "tags": [
+        "destaque"
+      ]
+    },
+    {
+      "id": "p3",
+      "name": "Pizza Quatro Queijos (G)",
+      "categoryId": "salgadas",
+      "description": "Mussarela, provolone, parmesão e gorgonzola",
+      "price": 52.9,
+      "image": "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80",
+      "available": true,
+      "tags": []
+    },
+    {
+      "id": "p4",
+      "name": "Pizza Chocolate com Morango (G)",
+      "categoryId": "doces",
+      "description": "Chocolate ao leite e morangos frescos",
+      "price": 49.9,
+      "image": "https://images.unsplash.com/photo-1541745537411-b8046dc6d66c?auto=format&fit=crop&w=600&q=80",
+      "available": true,
+      "tags": []
+    },
+    {
+      "id": "p5",
+      "name": "Borda Recheada Catupiry",
+      "categoryId": "bordas",
+      "description": "Adicional de borda recheada",
+      "price": 8.9,
+      "image": "https://images.unsplash.com/photo-1601924582970-9238bcb495d9?auto=format&fit=crop&w=600&q=80",
+      "available": true,
+      "tags": []
+    },
+    {
+      "id": "p6",
+      "name": "Refrigerante 2L",
+      "categoryId": "bebidas",
+      "description": "Coca-Cola, Guaraná ou Fanta",
+      "price": 12.9,
+      "image": "https://images.unsplash.com/photo-1554866585-cd94860890b7?auto=format&fit=crop&w=600&q=80",
+      "available": true,
+      "tags": []
+    }
+  ],
+  "categories": [
+    {
+      "id": "salgadas",
+      "name": "Pizzas Salgadas",
+      "icon": "🍕"
+    },
+    {
+      "id": "doces",
+      "name": "Pizzas Doces",
+      "icon": "🍫"
+    },
+    {
+      "id": "bordas",
+      "name": "Bordas Recheadas",
+      "icon": "🧀"
+    },
+    {
+      "id": "bebidas",
+      "name": "Bebidas",
+      "icon": "🥤"
+    }
+  ]
+}

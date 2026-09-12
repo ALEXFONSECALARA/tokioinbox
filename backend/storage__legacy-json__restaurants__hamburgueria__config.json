@@ -1,0 +1,142 @@
+{
+  "name": "Sabor & Brasa Delivery",
+  "tagline": "O melhor da brasa e forno a lenha quentinho na sua porta",
+  "logo": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=300&q=80",
+  "bannerImage": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80",
+  "phone": "(11) 98765-4321",
+  "whatsapp": "5511987654321",
+  "address": "Av. Paulista, 1500 - Bela Vista, São Paulo - SP",
+  "isOpen": true,
+  "openingHours": "Terça a Domingo: 11:30 às 23:30",
+  "deliveryFee": 7.5,
+  "freeDeliveryThreshold": 80,
+  "minimumOrder": 25,
+  "estimatedDeliveryTime": "30 - 45 min",
+  "deliveryZones": [
+    {
+      "id": "bela-vista",
+      "name": "Bela Vista",
+      "neighborhood": "Bela Vista",
+      "fee": 5,
+      "estimatedTime": "25-35 min",
+      "estimatedMinutes": "25 - 35 min",
+      "active": true
+    },
+    {
+      "id": "cerqueira-cesar",
+      "name": "Cerqueira César / Jardins",
+      "neighborhood": "Cerqueira César / Jardins",
+      "fee": 7,
+      "estimatedTime": "30-40 min",
+      "estimatedMinutes": "30 - 40 min",
+      "active": true
+    },
+    {
+      "id": "consolacao",
+      "name": "Consolação & Higienópolis",
+      "neighborhood": "Consolação & Higienópolis",
+      "fee": 7.5,
+      "estimatedTime": "30-45 min",
+      "estimatedMinutes": "30 - 45 min",
+      "active": true
+    },
+    {
+      "id": "paraiso",
+      "name": "Paraíso & Aclimação",
+      "neighborhood": "Paraíso & Aclimação",
+      "fee": 8,
+      "estimatedTime": "35-45 min",
+      "estimatedMinutes": "35 - 45 min",
+      "active": true
+    },
+    {
+      "id": "pinheiros",
+      "name": "Pinheiros & Vila Madalena",
+      "neighborhood": "Pinheiros & Vila Madalena",
+      "fee": 10,
+      "estimatedTime": "40-50 min",
+      "estimatedMinutes": "40 - 50 min",
+      "active": true
+    },
+    {
+      "id": "vila-mariana",
+      "name": "Vila Mariana & Chácara Klabin",
+      "neighborhood": "Vila Mariana & Chácara Klabin",
+      "fee": 9.5,
+      "estimatedTime": "35-50 min",
+      "estimatedMinutes": "35 - 50 min",
+      "active": true
+    },
+    {
+      "id": "centro",
+      "name": "Centro Histórico & República",
+      "neighborhood": "Centro Histórico & República",
+      "fee": 8.5,
+      "estimatedTime": "35-45 min",
+      "estimatedMinutes": "35 - 45 min",
+      "active": true
+    },
+    {
+      "id": "moema",
+      "name": "Moema & Itaim Bibi",
+      "neighborhood": "Moema & Itaim Bibi",
+      "fee": 12,
+      "estimatedTime": "45-55 min",
+      "estimatedMinutes": "45 - 55 min",
+      "active": true
+    },
+    {
+      "id": "perdizes",
+      "name": "Perdizes & Pompeia",
+      "neighborhood": "Perdizes & Pompeia",
+      "fee": 11,
+      "estimatedTime": "40-55 min",
+      "estimatedMinutes": "40 - 55 min",
+      "active": true
+    }
+  ],
+  "drivers": [
+    {
+      "id": "drv-1",
+      "name": "Carlos \"Veloz\" Silva",
+      "phone": "(11) 99123-4567",
+      "vehicle": "Honda CG 160 Fan (Preta)",
+      "plate": "BRA-3K45",
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      "status": "available",
+      "rating": 4.9
+    },
+    {
+      "id": "drv-2",
+      "name": "Marcos Oliveira",
+      "phone": "(11) 98765-1122",
+      "vehicle": "Yamaha Fazer 250 (Azul)",
+      "plate": "SP-9X88",
+      "photo": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
+      "status": "available",
+      "rating": 5
+    },
+    {
+      "id": "drv-3",
+      "name": "Rafael Santos",
+      "phone": "(11) 97654-3344",
+      "vehicle": "Honda Biz 125 (Vermelha)",
+      "plate": "ABC-1234",
+      "photo": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80",
+      "status": "available",
+      "rating": 4.8
+    }
+  ],
+  "pixKey": "saborebrasa@gastronomia.com.br",
+  "pixKeyType": "email",
+  "instagram": "@saborebrasa.delivery",
+  "allowTableOrders": false,
+  "totalTables": 10,
+  "splashEnabled": true,
+  "splashImages": [
+    "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1400&q=80",
+    "https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=1400&q=80",
+    "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1400&q=80"
+  ],
+  "splashDurationSeconds": 3
+}
