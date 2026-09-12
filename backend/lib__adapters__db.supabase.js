@@ -1049,6 +1049,17 @@ export async function listCustomerOrders(customerId) {
   }));
 }
 
+export async function clearCustomerOrderHistory(customerId) {
+  const { data, error } = await supabase
+    .from('orders')
+    .delete()
+    .eq('customer_id', customerId)
+    .in('status', ['entregue', 'cancelado'])
+    .select('id');
+  if (error) throw error;
+  return { removed: (data || []).length };
+}
+
 // ---------- Notificações push + campanhas automáticas (Fase 4, itens 27-30) ----------
 
 function pushSubscriptionRowToApi(row) {
