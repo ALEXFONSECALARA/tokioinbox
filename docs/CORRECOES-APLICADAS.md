@@ -284,7 +284,7 @@ painel do Render antes, o valor manual tem prioridade sobre o do
 
 ---
 
-# Rodada 5 — Cancelar/excluir histórico no Kanban, Kanban único invisível, RLS de clientes
+# Rodada 5 — Cancelar/excluir histórico no Kanban, Kanban unificado (REMOVIDO na V27.2) invisível, RLS de clientes
 
 ## 19. Kanban (cozinha/balcão) nunca conseguia cancelar pedido nem excluir histórico
 **Bug real, achado no código:** os tokens de Kanban (individual `/kanban/:slug`
@@ -309,8 +309,8 @@ funcionava, porque essa ação não passa por nenhuma checagem de permissão.
   qualquer token de Kanban antes mesmo de checar permissão) — trocada pra
   `requireAdminOrKanban`, mesma proteção de permissão por trás.
 
-## 20. "Kanban único" (todos os restaurantes numa tela só) já existia, mas ninguém achava
-Investiguei o pedido de "Kanban único pra todos os restaurantes sem precisar
+## 20. "Kanban unificado (REMOVIDO na V27.2)" (todos os restaurantes numa tela só) já existia, mas ninguém achava
+Investiguei o pedido de "Kanban unificado (REMOVIDO na V27.2) pra todos os restaurantes sem precisar
 clicar individualmente" — essa tela **já existe e já funciona exatamente
 assim** (`/kanban`, todos os pedidos de todos os restaurantes juntos, com
 filtro opcional por restaurante). O bug real: **não existia nenhum link pra
@@ -320,7 +320,7 @@ via os botões de restaurante individuais na barra de troca, cada um exigindo
 um clique pra ver o board daquele restaurante — dando exatamente a
 impressão de "preciso clicar em cada um".
 
-**Corrigido:** adicionado um botão "🍽️ Kanban único (todos)" bem visível na
+**Corrigido:** adicionado um botão "🍽️ Kanban unificado (REMOVIDO na V27.2) (todos)" bem visível na
 barra do super-admin (`frontend/components/AdminPortal.tsx`), levando direto pra
 `/kanban`.
 
