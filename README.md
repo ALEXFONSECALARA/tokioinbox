@@ -33,12 +33,10 @@ todos eles.
   vem da configuração de cada restaurante, não é hardcoded.
 - `/PAINELRESTAURANTE` — painel administrativo (endereço oficial). `/admin`
   continua funcionando por compatibilidade com links antigos.
-- `/conta` — área do cliente (pedidos, endereços salvos).
+- `/` — o botão **Login cliente** fica na própria página inicial, junto aos restaurantes, com acesso a pedidos, endereços e histórico.
 - `/kanban/:slug` — quadro de pedidos operacional de um restaurante
   específico, com senha própria (sem acesso a cardápio, configurações ou
   usuários) — pensado pra cozinha/balcão.
-- `/kanban` — mesmo quadro, mas com um seletor entre todos os restaurantes
-  (uma senha geral dá acesso a todos).
 
 > Restaurantes de exemplo usados em desenvolvimento (gerados por
 > `tools/seed-restaurants.mjs`) são só dados — o roteador e o painel não
