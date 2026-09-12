@@ -1,4 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { fetchCustomerProfile } from './utils__api';
+import { CustomerAccount } from './types';
+import { CustomerAccountModal } from './components__customer__CustomerAccountModal';
 import { fetchRestaurants, fetchPlatformSettings, RestaurantSummary, PlatformSettings } from './utils__api';
 import { RestaurantCard } from './components__restaurant__RestaurantCard';
 import { ArrowDown, Sparkles, UserRound } from 'lucide-react';
@@ -8,7 +11,13 @@ export const Landing: React.FC = () => {
   const [platform, setPlatform] = useState<PlatformSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [customerToken, setCustomerToken] = useState<string | null>(() => localStorage.getItem('tokioinbox_customer_token'));
+  const [customer, setCustomer] = useState<CustomerAccount | null>(null);
   useEffect(() => {
+    if (customerToken) {
+      fetchCustomerProfile(customerToken).then(setCustomer).catch(() => { localStorage.removeItem('tokioinbox_customer_token'); setCustomerToken(null); setCustomer(null); });
+    }
     Promise.all([fetchRestaurants(), fetchPlatformSettings().catch(() => null)])
       .then(([list, settings]) => {
         setRestaurants(list);
@@ -27,7 +36,7 @@ export const Landing: React.FC = () => {
         <p className="text-[#e2c55d] text-[10px] uppercase tracking-[.35em] font-black flex items-center gap-2"><Sparkles size={13}/> Delivery digital</p>
         <h1 className="mt-3 text-4xl sm:text-6xl font-black tracking-tight max-w-3xl">{platform?.landingTitle || 'Escolha onde pedir'}</h1>
         <p className="mt-4 max-w-xl text-sm sm:text-base text-white/70">{platform?.landingSubtitle || 'Cada loja possui sua própria identidade, cardápio e experiência de pedido.'}</p>
-        <div className="mt-7 flex flex-wrap justify-center gap-2"><button onClick={()=>document.getElementById('stores')?.scrollIntoView({behavior:'smooth'})} className="mt-7 rounded-2xl bg-[#c9a227] text-[#080a0a] px-6 py-3.5 min-h-[48px] font-black text-sm flex items-center gap-2 shadow-xl">Ver lojas <ArrowDown size={17}/></button><a href="/conta" className="rounded-2xl border border-white/15 bg-white/5 text-white px-5 py-3.5 min-h-[48px] font-black text-sm flex items-center gap-2"><UserRound size={17}/> Minha conta</a></div>
+        <div className="mt-7 flex flex-wrap justify-center gap-2"><button onClick={()=>document.getElementById('stores')?.scrollIntoView({behavior:'smooth'})} className="mt-7 rounded-2xl bg-[#c9a227] text-[#080a0a] px-6 py-3.5 min-h-[48px] font-black text-sm flex items-center gap-2 shadow-xl">Ver lojas <ArrowDown size={17}/></button><button onClick={()=>setAccountOpen(true)} className="rounded-2xl border border-white/15 bg-white/5 text-white px-5 py-3.5 min-h-[48px] font-black text-sm flex items-center gap-2"><UserRound size={17}/> {customer ? `Olá, ${customer.name.split(' ')[0]}` : 'Login cliente'}</button></div>
       </div>
     </section>
     <section id="stores" className="max-w-6xl mx-auto px-5 py-10 sm:py-14">
@@ -36,6 +45,14 @@ export const Landing: React.FC = () => {
       {error && <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
       {!loading && !error && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">{restaurants.map(r=><RestaurantCard key={r.slug} restaurant={{slug:r.slug,name:r.name,tagline:r.tagline,photo:r.bannerImage||r.logo,color:r.color,secondaryColor:r.secondaryColor,layout:r.layout,bannerPositionX:r.bannerPositionX,bannerPositionY:r.bannerPositionY,bannerZoom:r.bannerZoom}}/>)}</div>}
     </section>
+    <CustomerAccountModal
+      isOpen={accountOpen}
+      onClose={()=>setAccountOpen(false)}
+      token={customerToken}
+      customer={customer}
+      onLoggedIn={(token, account)=>{localStorage.setItem('tokioinbox_customer_token', token); setCustomerToken(token); setCustomer(account);}}
+      onLoggedOut={()=>{localStorage.removeItem('tokioinbox_customer_token'); setCustomerToken(null); setCustomer(null);}}
+    />
     <footer className="border-t border-white/10 py-8 text-center text-[10px] text-white/35">Escolha uma loja para continuar seu pedido.</footer>
   </div>;
 };

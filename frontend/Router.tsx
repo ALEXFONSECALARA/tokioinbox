@@ -2,8 +2,7 @@ import React from 'react';
 import App from './App';
 import { Landing } from './components__restaurant__Landing';
 import { AdminPortal } from './components__admin__AdminPortal';
-import { CustomerAccountPage } from './components__customer__CustomerAccountPage';
-import { KanbanOnlyPortal, UnifiedKanbanPortal } from './components__kanban__KanbanPortal';
+import { KanbanOnlyPortal } from './components__kanban__KanbanPortal';
 import { fetchRestaurants, toPublicSlug } from './utils__api';
 
 // Roteador bem simples baseado em window.location.pathname — não usamos uma
@@ -89,12 +88,8 @@ export const Router: React.FC = () => {
   }
 
   if (path === '/conta') {
-    return <CustomerAccountPage />;
-  }
-
-  // Kanban único (evolução v24_2) — todos os restaurantes, senha própria.
-  if (path === '/kanban-geral' || path === '/kanban') {
-    return <UnifiedKanbanPortal />;
+    window.location.replace('/');
+    return null;
   }
 
   // Kanban individual (evolução v24_2) — /kanban/:slug, senha própria daquele restaurante.

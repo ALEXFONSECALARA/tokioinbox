@@ -5,10 +5,6 @@ import {
   fetchOrdersAdmin,
   updateOrderAdmin,
   subscribeToOrderEvents,
-  kanbanAllLogin,
-  fetchKanbanAllOrders,
-  updateKanbanAllOrderStatus,
-  KanbanAllOrder,
 } from './utils__api';
 import { playOrderAlertSound, unlockOrderAlertAudio, playSoundEffect } from './utils__helpers';
 import { ConnectionBanner } from './components__system__ConnectionBanner';
@@ -65,7 +61,7 @@ const LoginCard: React.FC<{
   </div>
 );
 
-function OrderCard({ order, restaurantName, onAdvance }: { order: Order | KanbanAllOrder; restaurantName?: string; onAdvance: () => void }) {
+function OrderCard({ order, restaurantName, onAdvance }: { order: Order; restaurantName?: string; onAdvance: () => void }) {
   return (
     <button onClick={onAdvance} className="w-full text-left bg-white rounded-xl p-3 shadow-sm border border-stone-100 hover:shadow-md transition-shadow">
       {restaurantName && <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wide">{restaurantName}</p>}
@@ -153,7 +149,7 @@ export const KanbanOnlyPortal: React.FC<{ slug: string }> = ({ slug }) => {
   );
 };
 
-function KanbanColumns({ orders, onAdvance }: { orders: Array<Order | KanbanAllOrder>; onAdvance: (order: any) => void }) {
+function KanbanColumns({ orders, onAdvance }: { orders: Order[]; onAdvance: (order: Order) => void }) {
   return <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
     {COLUMNS.map((col) => {
       const columnOrders = orders.filter((o) => o.status === col.status);
@@ -168,64 +164,3 @@ function KanbanColumns({ orders, onAdvance }: { orders: Array<Order | KanbanAllO
   </div>;
 }
 
-export const UnifiedKanbanPortal: React.FC = () => {
-  const TOKEN_KEY = 'tokioinbox_kanban_all_token';
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(TOKEN_KEY));
-  const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [orders, setOrders] = useState<KanbanAllOrder[]>([]);
-  const [restaurantFilter, setRestaurantFilter] = useState('all');
-  const [restaurants, setRestaurants] = useState<{ slug: string; name: string }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const pendingAlertIds = useRef<Set<string>>(new Set());
-
-  const handleLogout = useCallback(() => { sessionStorage.removeItem(TOKEN_KEY); setToken(null); setOrders([]); }, []);
-  const refresh = useCallback(async () => {
-    if (!token) return; setLoading(true);
-    try {
-      const { orders: list, restaurants: r } = await fetchKanbanAllOrders(token);
-      const newOnes = list.filter((o) => o.status === 'recebido' && !pendingAlertIds.current.has(o.id));
-      if (newOnes.length) { newOnes.forEach((o) => pendingAlertIds.current.add(o.id)); playOrderAlertSound(); try { navigator.vibrate?.([250,120,250]); } catch {} }
-      setOrders(list); setRestaurants(r);
-    } catch (err: any) { if (String(err?.message || '').includes('401')) handleLogout(); }
-    finally { setLoading(false); }
-  }, [token, handleLogout]);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault(); setLoggingIn(true); setLoginError(null);
-    try { const t = await kanbanAllLogin(password); sessionStorage.setItem(TOKEN_KEY, t); unlockOrderAlertAudio(); setToken(t); }
-    catch (err: any) { setLoginError(err?.message || 'Senha incorreta.'); }
-    finally { setLoggingIn(false); }
-  };
-
-  useEffect(() => {
-    if (!token) return; refresh(); const interval = setInterval(refresh, 6000);
-    document.addEventListener('pointerdown', unlockOrderAlertAudio, { passive: true });
-    return () => { clearInterval(interval); document.removeEventListener('pointerdown', unlockOrderAlertAudio); };
-  }, [token, refresh]);
-
-  const handleAdvance = async (order: KanbanAllOrder) => {
-    const next = NEXT_STATUS[order.status]; if (!next || !token) return;
-    pendingAlertIds.current.delete(order.id); setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: next } : o));
-    try { await updateKanbanAllOrderStatus(token, order.restaurantSlug, order.id, { status: next }); playSoundEffect('success'); }
-    catch { refresh(); }
-  };
-
-  if (!token) return <LoginCard title="Kanban único" description="Pedidos de todos os restaurantes numa tela só" placeholder="Senha de autorização" loading={loggingIn} error={loginError} password={password} setPassword={setPassword} onSubmit={handleLogin} />;
-  const filtered = restaurantFilter === 'all' ? orders : orders.filter((o) => o.restaurantSlug === restaurantFilter);
-  return <div className="min-h-screen bg-stone-100 p-4">
-    <ConnectionBanner soundEnabled onReconnect={refresh} />
-    <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-      <h1 className="text-lg font-black text-stone-900">🍽️ Kanban único — todos os restaurantes</h1>
-      <div className="flex items-center gap-2">
-        <select value={restaurantFilter} onChange={(e) => setRestaurantFilter(e.target.value)} className="border border-stone-200 rounded-xl px-2 py-1.5 text-xs bg-white">
-          <option value="all">Todos os restaurantes</option>{restaurants.map((r) => <option key={r.slug} value={r.slug}>{r.name}</option>)}
-        </select>
-        <button onClick={refresh} className="p-2 rounded-xl bg-white border border-stone-200 text-stone-600" title="Atualizar"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
-        <button onClick={handleLogout} className="p-2 rounded-xl bg-white border border-stone-200 text-stone-600" title="Sair"><LogOut className="w-4 h-4" /></button>
-      </div>
-    </div>
-    <KanbanColumns orders={filtered} onAdvance={handleAdvance} />
-  </div>;
-};

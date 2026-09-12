@@ -811,17 +811,6 @@ export const AdminPortal: React.FC = () => {
         <span className="flex items-center gap-1.5 text-xs font-medium text-stone-400 shrink-0">
           <ShieldCheck size={14} /> Super-admin
         </span>
-        {/* Atalho pro Kanban único (todos os restaurantes numa tela só, sem
-            precisar clicar em cada restaurante pra ver os pedidos dele) —
-            essa tela já existia em /kanban mas não tinha nenhum link
-            visível daqui, então na prática ninguém achava ela. */}
-        <a
-          href="/kanban"
-          className="flex items-center gap-1 rounded-full whitespace-nowrap shrink-0 bg-amber-500 text-stone-950 text-sm font-bold pl-3 pr-3 py-1.5 hover:bg-amber-400"
-          title="Ver os pedidos de todos os restaurantes juntos, numa tela só"
-        >
-          🍽️ Kanban único (todos)
-        </a>
         {restaurants.map((r) => {
           const isInactive = r.active === false;
           return (
