@@ -1,4 +1,4 @@
-// Espelha exatamente server/lib/permissions.js — qualquer alteração deve ser
+// Espelha exatamente backend/lib__permissions.js — qualquer alteração deve ser
 // feita nos dois lugares. Mantido separado (em vez de importado) porque
 // frontend (Vite) e backend (Node puro) não compartilham módulos neste
 // projeto.

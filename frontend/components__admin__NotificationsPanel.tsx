@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Send, Plus, Trash2, Power, Loader2, Bell, Sparkles } from 'lucide-react';
 
 // Espelha o formato salvo em notification_campaigns.schedule (ver
-// server/lib/campaignScheduler.js) — mantido aqui em vez de em types.ts
+// backend/lib__campaignScheduler.js) — mantido aqui em vez de em types.ts
 // porque é um detalhe interno deste painel, não um dado de domínio usado
 // em outro lugar do app.
 interface CampaignSchedule {

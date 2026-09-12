@@ -371,7 +371,7 @@ export interface RestaurantConfig {
   operationalStatus?: OperationalStatus;
   operationalAdjustmentMinutes?: number;
   // Histórico dos últimos ajustes — mais recente primeiro. Capado no
-  // backend (ver server/index.js) pra não crescer sem limite.
+  // backend (ver backend/index.js) pra não crescer sem limite.
   operationalAdjustmentHistory?: OperationalAdjustmentEntry[];
   drivers: DriverInfo[];
   pixKey: string;
