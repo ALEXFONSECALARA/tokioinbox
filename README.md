@@ -18,7 +18,7 @@ todos eles.
 2. Instale as dependências:
    `npm install`
 3. (Opcional, só na primeira vez) Gere alguns restaurantes de exemplo:
-   `node server/scripts/seed-restaurants.mjs`
+   `node scripts/seed-restaurants.mjs`
 4. Rode o backend (API multi-restaurante):
    `npm run server`
 5. Em outro terminal, rode o frontend:
@@ -41,7 +41,7 @@ todos eles.
   (uma senha geral dá acesso a todos).
 
 > Restaurantes de exemplo usados em desenvolvimento (gerados por
-> `server/scripts/seed-restaurants.mjs`) são só dados — o roteador e o painel não
+> `scripts/seed-restaurants.mjs`) são só dados — o roteador e o painel não
 > têm nenhuma lógica amarrada a esses nomes específicos.
 
 Veja [DEPLOY.md](DEPLOY.md) para instruções completas de deploy no GitHub + Render + Supabase.
@@ -53,7 +53,7 @@ Veja [`.env.example`](.env.example) para a lista completa. Resumo:
 | Variável | Obrigatória? | Pra quê serve |
 |---|---|---|
 | `ADMIN_PASSWORD` | Sim, em produção | Senha do ADMIN MASTER (`/PAINELRESTAURANTE`) |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Obrigatório em produção | Persistência real (sem isso, cai em `server/storage/legacy-json/*.json`, que é efêmero no Render) |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Recomendado em produção | Persistência real (sem isso, cai em `server/data/*.json`, que é efêmero no Render) |
 | `CLOUDINARY_*` | Opcional | Upload de imagens com URL permanente (sem isso, fica no disco local, efêmero no Render) |
 | `GEMINI_API_KEY` | Opcional | Habilita o assistente de IA do painel (Ferramentas → Diagnóstico) |
 
@@ -76,7 +76,7 @@ como changelog técnico, não como versão do produto):
 - **Impressão:** fila persistente por restaurante/dispositivo, com estado
   visual (Pendente → Imprimindo → Impresso) e retomada após reload. A
   impressão térmica física real depende do **Print Bridge** local (ver
-  [`server/print-bridge/`](server/print-bridge/)) — o navegador nunca tem acesso direto e
+  [`print-bridge/`](print-bridge/)) — o navegador nunca tem acesso direto e
   silencioso a uma impressora, por segurança.
 - **PWA:** shell offline, API nunca cacheada, `/api/version` para detectar
   deploy novo.

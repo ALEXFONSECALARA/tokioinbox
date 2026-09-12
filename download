@@ -1,1 +1,17 @@
-* text=auto eol=lf
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+build/
+.vite/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.render/
