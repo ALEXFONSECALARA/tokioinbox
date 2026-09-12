@@ -358,6 +358,249 @@ export async function kanbanLogin(slug: string, password: string): Promise<strin
   return data.token;
 }
 
+export interface AdminLoginLog {id:string;createdAt:string;adminUserId?:string|null;login?:string|null;success:boolean;mode:string;ip?:string|null;userAgent?:string|null;details?:Record<string,unknown>}
+export interface ErrorLog {id:string;createdAt:string;level:string;context?:string|null;message:string;stack?:string|null;restaurantSlug?:string|null;details?:Record<string,unknown>}
+export async function fetchAdminLoginLogs(token:string):Promise<AdminLoginLog[]>{const res=await fetch(`${API_PREFIX}/admin/logs/login`,{headers:authHeaders(token)});return (await handleResponse<{logs:AdminLoginLog[]}>(res)).logs;}
+export async function clearAdminLoginLogs(token:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/logs/login`,{method:'DELETE',headers:authHeaders(token)}));}
+export async function deleteAdminLoginLog(token:string,id:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/logs/login/${id}`,{method:'DELETE',headers:authHeaders(token)}));}
+export async function fetchErrorLogs(token:string):Promise<ErrorLog[]>{const res=await fetch(`${API_PREFIX}/admin/logs/errors`,{headers:authHeaders(token)});return (await handleResponse<{logs:ErrorLog[]}>(res)).logs;}
+export async function clearErrorLogs(token:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/logs/errors`,{method:'DELETE',headers:authHeaders(token)}));}
+export async function deleteErrorLog(token:string,id:string):Promise<void>{await handleResponse(await fetch(`${API_PREFIX}/admin/logs/errors/${id}`,{method:'DELETE',headers:authHeaders(token)}));}
+
+export async function updateOrderAdmin(
+  slug: string,
+  token: string,
+  orderId: string,
+  patch: Partial<Order>,
+  expectedUpdatedAt?: string
+): Promise<Order> {
+  const res = await fetch(`${API_PREFIX}/${slug}/orders/${orderId}`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify({ ...patch, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) }),
+  });
+  const data = await handleResponse<{ order: Order }>(res);
+  return data.order;
+}
+
+export async function saveMenuItems(slug: string, token: string, menuItems: MenuItem[]): Promise<void> {
+  const res = await fetch(`${API_PREFIX}/${slug}/menu-items`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(menuItems),
+  });
+  await handleResponse(res);
+}
+
+export async function saveCategories(slug: string, token: string, categories: Category[]): Promise<void> {
+  const res = await fetch(`${API_PREFIX}/${slug}/categories`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(categories),
+  });
+  await handleResponse(res);
+}
+
+// Envia uma foto (logo, banner, splash, prato, entregador) do computador do
+// restaurante para o backend, que sobe pro Cloudinary (produção) ou salva
+// localmente como fallback, e devolve a URL pública já pronta pra usar.
+export interface MediaAsset {
+  id: string;
+  restaurantSlug?: string;
+  restaurantId?: string;
+  storageProvider: string;
+  bucket?: string;
+  storagePath?: string;
+  url: string;
+  kind: string;
+  entityType?: string;
+  entityId?: string;
+  originalName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  altText?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function uploadImage(
+  slug: string,
+  token: string,
+  file: File,
+  metadata: { kind?: string; entityType?: string; entityId?: string; altText?: string } = {}
+): Promise<string> {
+  const formData = new FormData();
+  formData.append('image', file);
+  if (metadata.kind) formData.append('kind', metadata.kind);
+  if (metadata.entityType) formData.append('entityType', metadata.entityType);
+  if (metadata.entityId) formData.append('entityId', metadata.entityId);
+  if (metadata.altText) formData.append('altText', metadata.altText);
+  const res = await fetch(`${API_PREFIX}/${slug}/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }, // sem Content-Type: o browser define o boundary do multipart
+    body: formData,
+  });
+  const data = await handleResponse<{ url: string; asset?: MediaAsset }>(res);
+  // URL do Cloudinary já vem absoluta (https://res.cloudinary.com/...) — só
+  // o fallback local devolve um caminho relativo (/uploads/...), que aí sim
+  // precisa do prefixo do backend quando front e back estão em domínios
+  // separados (VITE_API_URL definido).
+  const isAbsolute = /^https?:\/\//i.test(data.url);
+  return isAbsolute ? data.url : new URL(data.url, API_BASE || window.location.origin).toString();
+}
+
+export async function listMediaAssets(slug: string, token: string, kind?: string): Promise<MediaAsset[]> {
+  const query = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+  const res = await fetch(`${API_PREFIX}/${slug}/media${query}`, { headers: authHeaders(token) });
+  const data = await handleResponse<{ assets: MediaAsset[] }>(res);
+  return data.assets || [];
+}
+
+export async function deleteMediaAsset(slug: string, token: string, assetId: string): Promise<MediaAsset | null> {
+  const res = await fetch(`${API_PREFIX}/${slug}/media/${encodeURIComponent(assetId)}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
+  const data = await handleResponse<{ asset: MediaAsset }>(res);
+  return data.asset || null;
+}
+
+export async function savePlatformSettings(token: string, settings: PlatformSettings): Promise<PlatformSettings> {
+  const res = await fetch(`${API_PREFIX}/admin/platform`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(settings),
+  });
+  const data = await handleResponse<{ platform: PlatformSettings }>(res);
+  return data.platform;
+}
+
+export async function saveRestaurantConfig(
+  slug: string,
+  token: string,
+  config: RestaurantConfig
+): Promise<void> {
+  const res = await fetch(`${API_PREFIX}/${slug}/config`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(config),
+  });
+  await handleResponse(res);
+}
+
+// ---------- Conta do cliente + endereços salvos (Fase 4, itens 20-22) ----------
+// Autenticação própria, separada da do painel (adminLogin/adminUserLogin) —
+// aqui é o cliente final, não um usuário do painel.
+
+function customerAuthHeaders(token: string): HeadersInit {
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+}
+
+export async function registerCustomer(data: {
+  name: string;
+  phone: string;
+  email?: string;
+  password: string;
+}): Promise<{ token: string; customer: CustomerAccount }> {
+  const res = await fetch(`${API_PREFIX}/customers/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return handleResponse(res);
+}
+
+export async function loginCustomer(
+  phone: string,
+  password: string
+): Promise<{ token: string; customer: CustomerAccount }> {
+  const res = await fetch(`${API_PREFIX}/customers/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, password }),
+  });
+  return handleResponse(res);
+}
+
+export async function fetchCustomerProfile(token: string): Promise<CustomerAccount> {
+  const res = await fetch(`${API_PREFIX}/customers/me`, { headers: customerAuthHeaders(token) });
+  return handleResponse(res);
+}
+
+export async function updateCustomerProfile(
+  token: string,
+  patch: Partial<{ name: string; email: string; newPassword: string }>
+): Promise<CustomerAccount> {
+  const res = await fetch(`${API_PREFIX}/customers/me`, {
+    method: 'PATCH',
+    headers: customerAuthHeaders(token),
+    body: JSON.stringify(patch),
+  });
+  return handleResponse(res);
+}
+
+export async function fetchCustomerAddresses(token: string): Promise<SavedAddress[]> {
+  const res = await fetch(`${API_PREFIX}/customers/me/addresses`, { headers: customerAuthHeaders(token) });
+  return handleResponse(res);
+}
+
+export async function saveCustomerAddress(
+  token: string,
+  address: Omit<SavedAddress, 'id' | 'customerId'>
+): Promise<SavedAddress> {
+  const res = await fetch(`${API_PREFIX}/customers/me/addresses`, {
+    method: 'POST',
+    headers: customerAuthHeaders(token),
+    body: JSON.stringify(address),
+  });
+  return handleResponse(res);
+}
+
+export async function updateCustomerAddress(
+  token: string,
+  id: string,
+  patch: Partial<Omit<SavedAddress, 'id' | 'customerId'>>
+): Promise<SavedAddress> {
+  const res = await fetch(`${API_PREFIX}/customers/me/addresses/${id}`, {
+    method: 'PATCH',
+    headers: customerAuthHeaders(token),
+    body: JSON.stringify(patch),
+  });
+  return handleResponse(res);
+}
+
+export async function deleteCustomerAddress(token: string, id: string): Promise<void> {
+  const res = await fetch(`${API_PREFIX}/customers/me/addresses/${id}`, {
+    method: 'DELETE',
+    headers: customerAuthHeaders(token),
+  });
+  await handleResponse(res);
+}
+
+export async function fetchCustomerOrders(
+  token: string
+): Promise<(Order & { restaurantSlug: string; restaurantName: string })[]> {
+  const res = await fetch(`${API_PREFIX}/customers/me/orders`, { headers: customerAuthHeaders(token) });
+  return handleResponse(res);
+}
+
+export async function cancelCustomerOrder(token: string, slug: string, orderId: string, reason = 'Cancelado pelo cliente'): Promise<Order> {
+  const res = await fetch(`${API_PREFIX}/customers/me/orders/${encodeURIComponent(slug)}/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST', headers: customerAuthHeaders(token), body: JSON.stringify({ reason }),
+  });
+  const data = await handleResponse<{ order: Order }>(res);
+  return data.order;
+}
+
+export async function clearCustomerOrderHistory(token: string, password: string): Promise<number> {
+  const res = await fetch(`${API_PREFIX}/customers/me/orders/history`, {
+    method: 'DELETE', headers: customerAuthHeaders(token), body: JSON.stringify({ password }),
+  });
+  const data = await handleResponse<{ removed: number }>(res);
+  return data.removed;
+}
+
 export async function fetchDrivers(slug:string,token:string){const res=await fetch(`${API_PREFIX}/${encodeURIComponent(slug)}/drivers`,{headers:authHeaders(token)});return handleResponse<{drivers:any[]}>(res);}
 // Exclusão dedicada de entregador (em vez de reaproveitar o PUT de config
 // inteiro) — o super-admin (ou qualquer admin autorizado) precisa poder
