@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #050505;
+    color: #F5F5F5;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* PALETA PRINCIPAL RÚSTICO PREMIUM & PRIME LUXURY:
+   Fundo carvão e madeira defumada: #070605
+   Preto grafite nobre:             #121110
+   Bronze nobre / Champanhe:        #C5A880
+   Bronze envelhecido rústico:      #9E7B56
+   Cobre de brasa / Terracota:      #B85D3B
+   Verde sálvia botânico:           #6F8F72
+   Branco linho refinado:           #F6F4F0
+*/
+
+/* 4K Matte Black & Luxury Palette Utilities */
+.bg-matte-black {
+  background-color: #070605;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(197, 168, 128, 0.07) 0%, transparent 60%),
+    radial-gradient(circle at 100% 40%, rgba(184, 93, 59, 0.04) 0%, transparent 45%),
+    radial-gradient(circle at 0% 70%, rgba(111, 143, 114, 0.04) 0%, transparent 40%),
+    linear-gradient(to bottom, rgba(7, 6, 5, 0.98), rgba(18, 17, 16, 0.96));
+  background-attachment: fixed;
+}
+
+/* Metallic Bronze / Champagne Text Gradient */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #F6F4F0 0%, #D4BA96 45%, #9E7B56 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Rustic Fire / Copper Gradient */
+.text-fire-gold-gradient {
+  background: linear-gradient(135deg, #D4BA96 0%, #B85D3B 65%, #7C3A27 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Luxury Bronze Shimmer Animation */
+@keyframes goldShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-gold-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(197, 168, 128, 0.06) 0%,
+    rgba(197, 168, 128, 0.35) 50%,
+    rgba(197, 168, 128, 0.06) 100%
+  );
+  background-size: 200% 100%;
+  animation: goldShimmer 3.5s infinite linear;
+}
+
+/* Luxury Fine Border & Ambient Glow */
+.border-gold-luxury {
+  border: 1px solid rgba(197, 168, 128, 0.28);
+  box-shadow: 0 0 15px rgba(197, 168, 128, 0.06), inset 0 0 15px rgba(197, 168, 128, 0.02);
+}
+
+.border-gold-luxury:hover {
+  border-color: rgba(197, 168, 128, 0.6);
+  box-shadow: 0 0 25px rgba(197, 168, 128, 0.16), inset 0 0 20px rgba(197, 168, 128, 0.04);
+}
+
+/* Dark Glassmorphism with Graphite #121110 & Bronze Accents #C5A880 */
+.glass-gold-card {
+  background: rgba(18, 17, 16, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(197, 168, 128, 0.2);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-gold-card:hover {
+  background: rgba(24, 22, 21, 0.95);
+  border-color: rgba(197, 168, 128, 0.5);
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.95), 0 0 24px rgba(197, 168, 128, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Bronze Metallic Foil Badge */
+.gold-badge {
+  background: linear-gradient(135deg, rgba(197, 168, 128, 0.16) 0%, rgba(158, 123, 86, 0.1) 100%);
+  border: 1px solid rgba(197, 168, 128, 0.35);
+  color: #D4BA96;
+  box-shadow: 0 2px 8px rgba(158, 123, 86, 0.15);
+}
+
+/* Rustic Copper Foil Badge */
+.orange-badge {
+  background: linear-gradient(135deg, rgba(184, 93, 59, 0.16) 0%, rgba(197, 168, 128, 0.08) 100%);
+  border: 1px solid rgba(184, 93, 59, 0.35);
+  color: #D27351;
+  box-shadow: 0 2px 8px rgba(184, 93, 59, 0.15);
+}
+
+/* Hide scrollbars cleanly while preserving scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Thermal Printer ESC/POS Print Media Styling */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #thermal-receipt-body,
+  #thermal-receipt-body * {
+    visibility: visible;
+  }
+  #thermal-receipt-body {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  @page {
+    margin: 0;
+  }
+}
+
+
