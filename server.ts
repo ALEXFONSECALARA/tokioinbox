@@ -1,7 +1,6 @@
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import {
@@ -61,12 +60,8 @@ import {
   authenticateCustomer,
   claimInstallationBonus,
 } from './server/customerAuthService';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 10000;
 const serverStartTime = Date.now();
 
 // Disable powered-by header and enable gzip/brotli compression
