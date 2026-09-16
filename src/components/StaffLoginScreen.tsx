@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Loader2, LogIn } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-/** Login único via Supabase Auth. O mesmo formulário serve pra staff e cliente — quem diferencia é o profile.user_type. */
+/** Login da equipe operacional via Supabase Auth. O Super Admin entra por /operacao. */
 export function StaffLoginScreen() {
   const { loginStaffOrCustomer } = useAuth();
   const [email, setEmail] = useState('');
