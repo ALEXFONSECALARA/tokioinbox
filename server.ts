@@ -60,6 +60,10 @@ import {
   authenticateCustomer,
   claimInstallationBonus,
 } from './server/customerAuthService';
+import { orderRoutes } from './server/orderRoutes';
+import { meRoutes } from './server/meRoutes';
+import { printJobRoutes } from './server/printJobRoutes';
+import { cmvRoutes } from './server/cmvRoutes';
 const app = express();
 const PORT = Number(process.env.PORT) || 10000;
 const serverStartTime = Date.now();
@@ -68,6 +72,16 @@ const serverStartTime = Date.now();
 app.disable('x-powered-by');
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
+
+// FASE 2 — rotas de pedidos multi-tenant sobre Postgres/Supabase (RBAC real).
+// Convivem com as rotas antigas baseadas em arquivo; nada existente foi removido.
+app.use('/api/v2/orders', orderRoutes);
+// FASE 3 — perfil/sessão do usuário logado (usado pelo frontend para decidir o que exibir).
+app.use('/api/v2/me', meRoutes);
+// FASE 5 — fila de impressão idempotente.
+app.use('/api/v2/print-jobs', printJobRoutes);
+// Módulo CMV — ficha técnica real + sugestões baseadas em vendas reais.
+app.use('/api/v2/cmv', cmvRoutes);
 
 // Lazy-initialized Gemini Client
 let geminiClient: GoogleGenAI | null = null;
