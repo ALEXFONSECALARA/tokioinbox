@@ -300,6 +300,17 @@ export function initializeUsers() {
     if (fs.existsSync(USERS_FILE)) {
       const raw = fs.readFileSync(USERS_FILE, 'utf-8');
       usersCache = JSON.parse(raw);
+
+      // Migração segura do Super Admin padrão: versões anteriores usavam
+      // admin/admin123. Só altera a conta se ela ainda estiver com essa
+      // senha padrão; senhas personalizadas de outras contas permanecem intactas.
+      const master = usersCache.find((u) => u.username.toLowerCase() === 'admin' && u.role === 'super_admin');
+      if (master && verifyPassword('admin123', master.passwordHash, master.passwordSalt)) {
+        const newCreds = hashPassword('admin1234');
+        master.passwordHash = newCreds.hash;
+        master.passwordSalt = newCreds.salt;
+        persistUsersSync();
+      }
     } else {
       usersCache = getInitialUsers();
       persistUsersSync();
