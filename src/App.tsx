@@ -22,10 +22,81 @@ import { TesterFloatingBar } from './components/TesterFloatingBar';
 import { BRAND_CONFIG, BRAND_NAME, BRAND_SHORT_NAME } from './config/brand';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { OperacaoRouter } from './components/OperacaoRouter';
-import { StaffLoginScreen } from './components/StaffLoginScreen';
+
+function AdminLoginScreen({
+  onLogin,
+  loading,
+  error,
+}: {
+  onLogin: (username: string, password: string) => Promise<any>;
+  loading: boolean;
+  error: string | null;
+}) {
+  const [username, setUsername] = React.useState('admin');
+  const [password, setPassword] = React.useState('');
+
+  return (
+    <div className="min-h-screen bg-[#07090E] text-white flex items-center justify-center p-4">
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          await onLogin(username.trim(), password);
+        }}
+        className="w-full max-w-sm space-y-4 rounded-2xl border border-white/10 bg-[#0E121B] p-6"
+      >
+        <h1 className="text-xl font-semibold flex items-center gap-2">
+          <ShieldCheck size={20} /> Super Admin
+        </h1>
+        <p className="text-xs text-slate-400">Acesso administrativo por usuário e senha.</p>
+        <input
+          type="text"
+          required
+          autoComplete="username"
+          placeholder="Nome de usuário"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2.5 text-sm"
+        />
+        <input
+          type="password"
+          required
+          autoComplete="current-password"
+          placeholder="Senha"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2.5 text-sm"
+        />
+        {error && <p className="text-rose-400 text-sm">{error}</p>}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full rounded-lg bg-white text-black py-2.5 text-sm font-semibold disabled:opacity-50"
+        >
+          {loading ? 'Entrando…' : 'Entrar'}
+        </button>
+      </form>
+    </div>
+  );
+}
 
 function AdminAuthGate({ children }: { children: React.ReactNode }) {
-  const { loading, isAuthenticated, isSuperAdmin, logout } = useAuth();
+  // Super Admin usa a autenticação administrativa interna (username/senha),
+  // separada do Supabase Auth usado por equipe/clientes.
+  const { currentUser, loginUser, logoutUser } = useStore();
+  const [loading, setLoading] = React.useState(false);
+  const [authError, setAuthError] = React.useState<string | null>(null);
+
+  const handleAdminLogin = async (username: string, password: string) => {
+    setLoading(true);
+    setAuthError(null);
+    const result = await loginUser(username, password);
+    setLoading(false);
+    if (!result.success) setAuthError(result.error || 'Usuário ou senha incorretos.');
+    return result;
+  };
+
+  const isAuthenticated = Boolean(currentUser);
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
   if (loading) {
     return (
@@ -34,13 +105,15 @@ function AdminAuthGate({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  if (!isAuthenticated) return <StaffLoginScreen />;
+  if (!isAuthenticated) {
+    return <AdminLoginScreen onLogin={handleAdminLogin} loading={loading} error={authError} />;
+  }
   if (!isSuperAdmin) {
     return (
       <div className="min-h-screen bg-[#07090E] text-white flex items-center justify-center p-6 text-center">
         <div>
           <p className="mb-4">Somente o Super Admin pode acessar esta área.</p>
-          <button onClick={() => logout()} className="underline text-white/60 text-sm">Sair</button>
+          <button onClick={() => logoutUser()} className="underline text-white/60 text-sm">Sair</button>
         </div>
       </div>
     );
@@ -62,9 +135,23 @@ function AppContent() {
   // do banco, e substituem completamente o antigo hack de Alt+A para essas
   // interfaces operacionais (garçom, caixa, cozinha, sushibar, motoboy).
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const isOperacaoRoute =
-    pathname === '/operacao' || pathname.startsWith('/operacao/') || pathname === '/garcom' || pathname === '/pedidos';
-  if (isOperacaoRoute) {
+  const isSuperAdminRoute =
+    pathname === '/operacao' || pathname.startsWith('/operacao/');
+  const isStaffOperationRoute = pathname === '/garcom' || pathname === '/pedidos';
+
+  // /operacao é a entrada do Super Admin e usa o login interno por usuário/senha.
+  // /garcom e /pedidos continuam usando Supabase Auth para a equipe operacional.
+  if (isSuperAdminRoute) {
+    return (
+      <AdminAuthGate>
+        <div className="pb-16 min-h-screen bg-[#07090E]">
+          <AdminLayout onBackToApp={() => { window.location.href = '/'; }} initialTab="dashboard" />
+        </div>
+      </AdminAuthGate>
+    );
+  }
+
+  if (isStaffOperationRoute) {
     return (
       <AuthProvider>
         <OperacaoRouter />
@@ -143,9 +230,8 @@ function AppContent() {
   // If viewing Super-Admin
   if (view === 'admin') {
     return (
-      <AuthProvider>
-        <AdminAuthGate>
-          <div className="pb-16 min-h-screen bg-[#07090E]">
+      <AdminAuthGate>
+        <div className="pb-16 min-h-screen bg-[#07090E]">
             <AdminLayout
               onBackToApp={() => setView('home')}
               initialTab={adminInitialTab}
@@ -157,9 +243,8 @@ function AppContent() {
                 setView(nextView);
               }}
             />
-          </div>
-        </AdminAuthGate>
-      </AuthProvider>
+        </div>
+      </AdminAuthGate>
     );
   }
 
