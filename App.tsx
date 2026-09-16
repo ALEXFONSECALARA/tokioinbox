@@ -135,9 +135,23 @@ function AppContent() {
   // do banco, e substituem completamente o antigo hack de Alt+A para essas
   // interfaces operacionais (garçom, caixa, cozinha, sushibar, motoboy).
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const isOperacaoRoute =
-    pathname === '/operacao' || pathname.startsWith('/operacao/') || pathname === '/garcom' || pathname === '/pedidos';
-  if (isOperacaoRoute) {
+  const isSuperAdminRoute =
+    pathname === '/operacao' || pathname.startsWith('/operacao/');
+  const isStaffOperationRoute = pathname === '/garcom' || pathname === '/pedidos';
+
+  // /operacao é a entrada do Super Admin e usa o login interno por usuário/senha.
+  // /garcom e /pedidos continuam usando Supabase Auth para a equipe operacional.
+  if (isSuperAdminRoute) {
+    return (
+      <AdminAuthGate>
+        <div className="pb-16 min-h-screen bg-[#07090E]">
+          <AdminLayout onBackToApp={() => { window.location.href = '/'; }} initialTab="dashboard" />
+        </div>
+      </AdminAuthGate>
+    );
+  }
+
+  if (isStaffOperationRoute) {
     return (
       <AuthProvider>
         <OperacaoRouter />
