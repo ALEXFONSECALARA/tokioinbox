@@ -375,38 +375,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     try {
       const saved = sessionStorage.getItem('tokio_current_user_v25');
-      if (saved === 'logged_out') return null;
-      if (saved) return JSON.parse(saved);
-      // Pre-authenticated super admin for seamless test environment
-      return {
-        id: 'usr-superadmin',
-        name: 'Super Administrador (Modo Teste)',
-        username: 'admin',
-        passwordHash: '',
-        passwordSalt: '',
-        role: 'super_admin',
-        restaurantSlug: 'all',
-        isActive: true,
-        permissions: {
-          can_view_orders: true,
-          can_create_orders: true,
-          can_edit_orders: true,
-          can_cancel_orders: true,
-          can_change_status: true,
-          can_view_menu: true,
-          can_edit_menu: true,
-          can_change_prices: true,
-          can_manage_categories: true,
-          can_manage_users: true,
-          can_manage_permissions: true,
-          can_configure_alerts: true,
-          can_connect_devices: true,
-          can_view_reports: true,
-          can_configure_restaurant: true,
-          can_manage_notifications: true,
-        },
-        createdAt: new Date().toISOString(),
-      };
+      if (!saved || saved === 'logged_out') return null;
+      return JSON.parse(saved);
     } catch {
       return null;
     }
