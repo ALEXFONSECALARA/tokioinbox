@@ -20,6 +20,33 @@ import { CourierPortal } from './components/CourierPortal';
 import { PwaInstallationBanner } from './components/PwaInstallationBanner';
 import { TesterFloatingBar } from './components/TesterFloatingBar';
 import { BRAND_CONFIG, BRAND_NAME, BRAND_SHORT_NAME } from './config/brand';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { OperacaoRouter } from './components/OperacaoRouter';
+import { StaffLoginScreen } from './components/StaffLoginScreen';
+
+function AdminAuthGate({ children }: { children: React.ReactNode }) {
+  const { loading, isAuthenticated, isSuperAdmin, logout } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#07090E] flex items-center justify-center text-white">
+        Carregando…
+      </div>
+    );
+  }
+  if (!isAuthenticated) return <StaffLoginScreen />;
+  if (!isSuperAdmin) {
+    return (
+      <div className="min-h-screen bg-[#07090E] text-white flex items-center justify-center p-6 text-center">
+        <div>
+          <p className="mb-4">Somente o Super Admin pode acessar esta área.</p>
+          <button onClick={() => logout()} className="underline text-white/60 text-sm">Sair</button>
+        </div>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function AppContent() {
   const {
@@ -29,6 +56,21 @@ function AppContent() {
     cartItemCount,
     cartTotal,
   } = useStore();
+
+  // FASE 3 — rotas reais (não mais um único painel com atalho de teclado):
+  // /operacao, /garcom e /pedidos usam sessão real do Supabase Auth + RBAC
+  // do banco, e substituem completamente o antigo hack de Alt+A para essas
+  // interfaces operacionais (garçom, caixa, cozinha, sushibar, motoboy).
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+  const isOperacaoRoute =
+    pathname === '/operacao' || pathname.startsWith('/operacao/') || pathname === '/garcom' || pathname === '/pedidos';
+  if (isOperacaoRoute) {
+    return (
+      <AuthProvider>
+        <OperacaoRouter />
+      </AuthProvider>
+    );
+  }
 
   // Navigation View: 'home' | 'menu' | 'admin' | 'courier'
   const [view, setView] = useState<'home' | 'menu' | 'admin' | 'courier'>(() => {
@@ -101,19 +143,23 @@ function AppContent() {
   // If viewing Super-Admin
   if (view === 'admin') {
     return (
-      <div className="pb-16 min-h-screen bg-[#07090E]">
-        <AdminLayout
-          onBackToApp={() => setView('home')}
-          initialTab={adminInitialTab}
-        />
-        <TesterFloatingBar
-          currentView={view}
-          onNavigateView={(nextView, tab) => {
-            if (tab) setAdminInitialTab(tab);
-            setView(nextView);
-          }}
-        />
-      </div>
+      <AuthProvider>
+        <AdminAuthGate>
+          <div className="pb-16 min-h-screen bg-[#07090E]">
+            <AdminLayout
+              onBackToApp={() => setView('home')}
+              initialTab={adminInitialTab}
+            />
+            <TesterFloatingBar
+              currentView={view}
+              onNavigateView={(nextView, tab) => {
+                if (tab) setAdminInitialTab(tab);
+                setView(nextView);
+              }}
+            />
+          </div>
+        </AdminAuthGate>
+      </AuthProvider>
     );
   }
 
