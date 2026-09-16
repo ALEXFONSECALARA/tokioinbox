@@ -328,7 +328,7 @@ export const AdminUsers: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
           <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
             <span className="font-bold text-purple-300 block">Super Admin</span>
-            <code className="text-slate-400">admin / admin123</code>
+            <code className="text-slate-400">admin / admin1234</code>
           </div>
           <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
             <span className="font-bold text-blue-300 block">Caixa</span>
