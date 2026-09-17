@@ -1,6 +1,8 @@
+import 'dotenv/config';
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import {
@@ -8,7 +10,10 @@ import {
   getOrderById,
   createOrderTransactional,
   updateOrderStatusTransactional,
+  updateOrderStationStatusTransactional,
+  appendItemsToTableOrderTransactional,
   updateOrderPrintStatusTransactional,
+  updateOrderTableTransactional,
   deleteOrderTransactional,
   clearOrdersTransactional,
   masterResetOrdersTransactional,
@@ -16,7 +21,10 @@ import {
   getOrdersEtag,
   getOrdersVersion,
   getOrdersLastModified,
+  getOrdersByCustomer,
   OrderStatus,
+  ProductionStation,
+  StationItemStatus,
 } from './server/orderService';
 import {
   findUserByUsername,
@@ -45,6 +53,21 @@ import {
 } from './server/aiService';
 import { generateCmvEngineeringInsights } from './server/cmvAiService';
 import {
+  getRestaurantAIConfig,
+  updateRestaurantAIConfig,
+  getAIAuditLogs,
+  getPriceSuggestions,
+  resolvePriceSuggestion,
+  AIModuleId,
+} from './server/aiEngineService';
+import {
+  executeCustomerConcierge,
+  executeSmartPairing,
+  executeMenuEngineering,
+  executeSmartKitchenKds,
+  executeAiSimulation,
+} from './server/aiModulesLogic';
+import {
   enqueuePrintJob,
   getPrintJobs,
   updatePrintJobStatus,
@@ -53,35 +76,67 @@ import {
   upsertPrinter,
 } from './server/printAgentService';
 import {
-  getCustomerLoginMode,
-  setCustomerLoginMode,
-  getInstallationBonusConfig,
-  updateInstallationBonusConfig,
-  authenticateCustomer,
-  claimInstallationBonus,
+  registerCustomer,
+  loginCustomer,
+  validateCustomerSession,
+  logoutCustomerSession,
+  requestCustomerPasswordReset,
+  confirmCustomerPasswordReset,
+  updateCustomerProfile,
+  saveCustomerAddress,
+  deleteCustomerAddress,
 } from './server/customerAuthService';
-import { orderRoutes } from './server/orderRoutes';
-import { meRoutes } from './server/meRoutes';
-import { printJobRoutes } from './server/printJobRoutes';
-import { cmvRoutes } from './server/cmvRoutes';
+import {
+  isCloudinaryConfigured,
+  getCloudinaryCloudName,
+  uploadImageToCloudinary,
+} from './server/cloudinaryService';
+import {
+  isSupabaseConfigured,
+  getSupabaseUrl,
+  testSupabaseConnection,
+  syncOrderToSupabase,
+} from './server/supabaseService';
+
 const app = express();
-const PORT = Number(process.env.PORT) || 10000;
+// Dynamic PORT: respects process.env.PORT on Render (e.g. 10000) or defaults to 3000 in local/dev
+const PORT = process.env.PORT ? Number(process.env.PORT) : (process.env.NODE_ENV === 'production' && !process.env.AI_STUDIO ? 10000 : 3000);
 const serverStartTime = Date.now();
 
 // Disable powered-by header and enable gzip/brotli compression
 app.disable('x-powered-by');
 app.use(compression());
-app.use(express.json({ limit: '1mb' }));
 
-// FASE 2 — rotas de pedidos multi-tenant sobre Postgres/Supabase (RBAC real).
-// Convivem com as rotas antigas baseadas em arquivo; nada existente foi removido.
-app.use('/api/v2/orders', orderRoutes);
-// FASE 3 — perfil/sessão do usuário logado (usado pelo frontend para decidir o que exibir).
-app.use('/api/v2/me', meRoutes);
-// FASE 5 — fila de impressão idempotente.
-app.use('/api/v2/print-jobs', printJobRoutes);
-// Módulo CMV — ficha técnica real + sugestões baseadas em vendas reais.
-app.use('/api/v2/cmv', cmvRoutes);
+// Universal CORS Middleware respecting process.env.CORS_ORIGINS (e.g. https://tokioinbox.onrender.com)
+app.use((req, res, next) => {
+  const corsOriginsRaw = process.env.CORS_ORIGINS;
+  const allowedOrigins = corsOriginsRaw
+    ? corsOriginsRaw.split(',').map((o) => o.trim()).filter(Boolean)
+    : [];
+
+  const origin = req.headers.origin;
+
+  if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    // Permissive fallback to origin for seamless API operation
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Idempotency-Key, If-None-Match');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
+
+// JSON body parser with 10MB limit to handle base64 image uploads for Cloudinary
+app.use(express.json({ limit: '10mb' }));
 
 // Lazy-initialized Gemini Client
 let geminiClient: GoogleGenAI | null = null;
@@ -143,6 +198,85 @@ app.get('/api/:slug/health', (req, res) => {
     ordersPipeline: 'online',
     timestamp: new Date().toISOString(),
   });
+});
+
+// Environment & Configuration Status Endpoint (Safe for UI diagnostics, no secrets leaked)
+app.get('/api/config/status', (req, res) => {
+  res.json({
+    status: 'ok',
+    environment: {
+      port: PORT,
+      timezone: process.env.TZ || 'America/Sao_Paulo',
+      corsOrigins: process.env.CORS_ORIGINS || '*',
+      adminPasswordConfigured: Boolean(process.env.ADMIN_PASSWORD),
+      cloudinary: {
+        configured: isCloudinaryConfigured(),
+        cloudName: getCloudinaryCloudName(),
+      },
+      supabase: {
+        configured: isSupabaseConfigured(),
+        url: getSupabaseUrl(),
+      },
+      gemini: {
+        configured: Boolean(process.env.GEMINI_API_KEY),
+      },
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Cloudinary Image Upload Endpoint
+app.post('/api/upload/image', async (req, res) => {
+  try {
+    const { image, folder } = req.body;
+    if (!image) {
+      return res.status(400).json({ success: false, error: 'Imagem não fornecida (formato base64 ou URL).' });
+    }
+
+    const result = await uploadImageToCloudinary({
+      fileData: image,
+      folder: folder || 'tokioinbox_cardapio',
+    });
+
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+
+    res.json({
+      success: true,
+      url: result.url,
+      publicId: result.publicId,
+      format: result.format,
+      bytes: result.bytes,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Erro ao realizar upload da imagem.' });
+  }
+});
+
+// Supabase Live Status & Diagnostic Endpoint
+app.get('/api/supabase/status', async (req, res) => {
+  try {
+    const diag = await testSupabaseConnection();
+    res.json(diag);
+  } catch (error: any) {
+    res.status(500).json({ configured: isSupabaseConfigured(), connected: false, error: error.message });
+  }
+});
+
+// Supabase SQL Schema Endpoint for Easy Migration
+app.get('/api/supabase/schema', (req, res) => {
+  try {
+    const schemaPath = path.join(process.cwd(), 'server', 'supabase_schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      const sql = fs.readFileSync(schemaPath, 'utf-8');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.send(sql);
+    }
+    res.status(404).send('-- Schema file not found');
+  } catch (error: any) {
+    res.status(500).send(`-- Error reading schema: ${error.message}`);
+  }
 });
 
 // AI Pairing and Recommendation API (Chef / Sommelier AI)
@@ -374,6 +508,202 @@ app.post('/api/ai/cmv-engineering', async (req, res) => {
 });
 
 // ==========================================
+// CENTRAL DE INTELIGÊNCIA DO SISTEMA (AI ENGINE)
+// ==========================================
+
+// 1. Get AI Config for a restaurant
+app.get('/api/ai-engine/config', (req, res) => {
+  try {
+    const slug = (req.query.restaurantSlug as string) || 'japones';
+    const config = getRestaurantAIConfig(slug);
+    res.json({ success: true, config });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. Update AI Config for a module with strict audit logging
+app.put('/api/ai-engine/config', (req, res) => {
+  try {
+    const { restaurantSlug, moduleId, updates, operatorUsername, operatorRole } = req.body;
+    if (!restaurantSlug || !moduleId || !updates) {
+      return res.status(400).json({ success: false, error: 'restaurantSlug, moduleId e updates são obrigatórios' });
+    }
+
+    const updated = updateRestaurantAIConfig(
+      restaurantSlug,
+      moduleId as AIModuleId,
+      updates,
+      {
+        username: operatorUsername || 'admin',
+        role: operatorRole || 'superadmin',
+      }
+    );
+
+    res.json({ success: true, config: updated });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Get AI Audit Logs (data, hora, usuário, anterior, novo)
+app.get('/api/ai-engine/logs', (req, res) => {
+  try {
+    const slug = req.query.restaurantSlug as string | undefined;
+    const logs = getAIAuditLogs(slug);
+    res.json({ success: true, count: logs.length, logs });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Get Price Suggestions
+app.get('/api/ai-engine/price-suggestions', (req, res) => {
+  try {
+    const slug = req.query.restaurantSlug as string | undefined;
+    const suggestions = getPriceSuggestions(slug);
+    res.json({ success: true, count: suggestions.length, suggestions });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Human Approval/Rejection for Price Suggestions
+app.post('/api/ai-engine/resolve-price', (req, res) => {
+  try {
+    const { suggestionId, action, operatorUsername, operatorRole } = req.body;
+    if (!suggestionId || !action) {
+      return res.status(400).json({ success: false, error: 'suggestionId e action são obrigatórios' });
+    }
+
+    const result = resolvePriceSuggestion(
+      suggestionId,
+      action as 'aprovar' | 'ignorar',
+      {
+        username: operatorUsername || 'admin',
+        role: operatorRole || 'gerente',
+      }
+    );
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. Module 1: Customer Concierge
+app.post('/api/ai-engine/customer-concierge', async (req, res) => {
+  try {
+    const {
+      restaurantSlug,
+      restaurantName,
+      isOpen,
+      openingHours,
+      deliveryFee,
+      minOrderValue,
+      menuItems,
+      customerMessage,
+      cartItems,
+    } = req.body;
+
+    const result = await executeCustomerConcierge({
+      restaurantSlug: restaurantSlug || 'japones',
+      restaurantName: restaurantName || 'Restaurante Tokio inBox',
+      isOpen: Boolean(isOpen),
+      openingHours: openingHours || '18:00 às 23:30',
+      deliveryFee: Number(deliveryFee) || 0,
+      minOrderValue: Number(minOrderValue) || 0,
+      menuItems: Array.isArray(menuItems) ? menuItems : [],
+      customerMessage: customerMessage || '',
+      cartItems: Array.isArray(cartItems) ? cartItems : [],
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[AI ENGINE] Concierge error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7. Module 2: Smart Pairing (Chef & Sommelier)
+app.post('/api/ai-engine/smart-pairing', async (req, res) => {
+  try {
+    const { restaurantSlug, restaurantName, cartItems, menuItems } = req.body;
+    const result = await executeSmartPairing({
+      restaurantSlug: restaurantSlug || 'japones',
+      restaurantName: restaurantName || 'Restaurante Tokio inBox',
+      cartItems: Array.isArray(cartItems) ? cartItems : [],
+      menuItems: Array.isArray(menuItems) ? menuItems : [],
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[AI ENGINE] Smart Pairing error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8. Module 3: Menu Engineering & CMV
+app.post('/api/ai-engine/menu-engineering', async (req, res) => {
+  try {
+    const { restaurantSlug, restaurantName, periodDays, menuItems, orders } = req.body;
+    const realOrders = Array.isArray(orders) ? orders : getAllOrders();
+
+    const diagnostic = await executeMenuEngineering({
+      restaurantSlug: restaurantSlug || 'japones',
+      restaurantName: restaurantName || 'Restaurante Tokio inBox',
+      periodDays: Number(periodDays) || 30,
+      menuItems: Array.isArray(menuItems) ? menuItems : [],
+      orders: realOrders,
+    });
+
+    res.json({ success: true, ...diagnostic });
+  } catch (err: any) {
+    console.error('[AI ENGINE] Menu Engineering error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9. Module 4: Smart Kitchen KDS
+app.post('/api/ai-engine/smart-kitchen', (req, res) => {
+  try {
+    const { restaurantSlug, orders } = req.body;
+    const realOrders = Array.isArray(orders) ? orders : getAllOrders();
+
+    const result = executeSmartKitchenKds({
+      restaurantSlug: restaurantSlug || 'japones',
+      orders: realOrders,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[AI ENGINE] Smart Kitchen error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 10. Simulation Mode ("SIMULAR IA")
+app.post('/api/ai-engine/simulate', async (req, res) => {
+  try {
+    const { restaurantSlug, scenario, customInput, menuItems, orders } = req.body;
+    const realOrders = Array.isArray(orders) ? orders : getAllOrders();
+
+    const result = await executeAiSimulation({
+      restaurantSlug: restaurantSlug || 'japones',
+      scenario: scenario || 'cliente',
+      customInput,
+      menuItems: Array.isArray(menuItems) ? menuItems : [],
+      orders: realOrders,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[AI ENGINE] Simulation error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
 // AURA PRINT AGENT API (INDEPENDENT SYSTEM)
 // ==========================================
 
@@ -466,65 +796,242 @@ app.post('/api/print-agent/printers', (req, res) => {
 });
 
 // ==========================================
-// CUSTOMER AUTH & INSTALLATION BONUS API
+// CUSTOMER AUTH & SECURE SESSION API (WHATSAPP + SENHA)
 // ==========================================
 
-app.get('/api/customer/login-mode', (req, res) => {
-  res.json({ success: true, mode: getCustomerLoginMode() });
-});
+// Helper middleware: Extract authenticated customer from Authorization Bearer token
+function getAuthenticatedCustomer(req: express.Request) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.substring(7).trim();
+  return validateCustomerSession(token);
+}
 
-app.post('/api/customer/login-mode', (req, res) => {
+// 1. Customer Registration (Nome, WhatsApp, Senha, Confirmar Senha)
+app.post('/api/customer/register', (req, res) => {
   try {
-    const { mode } = req.body;
-    if (mode !== 'GLOBAL' && mode !== 'PER_RESTAURANT') {
-      return res.status(400).json({ success: false, error: 'Modo inválido. Escolha GLOBAL ou PER_RESTAURANT' });
+    const { name, phone, password, confirmPassword } = req.body;
+    const result = registerCustomer({ name, phone, password, confirmPassword });
+    if (!result.success) {
+      return res.status(result.alreadyExists ? 409 : 400).json(result);
     }
-    const setMode = setCustomerLoginMode(mode);
-    res.json({ success: true, mode: setMode });
+    res.status(201).json(result);
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-app.post('/api/customer/auth', (req, res) => {
+// 2. Customer Login (WhatsApp + Senha)
+app.post('/api/customer/login', (req, res) => {
   try {
-    const { phone, name, restaurantSlug } = req.body;
-    if (!phone) {
-      return res.status(400).json({ success: false, error: 'Telefone é obrigatório para autenticação' });
+    const { phone, password } = req.body;
+    const result = loginCustomer({ phone, password });
+    if (!result.success) {
+      return res.status(result.notFound ? 404 : 401).json(result);
     }
-    const result = authenticateCustomer({ phone, name, restaurantSlug });
-    res.json({ success: true, ...result });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/customer/bonus-config', (req, res) => {
-  res.json({ success: true, config: getInstallationBonusConfig() });
-});
-
-app.post('/api/customer/bonus-config', (req, res) => {
-  try {
-    const updated = updateInstallationBonusConfig(req.body);
-    res.json({ success: true, config: updated });
-  } catch (error: any) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/customer/claim-bonus', (req, res) => {
-  try {
-    const { customerId, phone } = req.body;
-    if (!customerId || !phone) {
-      return res.status(400).json({ success: false, error: 'ID do cliente e telefone são obrigatórios' });
-    }
-    const result = claimInstallationBonus(customerId, phone);
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// 3. Customer Logout (Encerramento de sessão segura)
+app.post('/api/customer/logout', (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : req.body.token;
+    if (token) {
+      logoutCustomerSession(token);
+    }
+    res.json({ success: true, message: 'Sessão encerrada com sucesso.' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 4. Get Current Customer Profile
+app.get('/api/customer/me', (req, res) => {
+  const customer = getAuthenticatedCustomer(req);
+  if (!customer) {
+    return res.status(401).json({ success: false, error: 'Sessão não autenticada ou expirada.' });
+  }
+  res.json({ success: true, customer });
+});
+
+// 5. Update Customer Profile (Nome)
+app.patch('/api/customer/profile', (req, res) => {
+  const customer = getAuthenticatedCustomer(req);
+  if (!customer) {
+    return res.status(401).json({ success: false, error: 'Sessão não autenticada.' });
+  }
+  const result = updateCustomerProfile(customer.id, req.body);
+  res.json(result);
+});
+
+// 6. Customer Addresses
+app.post('/api/customer/addresses', (req, res) => {
+  const customer = getAuthenticatedCustomer(req);
+  if (!customer) {
+    return res.status(401).json({ success: false, error: 'Sessão não autenticada.' });
+  }
+  const result = saveCustomerAddress(customer.id, req.body);
+  res.json(result);
+});
+
+app.delete('/api/customer/addresses/:id', (req, res) => {
+  const customer = getAuthenticatedCustomer(req);
+  if (!customer) {
+    return res.status(401).json({ success: false, error: 'Sessão não autenticada.' });
+  }
+  const result = deleteCustomerAddress(customer.id, req.params.id);
+  res.json(result);
+});
+
+// 7. Password Recovery Flow
+app.post('/api/customer/forgot-password', async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, error: 'WhatsApp é obrigatório.' });
+    }
+    const result = await requestCustomerPasswordReset(phone);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/customer/reset-password', (req, res) => {
+  try {
+    const { phone, code, newPassword, confirmPassword } = req.body;
+    const result = confirmCustomerPasswordReset({ phone, code, newPassword, confirmPassword });
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 8. Strict Customer Orders (Isolamento total: cliente só vê seus próprios pedidos)
+app.get('/api/customer/my-orders', (req, res) => {
+  const customer = getAuthenticatedCustomer(req);
+  if (!customer) {
+    return res.status(401).json({ success: false, error: 'Sessão não autenticada.' });
+  }
+  const orders = getOrdersByCustomer(customer.id, customer.phoneNormalized);
+  res.json({ success: true, count: orders.length, orders });
+});
+
+// Backward compatibility alias
+app.post('/api/customer/auth', (req, res) => {
+  try {
+    const { phone, name, password } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, error: 'Telefone é obrigatório.' });
+    }
+    // If password provided, attempt login or register
+    if (password) {
+      const loginRes = loginCustomer({ phone, password });
+      if (loginRes.success) return res.json(loginRes);
+      if (loginRes.notFound && name) {
+        return res.json(registerCustomer({ name, phone, password }));
+      }
+      return res.status(400).json(loginRes);
+    }
+    // Fallback: invite to set up password
+    return res.status(400).json({
+      success: false,
+      error: 'Autenticação segura ativa: Por favor, informe sua senha para entrar ou cadastre-se.',
+      requiresPassword: true,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 // ==========================================
+// REAL-TIME SSE STREAM & ORDERS API
+// ==========================================
+
+interface SSEOrderClient {
+  id: string;
+  res: express.Response;
+  slug?: string;
+}
+let sseOrderClients: SSEOrderClient[] = [];
+
+export function broadcastOrdersUpdate(eventType: string, order?: any) {
+  const payload = JSON.stringify({
+    event: eventType,
+    order,
+    version: getOrdersVersion(),
+    lastModified: getOrdersLastModified(),
+    timestamp: new Date().toISOString(),
+  });
+
+  sseOrderClients.forEach((client) => {
+    try {
+      if (
+        !client.slug ||
+        client.slug === 'all' ||
+        !order?.restaurantSlug ||
+        client.slug === order.restaurantSlug
+      ) {
+        client.res.write(`data: ${payload}\n\n`);
+      }
+    } catch {
+      // client dropped connection
+    }
+  });
+}
+
+// Real-Time SSE Stream Endpoint for Instant Sync (Garçom, Cozinha, Bar, SushiBar, Cliente, Painel)
+app.get('/api/orders/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  const clientId = `sse-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const slug = req.query.slug as string | undefined;
+
+  const client: SSEOrderClient = { id: clientId, res, slug };
+  sseOrderClients.push(client);
+
+  // Send initial handshake
+  res.write(
+    `data: ${JSON.stringify({
+      event: 'connected',
+      clientId,
+      version: getOrdersVersion(),
+      lastModified: getOrdersLastModified(),
+      timestamp: new Date().toISOString(),
+    })}\n\n`
+  );
+
+  // Heartbeat every 15s to keep proxy / Render / Cloud Run connections warm
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`: heartbeat\n\n`);
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseOrderClients = sseOrderClients.filter((c) => c.id !== clientId);
+  });
+});
 
 // 1. List all orders with optional restaurant slug filter and ETag 304 caching
 app.get('/api/orders', (req, res) => {
@@ -588,7 +1095,20 @@ app.get('/api/orders/:id', (req, res) => {
 app.post('/api/orders', (req, res) => {
   try {
     const payload = req.body;
+    const authCust = getAuthenticatedCustomer(req);
+    if (authCust && !payload.customerId) {
+      payload.customerId = authCust.id;
+      if (!payload.customerName) payload.customerName = authCust.name;
+      if (!payload.customerPhone) payload.customerPhone = authCust.phone;
+    }
     const result = createOrderTransactional(payload);
+
+    // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
+    broadcastOrdersUpdate('order_created', result.order);
+
+    // Asynchronously archive to Supabase PostgreSQL if configured
+    syncOrderToSupabase(result.order).catch(() => {});
+
     res.status(result.deduplicated ? 200 : 201).json({
       success: true,
       deduplicated: result.deduplicated,
@@ -620,6 +1140,12 @@ app.patch('/api/orders/:id/status', (req, res) => {
     }
     const updated = updateOrderStatusTransactional(req.params.id, status, note);
 
+    // Broadcast Real-Time SSE update immediately
+    broadcastOrdersUpdate('order_status_updated', updated);
+
+    // Asynchronously update order in Supabase PostgreSQL
+    syncOrderToSupabase(updated).catch(() => {});
+
     // Audit trail log
     logAuditAction({
       userName: operatorName || 'Operador',
@@ -636,11 +1162,131 @@ app.patch('/api/orders/:id/status', (req, res) => {
   }
 });
 
+// 5b. Update Order Station Status (KDS Praças: Bar, Cozinha, SushiBar)
+// RECEBIDO -> EM PREPARO -> PEDIDO FEITO
+app.patch('/api/orders/:id/station-status', (req, res) => {
+  try {
+    const { station, status, operatorName, operatorRole } = req.body as {
+      station: ProductionStation;
+      status: StationItemStatus;
+      operatorName?: string;
+      operatorRole?: string;
+    };
+
+    if (!station || !['cozinha', 'sushibar', 'bar'].includes(station)) {
+      return res.status(400).json({ success: false, error: 'Praça inválida (deve ser bar, cozinha ou sushibar)' });
+    }
+    if (!status || !['recebido', 'em_preparo', 'pedido_feito'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Status da praça inválido (deve ser recebido, em_preparo ou pedido_feito)' });
+    }
+
+    const updated = updateOrderStationStatusTransactional(req.params.id, station, status, operatorName);
+
+    // Broadcast Real-Time SSE update immediately to all stations and dashboards
+    broadcastOrdersUpdate('station_status_updated', updated);
+
+    // Asynchronously archive status to Supabase PostgreSQL
+    syncOrderToSupabase(updated).catch(() => {});
+
+    // Audit log
+    logAuditAction({
+      userName: operatorName || `Operador ${station.toUpperCase()}`,
+      userRole: operatorRole || station,
+      action: `Praça [${station.toUpperCase()}] atualizada para [${status.toUpperCase()}] no pedido ${updated.shortCode}`,
+      details: `Status geral do pedido: ${updated.status}`,
+      category: 'order',
+    });
+
+    res.json({ success: true, order: updated });
+  } catch (error: any) {
+    console.error('[ORDER STATION ERROR]:', error.message);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// 5c. Append Items to Table Order (Garçom + Cliente synchronization on same table)
+app.post('/api/orders/table/append', (req, res) => {
+  try {
+    const {
+      tableNumber,
+      restaurantSlug,
+      restaurantName,
+      items,
+      customerName,
+      customerPhone,
+      waiterName,
+      tableSessionId,
+      idempotencyKey,
+    } = req.body;
+
+    if (!tableNumber || typeof tableNumber !== 'number') {
+      return res.status(400).json({ success: false, error: 'Número de mesa válido é obrigatório' });
+    }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: 'Pelo menos 1 item deve ser informado' });
+    }
+
+    const result = appendItemsToTableOrderTransactional({
+      tableNumber,
+      restaurantSlug: restaurantSlug || 'japones',
+      restaurantName,
+      items,
+      customerName,
+      customerPhone,
+      waiterName,
+      tableSessionId,
+      idempotencyKey,
+    });
+
+    // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
+    broadcastOrdersUpdate(result.isNew ? 'order_created' : 'table_items_appended', result.order);
+
+    // Asynchronously archive to Supabase
+    syncOrderToSupabase(result.order).catch(() => {});
+
+    // Audit log
+    logAuditAction({
+      userName: waiterName || customerName || `Mesa ${tableNumber}`,
+      userRole: waiterName ? 'garcom' : 'cliente',
+      action: `${result.isNew ? 'Criou novo pedido' : 'Adicionou itens'} na Mesa ${tableNumber} (${result.order.shortCode})`,
+      details: `${items.length} item(s) adicionados`,
+      category: 'order',
+    });
+
+    res.status(result.isNew ? 201 : 200).json({
+      success: true,
+      isNew: result.isNew,
+      order: result.order,
+      message: result.isNew ? 'Pedido aberto para a mesa' : 'Itens adicionados com sucesso ao pedido da mesa',
+    });
+  } catch (error: any) {
+    console.error('[TABLE APPEND ERROR]:', error.message);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 // 6. Update Thermal Ticket Print Status
 app.patch('/api/orders/:id/print', (req, res) => {
   try {
     const { printStatus } = req.body as { printStatus: 'pendente' | 'imprimindo' | 'impresso' };
     const updated = updateOrderPrintStatusTransactional(req.params.id, printStatus);
+    broadcastOrdersUpdate('print_status_updated', updated);
+    res.json({ success: true, order: updated });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// 7. Update/Transfer Order Table
+app.patch('/api/orders/:id/table', (req, res) => {
+  try {
+    const { tableNumber } = req.body as { tableNumber: number };
+    if (!tableNumber || typeof tableNumber !== 'number') {
+      return res.status(400).json({ success: false, error: 'Número da mesa válido é obrigatório' });
+    }
+    const updated = updateOrderTableTransactional(req.params.id, tableNumber);
+    broadcastOrdersUpdate('table_transferred', updated);
+    syncOrderToSupabase(updated).catch(() => {});
     res.json({ success: true, order: updated });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
@@ -655,6 +1301,8 @@ app.delete('/api/orders/:id', (req, res) => {
     if (!deleted) {
       return res.status(404).json({ success: false, error: 'Pedido não encontrado' });
     }
+
+    broadcastOrdersUpdate('order_deleted', { id: req.params.id });
 
     logAuditAction({
       userName: operatorName,
@@ -674,6 +1322,8 @@ app.post('/api/orders/clear-history', (req, res) => {
   try {
     const { slug, mode, operatorName } = req.body as { slug?: string; mode?: 'finished' | 'all'; operatorName?: string };
     const removedCount = clearOrdersTransactional(slug, mode);
+
+    broadcastOrdersUpdate('history_cleared', { mode, slug });
 
     logAuditAction({
       userName: operatorName || 'Administrador',
@@ -713,6 +1363,8 @@ app.post('/api/orders/master-reset', (req, res) => {
 
     const result = masterResetOrdersTransactional(operatorName || 'SUPER ADMIN');
 
+    broadcastOrdersUpdate('master_reset', result);
+
     logAuditAction({
       userName: operatorName || 'Super Admin',
       userRole: 'super_admin',
@@ -748,6 +1400,8 @@ app.post('/api/orders/batch', (req, res) => {
     for (const payload of ordersPayloads) {
       const result = createOrderTransactional(payload);
       createdOrders.push(result.order);
+      broadcastOrdersUpdate('order_created', result.order);
+      syncOrderToSupabase(result.order).catch(() => {});
     }
 
     res.status(201).json({
@@ -817,7 +1471,7 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(403).json({ success: false, error: 'Este usuário está inativo ou bloqueado.' });
     }
 
-    const isValid = verifyPassword(password, user.passwordHash, user.passwordSalt);
+    const isValid = verifyPassword(password, user.passwordHash, user.passwordSalt, user.username);
     if (!isValid) {
       return res.status(401).json({ success: false, error: 'Senha incorreta.' });
     }
