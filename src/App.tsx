@@ -15,111 +15,29 @@ import { AdminLayout } from './components/AdminLayout';
 import { MenuItem, Order, RestaurantSlug } from './types/restaurant';
 import { ShoppingBag, Clock, Home, Utensils, ShieldCheck, Sparkles, User, Bike } from 'lucide-react';
 import { CustomerAuthModal } from './components/CustomerAuthModal';
+import { CustomerAuthProvider } from './context/CustomerAuthContext';
 import { CustomerAiConciergeModal } from './components/CustomerAiConciergeModal';
 import { CourierPortal } from './components/CourierPortal';
 import { PwaInstallationBanner } from './components/PwaInstallationBanner';
-import { TesterFloatingBar } from './components/TesterFloatingBar';
+import { TableServicePanel } from './components/TableServicePanel';
+import { StaffAccessModal } from './components/StaffAccessModal';
+import { StationKdsView } from './components/StationKdsView';
+import { WaiterPdvTouch } from './components/WaiterPdvTouch';
+import { ClientTableView } from './components/ClientTableView';
 import { BRAND_CONFIG, BRAND_NAME, BRAND_SHORT_NAME } from './config/brand';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { OperacaoRouter } from './components/OperacaoRouter';
+import { Lock } from 'lucide-react';
 
-function AdminLoginScreen({
-  onLogin,
-  loading,
-  error,
-}: {
-  onLogin: (username: string, password: string) => Promise<any>;
-  loading: boolean;
-  error: string | null;
-}) {
-  const [username, setUsername] = React.useState('admin');
-  const [password, setPassword] = React.useState('');
-
-  return (
-    <div className="min-h-screen bg-[#07090E] text-white flex items-center justify-center p-4">
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          await onLogin(username.trim(), password);
-        }}
-        className="w-full max-w-sm space-y-4 rounded-2xl border border-white/10 bg-[#0E121B] p-6"
-      >
-        <h1 className="text-xl font-semibold flex items-center gap-2">
-          <ShieldCheck size={20} /> Super Admin
-        </h1>
-        <p className="text-xs text-slate-400">Acesso administrativo por usuário e senha.</p>
-        <input
-          type="text"
-          required
-          autoComplete="username"
-          placeholder="Nome de usuário"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2.5 text-sm"
-        />
-        <input
-          type="password"
-          required
-          autoComplete="current-password"
-          placeholder="Senha"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2.5 text-sm"
-        />
-        {error && <p className="text-rose-400 text-sm">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg bg-white text-black py-2.5 text-sm font-semibold disabled:opacity-50"
-        >
-          {loading ? 'Entrando…' : 'Entrar'}
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function AdminAuthGate({ children }: { children: React.ReactNode }) {
-  // Super Admin usa a autenticação administrativa interna (username/senha),
-  // separada do Supabase Auth usado por equipe/clientes.
-  const { currentUser, loginUser, logoutUser } = useStore();
-  const [loading, setLoading] = React.useState(false);
-  const [authError, setAuthError] = React.useState<string | null>(null);
-
-  const handleAdminLogin = async (username: string, password: string) => {
-    setLoading(true);
-    setAuthError(null);
-    const result = await loginUser(username, password);
-    setLoading(false);
-    if (!result.success) setAuthError(result.error || 'Usuário ou senha incorretos.');
-    return result;
-  };
-
-  const isAuthenticated = Boolean(currentUser);
-  const isSuperAdmin = currentUser?.role === 'super_admin';
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#07090E] flex items-center justify-center text-white">
-        Carregando…
-      </div>
-    );
-  }
-  if (!isAuthenticated) {
-    return <AdminLoginScreen onLogin={handleAdminLogin} loading={loading} error={authError} />;
-  }
-  if (!isSuperAdmin) {
-    return (
-      <div className="min-h-screen bg-[#07090E] text-white flex items-center justify-center p-6 text-center">
-        <div>
-          <p className="mb-4">Somente o Super Admin pode acessar esta área.</p>
-          <button onClick={() => logoutUser()} className="underline text-white/60 text-sm">Sair</button>
-        </div>
-      </div>
-    );
-  }
-  return <>{children}</>;
-}
+type AppView =
+  | 'home'
+  | 'menu'
+  | 'admin'
+  | 'courier'
+  | 'tables'
+  | 'pdv'
+  | 'bar'
+  | 'cozinha'
+  | 'sushibar'
+  | 'client_table';
 
 function AppContent() {
   const {
@@ -130,44 +48,71 @@ function AppContent() {
     cartTotal,
   } = useStore();
 
-  // FASE 3 — rotas reais (não mais um único painel com atalho de teclado):
-  // /operacao, /garcom e /pedidos usam sessão real do Supabase Auth + RBAC
-  // do banco, e substituem completamente o antigo hack de Alt+A para essas
-  // interfaces operacionais (garçom, caixa, cozinha, sushibar, motoboy).
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const isSuperAdminRoute =
-    pathname === '/operacao' || pathname.startsWith('/operacao/');
-  const isStaffOperationRoute = pathname === '/garcom' || pathname === '/pedidos';
+  // Helper to extract table number from URL path, query params (?mesa=3) or hash (#mesa=3)
+  const resolveTableFromLocation = (): number | null => {
+    if (typeof window === 'undefined') return null;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
 
-  // /operacao é a entrada do Super Admin e usa o login interno por usuário/senha.
-  // /garcom e /pedidos continuam usando Supabase Auth para a equipe operacional.
-  if (isSuperAdminRoute) {
-    return (
-      <AdminAuthGate>
-        <div className="pb-16 min-h-screen bg-[#07090E]">
-          <AdminLayout onBackToApp={() => { window.location.href = '/'; }} initialTab="dashboard" />
-        </div>
-      </AdminAuthGate>
-    );
-  }
+    // 1. Path pattern /mesa/3 or hash #/mesa/3
+    const pathMatch = (path + ' ' + hash).match(/mesa\/(\d+)/);
+    if (pathMatch && pathMatch[1]) {
+      return parseInt(pathMatch[1], 10) || null;
+    }
 
-  if (isStaffOperationRoute) {
-    return (
-      <AuthProvider>
-        <OperacaoRouter />
-      </AuthProvider>
-    );
-  }
+    // 2. Query param ?mesa=3 or ?table=3
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const val = params.get('mesa') || params.get('table');
+      if (val) {
+        const num = parseInt(val, 10);
+        if (!isNaN(num) && num > 0) return num;
+      }
+    } catch {}
 
-  // Navigation View: 'home' | 'menu' | 'admin' | 'courier'
-  const [view, setView] = useState<'home' | 'menu' | 'admin' | 'courier'>(() => {
+    // 3. Hash query param #mesa=3 or #table=3
+    const hashMatch = hash.match(/(?:mesa|table)[=/](\d+)/);
+    if (hashMatch && hashMatch[1]) {
+      return parseInt(hashMatch[1], 10) || null;
+    }
+
+    return null;
+  };
+
+  const [clientTableNumber, setClientTableNumber] = useState<number>(() => {
+    return resolveTableFromLocation() || 1;
+  });
+
+  // Navigation View
+  const [view, setView] = useState<AppView>(() => {
     if (typeof window !== 'undefined') {
-      const search = window.location.search;
-      const hash = window.location.hash;
-      if (search.includes('admin') || hash.includes('admin') || search.includes('painel')) {
+      const tableNum = resolveTableFromLocation();
+      if (tableNum !== null) {
+        return 'client_table';
+      }
+
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      if (path.includes('painelrestaurante') || hash.includes('painelrestaurante') || hash.includes('admin') || path.includes('/admin')) {
         return 'admin';
       }
-      if (search.includes('courier') || search.includes('entregador') || hash.includes('entregador')) {
+      if (path.includes('bar') || hash.includes('kds-bar') || hash.includes('/bar') || path.includes('drinks')) {
+        return 'bar';
+      }
+      if (path.includes('cozinha') || hash.includes('kds-cozinha') || hash.includes('/cozinha')) {
+        return 'cozinha';
+      }
+      if (path.includes('sushibar') || hash.includes('kds-sushibar') || hash.includes('/sushibar')) {
+        return 'sushibar';
+      }
+      if (path.includes('pdv') || hash.includes('pdv') || path.includes('garcom') || hash.includes('garcom')) {
+        return 'pdv';
+      }
+      if (path.includes('mesas') || hash.includes('mesas') || path.includes('salao') || hash.includes('salao')) {
+        return 'pdv';
+      }
+      if (path.includes('courier') || path.includes('entregador') || hash.includes('entregador')) {
         return 'courier';
       }
     }
@@ -175,29 +120,8 @@ function AppContent() {
   });
 
   const [adminInitialTab, setAdminInitialTab] = useState<any>('dashboard');
-
-  // Listen to keyboard shortcut (Alt+A or Ctrl+Shift+A) or hash changes for administrator access
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.altKey && e.key.toLowerCase() === 'a') || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a')) {
-        e.preventDefault();
-        setView((prev) => (prev === 'admin' ? 'home' : 'admin'));
-      }
-    };
-    const handleHashChange = () => {
-      if (window.location.hash.includes('admin')) {
-        setView('admin');
-      } else if (window.location.hash.includes('entregador')) {
-        setView('courier');
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('hashchange', handleHashChange);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('hashchange', handleHashChange);
-    };
-  }, []);
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'account' | 'recovery'>('login');
 
   // Modals state
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -207,6 +131,111 @@ function AppContent() {
   const [trackedOrderId, setTrackedOrderId] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isConciergeOpen, setIsConciergeOpen] = useState(false);
+
+  // Parse URL paths for customer vs administrative areas
+  React.useEffect(() => {
+    const handleUrlChange = () => {
+      // 1. Table check first
+      const tableNum = resolveTableFromLocation();
+      if (tableNum !== null) {
+        setClientTableNumber(tableNum);
+        setView('client_table');
+        return;
+      }
+
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+
+      // Administrative route: /PAINELRESTAURANTE
+      if (path.includes('painelrestaurante') || hash.includes('painelrestaurante') || path.includes('admin') || hash.includes('admin')) {
+        setView('admin');
+        return;
+      }
+
+      // Station KDS & Dedicated Operations routes
+      if (path.includes('/bar') || hash.includes('kds-bar') || hash.includes('/bar') || path.includes('drinks')) {
+        setView('bar');
+        return;
+      }
+      if (path.includes('/cozinha') || hash.includes('kds-cozinha') || hash.includes('/cozinha')) {
+        setView('cozinha');
+        return;
+      }
+      if (path.includes('/sushibar') || hash.includes('kds-sushibar') || hash.includes('/sushibar')) {
+        setView('sushibar');
+        return;
+      }
+      if (path.includes('/pdv') || hash.includes('pdv') || path.includes('/garcom') || hash.includes('garcom') || path.includes('/mesas') || hash.includes('mesas')) {
+        setView('pdv');
+        return;
+      }
+      if (path.includes('/mesa/') || hash.includes('/mesa/')) {
+        const source = path.includes('/mesa/') ? path : hash;
+        const match = source.match(/mesa\/(\d+)/);
+        if (match && match[1]) {
+          setClientTableNumber(parseInt(match[1], 10) || 1);
+        }
+        setView('client_table');
+        return;
+      }
+
+      // Customer routes
+      if (path.includes('/login') || hash.includes('login')) {
+        setAuthModalMode('login');
+        setIsAuthModalOpen(true);
+      } else if (path.includes('/cadastro') || hash.includes('cadastro')) {
+        setAuthModalMode('register');
+        setIsAuthModalOpen(true);
+      } else if (
+        path.includes('/minha-conta') ||
+        hash.includes('minha-conta') ||
+        path.includes('/meus-pedidos') ||
+        hash.includes('meus-pedidos')
+      ) {
+        setAuthModalMode('account');
+        setIsAuthModalOpen(true);
+      } else if (path.includes('/pedido/') || hash.includes('pedido/')) {
+        const source = path.includes('/pedido/') ? path : hash;
+        const parts = source.split('pedido/');
+        if (parts[1]) {
+          const cleanId = parts[1].split('/')[0].split('?')[0];
+          if (cleanId) {
+            setTrackedOrderId(cleanId);
+            setIsTrackerOpen(true);
+          }
+        }
+      } else if (path.includes('/mesas') || hash.includes('mesas')) {
+        setView('pdv');
+      } else if (path.includes('/courier') || hash.includes('entregador')) {
+        setView('courier');
+      } else if (path === '/restaurantes' || hash.includes('restaurantes')) {
+        setView('home');
+      }
+    };
+
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
+
+  // Listen to keyboard shortcut (Alt+A or Alt+M)
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.altKey && e.key.toLowerCase() === 'a') || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a')) {
+        e.preventDefault();
+        setView((prev) => (prev === 'admin' ? 'home' : 'admin'));
+      } else if (e.altKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        setView((prev) => (prev === 'tables' ? 'home' : 'tables'));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Splash Screen control
   const [showSplash, setShowSplash] = useState(false);
@@ -227,39 +256,76 @@ function AppContent() {
     setIsTrackerOpen(true);
   };
 
+  // If viewing PDV Touch Garçom / Salão
+  if (view === 'pdv' || view === 'tables') {
+    return (
+      <WaiterPdvTouch
+        onBackToApp={() => setView('home')}
+        onOpenAdmin={() => setView('admin')}
+      />
+    );
+  }
+
+  // If viewing Dedicated Bar KDS
+  if (view === 'bar') {
+    return (
+      <StationKdsView
+        station="bar"
+        onBack={() => setView('home')}
+        standalone
+      />
+    );
+  }
+
+  // If viewing Dedicated Kitchen KDS
+  if (view === 'cozinha') {
+    return (
+      <StationKdsView
+        station="cozinha"
+        onBack={() => setView('home')}
+        standalone
+      />
+    );
+  }
+
+  // If viewing Dedicated Sushibar KDS
+  if (view === 'sushibar') {
+    return (
+      <StationKdsView
+        station="sushibar"
+        onBack={() => setView('home')}
+        standalone
+      />
+    );
+  }
+
+  // If viewing Client Table Self-Service (QR Code)
+  if (view === 'client_table') {
+    return (
+      <ClientTableView
+        tableNumber={clientTableNumber}
+        onExit={() => setView('home')}
+      />
+    );
+  }
+
   // If viewing Super-Admin
   if (view === 'admin') {
     return (
-      <AdminAuthGate>
-        <div className="pb-16 min-h-screen bg-[#07090E]">
-            <AdminLayout
-              onBackToApp={() => setView('home')}
-              initialTab={adminInitialTab}
-            />
-            <TesterFloatingBar
-              currentView={view}
-              onNavigateView={(nextView, tab) => {
-                if (tab) setAdminInitialTab(tab);
-                setView(nextView);
-              }}
-            />
-        </div>
-      </AdminAuthGate>
+      <div className="min-h-screen bg-[#07090E]">
+        <AdminLayout
+          onBackToApp={() => setView('home')}
+          initialTab={adminInitialTab}
+        />
+      </div>
     );
   }
 
   // If viewing Courier Portal
   if (view === 'courier') {
     return (
-      <div className="pb-16 min-h-screen bg-[#07090E]">
+      <div className="min-h-screen bg-[#07090E]">
         <CourierPortal onBackToHome={() => setView('home')} />
-        <TesterFloatingBar
-          currentView={view}
-          onNavigateView={(nextView, tab) => {
-            if (tab) setAdminInitialTab(tab);
-            setView(nextView);
-          }}
-        />
       </div>
     );
   }
@@ -269,12 +335,18 @@ function AppContent() {
       {/* Top Navbar */}
       <Navbar
         onOpenCart={() => setIsCartOpen(true)}
-        onOpenAdmin={() => setView('admin')}
+        onOpenAdmin={() => setIsStaffModalOpen(true)}
         onOpenTracker={() => {
           setTrackedOrderId(null);
           setIsTrackerOpen(true);
         }}
         onNavigateHome={() => setView('home')}
+        onOpenAuth={() => {
+          setAuthModalMode('account');
+          setIsAuthModalOpen(true);
+        }}
+        currentView={view as any}
+        setCurrentView={(v) => setView(v as any)}
       />
 
       {/* PWA Installation & 15% OFF Bonus Banner */}
@@ -375,11 +447,14 @@ function AppContent() {
           </button>
 
           <button
-            onClick={() => setIsAuthModalOpen(true)}
+            onClick={() => {
+              setAuthModalMode('account');
+              setIsAuthModalOpen(true);
+            }}
             className="flex flex-col items-center gap-1 py-1 px-3 rounded-xl text-slate-400 hover:text-[#E3BD6A] transition-all"
           >
             <User className="w-5 h-5" />
-            <span className="text-[10px]">Entrar</span>
+            <span className="text-[10px]">Conta</span>
           </button>
 
           <button
@@ -441,14 +516,16 @@ function AppContent() {
         />
       )}
 
-      {/* 6. Customer Auth & PWA Bonus Modal */}
+      {/* 6. Customer Auth & Account Modal */}
       {isAuthModalOpen && (
         <CustomerAuthModal
+          isOpen={isAuthModalOpen}
+          initialMode={authModalMode}
           restaurantSlug={currentRestaurant.slug}
           onClose={() => setIsAuthModalOpen(false)}
-          onSuccess={(cust) => {
-            alert(`Bem-vindo, ${cust.name || cust.phone}!`);
-            setIsAuthModalOpen(false);
+          onOrderClick={(orderId) => {
+            setTrackedOrderId(orderId);
+            setIsTrackerOpen(true);
           }}
         />
       )}
@@ -468,22 +545,32 @@ function AppContent() {
       )}
 
       {/* Subdued Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950/80 py-8 text-center text-xs text-slate-500 space-y-2 mt-auto pb-24">
+      <footer className="border-t border-slate-900 bg-slate-950/80 py-8 text-center text-xs text-slate-500 space-y-3 mt-auto pb-16">
         <p className="font-semibold text-slate-400">
           {BRAND_NAME} • {BRAND_CONFIG.tagline}
         </p>
         <p className="text-[11px] text-slate-600">
           Sakura Sushi House • Cantina Bella Vista • Forno D&apos;Oro Pizzeria • Burger Craft &amp; Beer
         </p>
+
+        {/* Discreet Staff Portal link */}
+        <div className="pt-2">
+          <button
+            onClick={() => setIsStaffModalOpen(true)}
+            className="inline-flex items-center gap-1.5 text-[11px] text-stone-600 hover:text-stone-400 transition-colors py-1 px-3 rounded-lg hover:bg-stone-900/60"
+            title="Acesso exclusivo para colaboradores"
+          >
+            <Lock className="w-3 h-3" />
+            <span>Acesso da Equipe</span>
+          </button>
+        </div>
       </footer>
 
-      {/* Floating Testing Toolbar for quick testing */}
-      <TesterFloatingBar
-        currentView={view}
-        onNavigateView={(nextView, tab) => {
-          if (tab) setAdminInitialTab(tab);
-          setView(nextView);
-        }}
+      {/* Staff Access Modal */}
+      <StaffAccessModal
+        isOpen={isStaffModalOpen}
+        onClose={() => setIsStaffModalOpen(false)}
+        onSelectView={(selected) => setView(selected)}
       />
     </div>
   );
@@ -492,7 +579,9 @@ function AppContent() {
 export default function App() {
   return (
     <StoreProvider>
-      <AppContent />
+      <CustomerAuthProvider>
+        <AppContent />
+      </CustomerAuthProvider>
     </StoreProvider>
   );
 }
