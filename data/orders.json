@@ -1,5 +1,80 @@
 [
   {
+    "id": "ord-1789643938614-1q9d",
+    "shortCode": "#TK-2427",
+    "restaurantSlug": "japones",
+    "restaurantName": "Sakura Sushi House",
+    "customerName": "Mesa 03",
+    "customerPhone": "(11) 99999-0000",
+    "customerPhoneNormalized": "5511999990000",
+    "orderType": "mesa",
+    "tableNumber": 3,
+    "items": [
+      {
+        "id": "item-1789643938613-alvxi",
+        "name": "Temaki Salmão Completo",
+        "quantity": 1,
+        "unitPrice": 32,
+        "totalPrice": 32,
+        "selectedOptions": [],
+        "station": "sushibar",
+        "stationStatus": "pedido_feito"
+      },
+      {
+        "id": "item-1789643938613-nzdfg",
+        "name": "Chopp Brahma 500ml",
+        "quantity": 2,
+        "unitPrice": 14,
+        "totalPrice": 28,
+        "selectedOptions": [],
+        "station": "bar",
+        "stationStatus": "pedido_feito"
+      }
+    ],
+    "stations": {
+      "sushibar": {
+        "station": "sushibar",
+        "status": "pedido_feito",
+        "itemsCount": 1,
+        "operator": "Sushiman Kenji",
+        "finishedAt": "2026-09-17T11:19:02.395Z"
+      },
+      "bar": {
+        "station": "bar",
+        "status": "pedido_feito",
+        "itemsCount": 2,
+        "operator": "Bartender Carlos",
+        "finishedAt": "2026-09-17T11:19:14.678Z"
+      }
+    },
+    "subtotal": 60,
+    "deliveryFee": 0,
+    "discount": 0,
+    "total": 60,
+    "paymentMethod": "pix",
+    "status": "pronto",
+    "statusHistory": [
+      {
+        "status": "recebido",
+        "timestamp": "Agora",
+        "note": "Pedido recebido e confirmado no servidor (MESA)"
+      },
+      {
+        "status": "parcialmente_pronto",
+        "timestamp": "Agora mesmo",
+        "note": "Praça [SUSHIBAR] atualizada para PEDIDO_FEITO por Sushiman Kenji"
+      },
+      {
+        "status": "pronto",
+        "timestamp": "Agora mesmo",
+        "note": "Praça [BAR] atualizada para PEDIDO_FEITO por Bartender Carlos"
+      }
+    ],
+    "printStatus": "pendente",
+    "createdAt": "2026-09-17T11:18:58.614Z",
+    "updatedAt": "2026-09-17T11:19:14.678Z"
+  },
+  {
     "id": "ord-101",
     "shortCode": "#TK-4821",
     "restaurantSlug": "japones",
