@@ -48,7 +48,7 @@ const KANBAN_COLUMNS: ColumnConfig[] = [
   },
   {
     status: 'em_preparo',
-    title: 'Em Preparo',
+    title: 'Em Produção',
     emoji: '👨‍🍳',
     badgeBg: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
     nextStatus: 'pronto',
@@ -77,6 +77,29 @@ const KANBAN_COLUMNS: ColumnConfig[] = [
     badgeBg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
   },
 ];
+
+const isStatusInColumn = (orderStatus: OrderStatus, colStatus: OrderStatus): boolean => {
+  if (colStatus === 'recebido') {
+    return orderStatus === 'recebido' || orderStatus === 'aceito';
+  }
+  if (colStatus === 'em_preparo') {
+    return (
+      orderStatus === 'em_preparo' ||
+      orderStatus === 'em_producao' ||
+      orderStatus === 'parcialmente_pronto'
+    );
+  }
+  if (colStatus === 'pronto') {
+    return orderStatus === 'pronto';
+  }
+  if (colStatus === 'saiu_para_entrega') {
+    return orderStatus === 'saiu_para_entrega';
+  }
+  if (colStatus === 'entregue') {
+    return orderStatus === 'entregue' || orderStatus === 'finalizado';
+  }
+  return orderStatus === colStatus;
+};
 
 export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) => {
   const {
@@ -296,7 +319,7 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
       {/* Kanban Board Columns Container */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 overflow-x-auto pb-6">
         {KANBAN_COLUMNS.map((col) => {
-          const colOrders = filteredOrders.filter((o) => o.status === col.status);
+          const colOrders = filteredOrders.filter((o) => isStatusInColumn(o.status, col.status));
 
           return (
             <div
@@ -419,6 +442,47 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
                             </div>
                           ))}
                         </div>
+
+                        {/* Production Station Status Badges */}
+                        {order.stations && Object.keys(order.stations).length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {Object.entries(order.stations).map(([stationKey, rec]) => {
+                              if (!rec) return null;
+                              const isDone = rec.status === 'pedido_feito';
+                              const isInPrep = rec.status === 'em_preparo';
+                              const label =
+                                stationKey === 'bar'
+                                  ? 'Bar'
+                                  : stationKey === 'sushibar'
+                                  ? 'Sushi'
+                                  : 'Cozinha';
+                              return (
+                                <span
+                                  key={stationKey}
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold border flex items-center gap-1 ${
+                                    isDone
+                                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                                      : isInPrep
+                                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-300 animate-pulse'
+                                      : 'bg-slate-800 border-slate-700 text-slate-400'
+                                  }`}
+                                  title={`Praça ${label}: ${rec.status}`}
+                                >
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                      isDone
+                                        ? 'bg-emerald-400'
+                                        : isInPrep
+                                        ? 'bg-amber-400'
+                                        : 'bg-slate-500'
+                                    }`}
+                                  />
+                                  <span>{label}: {isDone ? 'Pronto' : isInPrep ? 'Preparo' : 'Fila'}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
 
                         {/* Notes if any */}
                         {order.notes && (

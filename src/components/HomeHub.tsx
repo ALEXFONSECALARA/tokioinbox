@@ -58,7 +58,8 @@ export const HomeHub: React.FC<HomeHubProps> = ({
   const [selectedLinkRestaurant, setSelectedLinkRestaurant] = useState<RestaurantConfig | null>(null);
   const [copiedLinkSlug, setCopiedLinkSlug] = useState<string | null>(null);
 
-  const restaurantList = Object.values(restaurants);
+  // Filter only active restaurants for customer display
+  const restaurantList = Object.values(restaurants).filter((r) => r.isActive !== false);
 
   const handleCopyDirectUrl = async (rest: RestaurantConfig) => {
     const url = getRestaurantDirectUrl(rest, 'official');

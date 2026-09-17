@@ -27,7 +27,13 @@ const ORDER_STEPS: { status: OrderStatus; label: string; icon: any; desc: string
     status: 'recebido',
     label: 'Recebido',
     icon: Receipt,
-    desc: 'Pedido registrado e enviado para a cozinha',
+    desc: 'Pedido registrado no sistema',
+  },
+  {
+    status: 'aceito',
+    label: 'Confirmado',
+    icon: Store,
+    desc: 'Restaurante confirmou e aceitou o pedido',
   },
   {
     status: 'em_preparo',
@@ -79,14 +85,16 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     switch (status) {
       case 'recebido':
         return 0;
-      case 'em_preparo':
+      case 'aceito':
         return 1;
-      case 'pronto':
+      case 'em_preparo':
         return 2;
-      case 'saiu_para_entrega':
+      case 'pronto':
         return 3;
-      case 'entregue':
+      case 'saiu_para_entrega':
         return 4;
+      case 'entregue':
+        return 5;
       case 'cancelado':
         return -1;
       default:

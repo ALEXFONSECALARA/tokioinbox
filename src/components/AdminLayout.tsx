@@ -29,6 +29,7 @@ import { AdminIssuesCenter } from './AdminIssuesCenter';
 import { AdminSeniorAuditor } from './AdminSeniorAuditor';
 import { AdminBackupRestore } from './AdminBackupRestore';
 import { AdminAdministrativeSuite } from './AdminAdministrativeSuite';
+import { AdminAiEngineCenter } from './AdminAiEngineCenter';
 import { NexoroBrandFooter } from './NexoroBrandFooter';
 import { AdminViewAsBar, ViewAsRole } from './AdminViewAsBar';
 import { AdminNexoroDashboard } from './AdminNexoroDashboard';
@@ -85,6 +86,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
+import { TableServicePanel } from './TableServicePanel';
 
 interface AdminLayoutProps {
   onBackToApp: () => void;
@@ -93,55 +95,7 @@ interface AdminLayoutProps {
     | 'tools_catalog'
     | 'kanban'
     | 'kds'
-    | 'dispatch'
-    | 'cashier'
-    | 'pricing'
-    | 'vitrine'
-    | 'menu'
-    | 'restaurants'
-    | 'customers'
-    | 'devices'
-    | 'users'
-    | 'audit'
-    | 'settings'
-    | 'health'
-    | 'ai_sales'
-    | 'marketing'
-    | 'promotions'
-    | 'print_agent'
-    | 'delivery_areas'
-    | 'crm_recovery'
-    | 'issues'
-    | 'auditor'
-    | 'backup'
-    | 'admin_suite';
-}
-
-export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTab }) => {
-  const {
-    restaurants,
-    orders,
-    customers,
-    currentUser,
-    loginUser,
-    logoutUser,
-    checkPermission,
-    connectedDevices,
-    soundSettings,
-    updateSoundSettings,
-  } = useStore();
-
-  const [usernameInput, setUsernameInput] = useState('admin');
-  const [passwordInput, setPasswordInput] = useState('admin1234');
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-
-  // Active admin tab
-  const [activeTab, setActiveTab] = useState<
-    | 'dashboard'
-    | 'tools_catalog'
-    | 'kanban'
-    | 'kds'
+    | 'tables'
     | 'dispatch'
     | 'cashier'
     | 'pricing'
@@ -164,6 +118,58 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
     | 'auditor'
     | 'backup'
     | 'admin_suite'
+    | 'ai_engine';
+}
+
+export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTab }) => {
+  const {
+    restaurants,
+    orders,
+    customers,
+    currentUser,
+    loginUser,
+    logoutUser,
+    checkPermission,
+    connectedDevices,
+    soundSettings,
+    updateSoundSettings,
+  } = useStore();
+
+  const [usernameInput, setUsernameInput] = useState('admin');
+  const [passwordInput, setPasswordInput] = useState('admin123');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Active admin tab
+  const [activeTab, setActiveTab] = useState<
+    | 'dashboard'
+    | 'tools_catalog'
+    | 'kanban'
+    | 'kds'
+    | 'tables'
+    | 'dispatch'
+    | 'cashier'
+    | 'pricing'
+    | 'vitrine'
+    | 'menu'
+    | 'restaurants'
+    | 'customers'
+    | 'devices'
+    | 'users'
+    | 'audit'
+    | 'settings'
+    | 'health'
+    | 'ai_sales'
+    | 'marketing'
+    | 'promotions'
+    | 'print_agent'
+    | 'delivery_areas'
+    | 'crm_recovery'
+    | 'issues'
+    | 'auditor'
+    | 'backup'
+    | 'admin_suite'
+    | 'ai_engine'
   >(initialTab || 'dashboard');
 
   useEffect(() => {
@@ -328,11 +334,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             <div className="grid grid-cols-2 gap-1.5 text-xs">
               <button
                 type="button"
-                onClick={() => handleQuickLogin('admin', 'admin1234')}
+                onClick={() => handleQuickLogin('admin', 'admin123')}
                 className="p-2 rounded-xl bg-[#0E121B] hover:bg-slate-800 border border-slate-800 text-left transition-colors"
               >
                 <span className="font-bold text-[#E3BD6A] block text-[11px]">Super Admin</span>
-                <span className="text-[10px] text-slate-400 font-mono">admin / admin1234</span>
+                <span className="text-[10px] text-slate-400 font-mono">admin / admin123</span>
               </button>
               <button
                 type="button"
@@ -674,6 +680,22 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             </span>
           </button>
 
+          {/* Central de IA (AI Engine) Tab */}
+          <button
+            onClick={() => setActiveTab('ai_engine')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'ai_engine'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black shadow-[0_0_15px_rgba(147,51,234,0.5)]'
+                : 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5" />
+            <span>Central de IA</span>
+            <span className="bg-purple-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+              AI
+            </span>
+          </button>
+
           {/* 20. Suite Admin Tab */}
           <button
             onClick={() => setActiveTab('admin_suite')}
@@ -721,6 +743,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
                 {countEmPreparo}
               </span>
             )}
+          </button>
+
+          {/* Salão & Mesas Tab */}
+          <button
+            onClick={() => setActiveTab('tables')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'tables'
+                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            <Utensils className="w-3.5 h-3.5" />
+            <span>Salão &amp; Mesas</span>
           </button>
 
           {/* Despacho & Entregas Tab */}
@@ -1054,6 +1089,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           <AdminKds selectedFilterSlug={selectedFilterSlug} />
         )}
 
+        {activeTab === 'tables' && (
+          <TableServicePanel
+            onBackToApp={() => setActiveTab('dashboard')}
+            onOpenAdmin={() => setActiveTab('dashboard')}
+          />
+        )}
+
         {activeTab === 'dispatch' && (
           <AdminDispatch selectedFilterSlug={selectedFilterSlug} />
         )}
@@ -1132,6 +1174,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             selectedFilterSlug={selectedFilterSlug}
             onNavigateTab={(tab) => setActiveTab(tab)}
           />
+        )}
+
+        {activeTab === 'ai_engine' && (
+          <AdminAiEngineCenter selectedFilterSlug={selectedFilterSlug} />
         )}
 
         {activeTab === 'settings' && (

@@ -31,6 +31,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 }) => {
   const {
     cart,
+    menuItems,
+    addToCart,
     isCartOpen: contextIsOpen,
     setIsCartOpen,
     updateCartItemQuantity,
@@ -65,21 +67,42 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   // AI Chef Pairing State
   const [aiLoading, setAiLoading] = useState(false);
   const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
+  const [aiSuggestedProducts, setAiSuggestedProducts] = useState<
+    Array<{ id: string; name: string; price: number; reason: string }>
+  >([]);
 
   const handleAskAiChef = async () => {
     setAiLoading(true);
     try {
-      const res = await fetch('/api/ai/recommend', {
+      const restaurantMenu = menuItems.filter(
+        (m) => m.restaurantSlug === activeRestaurantSlug && m.available !== false
+      );
+      const res = await fetch('/api/ai-engine/smart-pairing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           restaurantSlug: activeRestaurantSlug,
-          currentItems: cart.map((i) => ({ name: i.menuItem.name, quantity: i.quantity })),
+          restaurantName: restaurants[activeRestaurantSlug]?.name || 'Restaurante',
+          cartItems: cart.map((i) => ({
+            name: i.menuItem.name,
+            quantity: i.quantity,
+            price: i.unitTotalPrice,
+          })),
+          menuItems: restaurantMenu.map((m) => ({
+            id: m.id,
+            name: m.name,
+            price: m.price,
+            category: m.categoryId,
+            description: m.description,
+          })),
         }),
       });
       const data = await res.json();
       if (data.recommendation) {
         setAiRecommendation(data.recommendation);
+      }
+      if (Array.isArray(data.suggestedProducts)) {
+        setAiSuggestedProducts(data.suggestedProducts);
       }
     } catch (e) {
       setAiRecommendation(
@@ -87,6 +110,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       );
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const handleAddSuggestedProduct = (productId: string) => {
+    const item = menuItems.find((m) => m.id === productId);
+    if (item) {
+      addToCart(item, 1, [], 'Sugerido por Harmonização IA');
+      setAiSuggestedProducts((prev) => prev.filter((p) => p.id !== productId));
     }
   };
 
@@ -389,9 +420,42 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </button>
                 </div>
                 {aiRecommendation ? (
-                  <p className="text-[11px] text-slate-300 leading-relaxed italic bg-slate-950/60 p-2 rounded-lg border border-slate-800">
-                    &quot;{aiRecommendation}&quot;
-                  </p>
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-slate-300 leading-relaxed italic bg-slate-950/60 p-2 rounded-lg border border-slate-800">
+                      &quot;{aiRecommendation}&quot;
+                    </p>
+
+                    {aiSuggestedProducts.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block">
+                          Combinam perfeitamente com seu pedido:
+                        </span>
+                        {aiSuggestedProducts.map((prod) => (
+                          <div
+                            key={prod.id}
+                            className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/70 border border-amber-500/20 text-xs"
+                          >
+                            <div className="min-w-0 pr-2">
+                              <span className="font-semibold text-white block truncate text-[11px]">
+                                {prod.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400 block truncate">
+                                {prod.reason}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleAddSuggestedProduct(prod.id)}
+                              className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-black rounded-md shrink-0 flex items-center gap-1 transition-colors"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>R$ {prod.price.toFixed(2)}</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <p className="text-[10px] text-slate-400">
                     Quer sugestão de bebida ou sobremesa ideal para acompanhar seus pratos? Clique em &quot;Pedir Dica&quot;.

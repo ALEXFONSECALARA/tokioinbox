@@ -11,7 +11,9 @@ import {
   ChevronRight,
   ShieldCheck,
   Search,
+  User,
 } from 'lucide-react';
+import { useCustomerAuth } from '../context/CustomerAuthContext';
 
 interface NavbarProps {
   currentView?: 'home' | 'menu' | 'admin';
@@ -20,6 +22,7 @@ interface NavbarProps {
   onOpenAdmin?: () => void;
   onOpenTracker?: () => void;
   onNavigateHome?: () => void;
+  onOpenAuth?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -29,6 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdmin,
   onOpenTracker,
   onNavigateHome,
+  onOpenAuth,
 }) => {
   const {
     restaurants,
@@ -38,6 +42,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     setIsCartOpen,
     orders,
   } = useStore();
+
+  const { customer, isAuthenticated } = useCustomerAuth();
 
   const [logoTapCount, setLogoTapCount] = React.useState(0);
   const tapTimerRef = React.useRef<any>(null);
@@ -67,8 +73,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const handleGoAdmin = () => {
-    if (onOpenAdmin) onOpenAdmin();
-    if (setCurrentView) setCurrentView('admin');
+    if (onOpenAdmin) {
+      onOpenAdmin();
+    } else if (setCurrentView) {
+      setCurrentView('admin');
+    }
   };
 
   const handleOpenCart = () => {
@@ -168,6 +177,20 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right actions */}
         <div className="flex items-center gap-2">
+          {/* Customer Account Button */}
+          {onOpenAuth && (
+            <button
+              onClick={onOpenAuth}
+              className="relative min-h-[44px] px-3 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 text-xs font-semibold border border-stone-800 hover:border-[#C5A880]/50 flex items-center gap-1.5 transition-colors"
+              title={isAuthenticated ? `Minha Conta (${customer?.name})` : 'Entrar ou Cadastrar'}
+            >
+              <User className="w-4 h-4 text-[#C5A880]" />
+              <span className="hidden sm:inline max-w-[90px] truncate">
+                {isAuthenticated ? customer?.name.split(' ')[0] : 'Entrar'}
+              </span>
+            </button>
+          )}
+
           {/* Order Tracking Button */}
           {onOpenTracker && (
             <button
@@ -182,20 +205,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
           )}
-
-          {/* Admin Direct Button */}
-          <button
-            onClick={handleGoAdmin}
-            className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-medium border transition-colors flex items-center gap-1.5 ${
-              currentView === 'admin'
-                ? 'bg-[#C5A880] text-stone-950 border-[#C5A880] font-bold'
-                : 'bg-stone-900 hover:bg-stone-800 text-stone-200 border-stone-700'
-            }`}
-            title="Painel de Cozinha e Gerenciamento"
-          >
-            <ShieldCheck className="w-4 h-4 text-[#C5A880]" />
-            <span className="hidden md:inline">Admin</span>
-          </button>
 
           {/* Cart Button */}
           <button

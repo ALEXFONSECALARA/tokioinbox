@@ -1,5 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
+import { useCustomerAuth } from '../context/CustomerAuthContext';
+import { formatPhoneMask } from '../utils/phoneUtils';
 import { OrderType, PaymentMethod, Order } from '../types/restaurant';
 import confetti from 'canvas-confetti';
 import {
@@ -22,12 +24,14 @@ import {
 
 interface CheckoutModalProps {
   onClose: () => void;
-  onOrderSuccess: (order: Order) => void;
+  onOrderSuccess?: (order: Order) => void;
+  onOrderPlaced?: (order: Order) => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onClose,
   onOrderSuccess,
+  onOrderPlaced,
 }) => {
   const {
     cart,
@@ -41,19 +45,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     createOrder,
   } = useStore();
 
+  const { customer, isAuthenticated } = useCustomerAuth();
   const currentRestaurant = restaurants[activeRestaurantSlug] || restaurants.japones;
 
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerName, setCustomerName] = useState(customer?.name || '');
+  const [customerPhone, setCustomerPhone] = useState(customer?.phone || '');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
   const [notes, setNotes] = useState('');
 
   // Delivery Address state
-  const [street, setStreet] = useState('');
-  const [number, setNumber] = useState('');
-  const [neighborhood, setNeighborhood] = useState('');
-  const [city, setCity] = useState('São Paulo');
-  const [complement, setComplement] = useState('');
+  const defaultAddr = customer?.savedAddresses?.find((a) => a.isDefault) || customer?.savedAddresses?.[0];
+  const [street, setStreet] = useState(defaultAddr?.street || '');
+  const [number, setNumber] = useState(defaultAddr?.number || '');
+  const [neighborhood, setNeighborhood] = useState(defaultAddr?.neighborhood || '');
+  const [city, setCity] = useState(defaultAddr?.city || 'São Paulo');
+  const [complement, setComplement] = useState(defaultAddr?.complement || '');
+
+  useEffect(() => {
+    if (customer) {
+      if (!customerName) setCustomerName(customer.name);
+      if (!customerPhone) setCustomerPhone(customer.phone);
+      if (defaultAddr && !street) {
+        setStreet(defaultAddr.street);
+        setNumber(defaultAddr.number);
+        setNeighborhood(defaultAddr.neighborhood);
+        setCity(defaultAddr.city || 'São Paulo');
+        if (defaultAddr.complement) setComplement(defaultAddr.complement);
+      }
+    }
+  }, [customer]);
 
   // Table state
   const [tableInput, setTableInput] = useState<number>(selectedTable || 1);
@@ -110,6 +130,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setSubmitError(null);
 
     const orderData = {
+      customerId: customer?.id,
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
       orderType,
@@ -143,7 +164,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     try {
       const newOrder = await createOrder(orderData, idempotencyKeyRef.current);
       setCreatedOrder(newOrder);
-      onOrderSuccess(newOrder);
+      if (onOrderPlaced) onOrderPlaced(newOrder);
+      if (onOrderSuccess) onOrderSuccess(newOrder);
 
       // Fire Confetti
       try {
