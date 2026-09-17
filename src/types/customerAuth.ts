@@ -2,28 +2,31 @@ import { RestaurantSlug } from './restaurant';
 
 export type CustomerLoginMode = 'GLOBAL' | 'PER_RESTAURANT';
 
+export interface CustomerAddress {
+  id: string;
+  title: string;
+  street: string;
+  number: string;
+  neighborhood: string;
+  city: string;
+  complement?: string;
+  isDefault?: boolean;
+}
+
 export interface CustomerSession {
   id: string;
   name: string;
   phone: string;
+  phoneNormalized?: string;
   email?: string;
-  loginMode: CustomerLoginMode;
-  restaurantSlug?: RestaurantSlug; // present when in PER_RESTAURANT mode
-  savedAddresses: {
-    id: string;
-    title: string;
-    street: string;
-    number: string;
-    neighborhood: string;
-    city: string;
-    complement?: string;
-    isDefault?: boolean;
-  }[];
+  loginMode?: CustomerLoginMode;
+  restaurantSlug?: RestaurantSlug;
+  savedAddresses: CustomerAddress[];
   installedPwaAt?: string;
   hasClaimedInstallBonus: boolean;
   installBonusCouponCode?: string;
   createdAt: string;
-  lastLoginAt: string;
+  lastLoginAt?: string;
 }
 
 export interface InstallationBonusConfig {

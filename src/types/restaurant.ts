@@ -12,14 +12,31 @@ export type OrderType = 'delivery' | 'retirada' | 'mesa' | 'balcao';
 
 export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro';
 
-// V7 Operational flow: Recebido -> Em preparo -> Pronto -> Saiu para entrega -> Entregue (or Cancelado)
+// Operational flow: Recebido -> Aceito -> Em produção -> Parcialmente pronto -> Pronto -> Saiu para entrega / Entregue -> Finalizado (or Cancelado)
 export type OrderStatus =
   | 'recebido'
+  | 'aceito'
+  | 'em_producao'
   | 'em_preparo'
+  | 'parcialmente_pronto'
   | 'pronto'
   | 'saiu_para_entrega'
   | 'entregue'
+  | 'finalizado'
   | 'cancelado';
+
+export type ProductionStation = 'cozinha' | 'sushibar' | 'bar';
+
+export type StationItemStatus = 'recebido' | 'em_preparo' | 'pedido_feito';
+
+export interface StationProductionRecord {
+  station: ProductionStation;
+  status: StationItemStatus;
+  startedAt?: string;
+  finishedAt?: string;
+  operator?: string;
+  itemsCount: number;
+}
 
 export interface StatusHistoryEntry {
   status: OrderStatus;
@@ -75,6 +92,7 @@ export interface MenuItem {
   technicalSheet?: TechnicalSheet;
   image: string;
   available: boolean;
+  station?: ProductionStation; // Optional explicit station override ('cozinha' | 'sushibar' | 'bar')
   tags?: ('mais_vendido' | 'promocao' | 'vegetariano' | 'destaque')[];
   optionGroups?: MenuItemOptionGroup[];
 }
@@ -152,6 +170,7 @@ export interface RestaurantConfig {
   address: string;
   openingHours: string;
   isOpen: boolean;
+  isActive?: boolean;
   pixKey: string;
   pixReceiverName: string;
   splashEnabled: boolean;
@@ -204,6 +223,8 @@ export interface OrderItemRecord {
   totalPrice: number;
   selectedOptions?: CartItemOptionSelected[];
   notes?: string;
+  station?: ProductionStation; // 'cozinha' | 'sushibar' | 'bar'
+  stationStatus?: StationItemStatus; // 'recebido' | 'em_preparo' | 'pedido_feito'
 }
 
 export interface Order {
@@ -215,6 +236,8 @@ export interface Order {
   customerPhone: string;
   orderType: OrderType;
   tableNumber?: number;
+  tableSessionId?: string;
+  waiterName?: string;
   pickupNumber?: number;
   deliveryAddress?: {
     street: string;
@@ -224,6 +247,8 @@ export interface Order {
     complement?: string;
   };
   items: OrderItemRecord[];
+  stations?: Partial<Record<ProductionStation, StationProductionRecord>>;
+  stationsStatus?: Partial<Record<ProductionStation, StationItemStatus>>;
   subtotal: number;
   deliveryFee: number;
   discount: number;
@@ -272,7 +297,21 @@ export type UserRole =
   | 'administrador'
   | 'caixa'
   | 'cozinha'
-  | 'entrega';
+  | 'entrega'
+  | 'garcom';
+
+export type TableStatus = 'livre' | 'ocupada' | 'preparando' | 'conta_solicitada';
+
+export interface PhysicalTable {
+  id: number;
+  label: string;
+  capacity: number;
+  status: TableStatus;
+  openedAt?: string;
+  customerName?: string;
+  peopleCount?: number;
+  notes?: string;
+}
 
 export interface UserPermissions {
   can_view_orders: boolean;
