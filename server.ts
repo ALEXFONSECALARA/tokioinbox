@@ -12,6 +12,7 @@ import {
   updateOrderStatusTransactional,
   updateOrderStationStatusTransactional,
   appendItemsToTableOrderTransactional,
+  closeTableOrderTransactional,
   updateOrderPrintStatusTransactional,
   updateOrderTableTransactional,
   deleteOrderTransactional,
@@ -1261,6 +1262,62 @@ app.post('/api/orders/table/append', (req, res) => {
     });
   } catch (error: any) {
     console.error('[TABLE APPEND ERROR]:', error.message);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// 5d. Close Table Order & Free Table (Fechamento de Conta do Garçom / Salão)
+app.post('/api/orders/:id/close-table', (req, res) => {
+  try {
+    const {
+      tableNumber,
+      paymentMethod,
+      discount,
+      serviceFee,
+      total,
+      splitCount,
+      operatorName,
+      waiterNotes,
+    } = req.body;
+
+    if (!paymentMethod) {
+      return res.status(400).json({ success: false, error: 'Forma de pagamento é obrigatória para fechar a conta' });
+    }
+
+    const closed = closeTableOrderTransactional({
+      orderId: req.params.id,
+      tableNumber: Number(tableNumber),
+      paymentMethod,
+      discount: Number(discount) || 0,
+      serviceFee: Number(serviceFee) || 0,
+      total: total !== undefined ? Number(total) : undefined,
+      splitCount: Number(splitCount) || 1,
+      operatorName,
+      waiterNotes,
+    });
+
+    // Broadcast Real-Time SSE update so table map updates immediately to LIVRE
+    broadcastOrdersUpdate('table_closed', closed);
+
+    // Asynchronously archive to Supabase
+    syncOrderToSupabase(closed).catch(() => {});
+
+    // Audit log
+    logAuditAction({
+      userName: operatorName || 'Garçom',
+      userRole: 'garcom',
+      action: `Fechou conta da Mesa ${tableNumber} via ${paymentMethod.toUpperCase()} (${closed.shortCode})`,
+      details: `Total R$ ${closed.total.toFixed(2)}${discount ? ` - Desc: R$ ${discount}` : ''}`,
+      category: 'order',
+    });
+
+    res.json({
+      success: true,
+      order: closed,
+      message: `Conta da Mesa ${tableNumber} fechada e mesa liberada com sucesso!`,
+    });
+  } catch (error: any) {
+    console.error('[TABLE CLOSE ERROR]:', error.message);
     res.status(400).json({ success: false, error: error.message });
   }
 });
