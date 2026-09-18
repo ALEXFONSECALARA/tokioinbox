@@ -186,6 +186,17 @@ interface StoreContextType {
     waiterName?: string;
     tableSessionId?: string;
   }) => Promise<{ success: boolean; order?: Order; isNew?: boolean; error?: string }>;
+  closeTableOrder: (params: {
+    orderId: string;
+    tableNumber: number;
+    paymentMethod: string;
+    discount?: number;
+    serviceFee?: number;
+    total?: number;
+    splitCount?: number;
+    operatorName?: string;
+    waiterNotes?: string;
+  }) => Promise<{ success: boolean; order?: Order; error?: string }>;
   updateOrderPrintStatus: (orderId: string, printStatus: 'pendente' | 'imprimindo' | 'impresso') => Promise<void>;
   deleteOrder: (orderId: string) => Promise<void>;
   clearOrdersHistory: (slug?: RestaurantSlug, mode?: 'finished' | 'all') => Promise<void>;
@@ -1505,6 +1516,45 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  const closeTableOrder = async (params: {
+    orderId: string;
+    tableNumber: number;
+    paymentMethod: string;
+    discount?: number;
+    serviceFee?: number;
+    total?: number;
+    splitCount?: number;
+    operatorName?: string;
+    waiterNotes?: string;
+  }): Promise<{ success: boolean; order?: Order; error?: string }> => {
+    try {
+      const res = await fetch(`/api/orders/${params.orderId}/close-table`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...params,
+          operatorName: params.operatorName || currentUser?.name || 'Garçom',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Erro ao fechar conta da mesa');
+      }
+
+      if (data.order) {
+        setOrders((prev) => prev.map((o) => (o.id === data.order.id ? data.order : o)));
+      }
+
+      showToast(`Mesa ${params.tableNumber} fechada e liberada com sucesso!`, 'success');
+      return { success: true, order: data.order };
+    } catch (err: any) {
+      console.error('[CLOSE TABLE ERROR]:', err);
+      showToast(err.message || 'Falha ao fechar conta da mesa', 'error');
+      return { success: false, error: err.message };
+    }
+  };
+
   const updateOrderPrintStatus = async (
     orderId: string,
     printStatus: 'pendente' | 'imprimindo' | 'impresso'
@@ -2021,6 +2071,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateOrderStatus,
         updateStationStatus,
         appendItemsToTableOrder,
+        closeTableOrder,
         updateOrderPrintStatus,
         deleteOrder,
         clearOrdersHistory,
