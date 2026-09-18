@@ -1048,3 +1048,70 @@ export function appendItemsToTableOrderTransactional(params: {
   return { order: newOrderResult.order, isNew: true };
 }
 
+export function closeTableOrderTransactional(params: {
+  orderId: string;
+  tableNumber: number;
+  paymentMethod: string;
+  discount?: number;
+  serviceFee?: number;
+  total?: number;
+  splitCount?: number;
+  operatorName?: string;
+  waiterNotes?: string;
+}): Order {
+  initializeOrders();
+  const idx = ordersCache.findIndex((o) => o.id === params.orderId);
+  if (idx === -1) {
+    throw new Error(`Pedido com ID "${params.orderId}" não encontrado para fechamento.`);
+  }
+
+  const currentOrder = ordersCache[idx];
+  const nowIso = new Date().toISOString();
+  const discount = Math.max(0, Number(params.discount) || 0);
+  const serviceFee = Math.max(0, Number(params.serviceFee) || 0);
+  const finalTotal = Number(
+    (params.total !== undefined ? params.total : Math.max(0, currentOrder.subtotal - discount + serviceFee)).toFixed(2)
+  );
+
+  const splitCount = Math.max(1, Math.floor(params.splitCount || 1));
+  const splitPerPerson = Number((finalTotal / splitCount).toFixed(2));
+
+  const closeNote = `Conta da Mesa ${params.tableNumber} fechada via ${params.paymentMethod.toUpperCase()}${
+    discount > 0 ? ` (Desconto: R$ ${discount.toFixed(2)})` : ''
+  }${serviceFee > 0 ? ` (Taxa Serviço: R$ ${serviceFee.toFixed(2)})` : ''}${
+    splitCount > 1 ? ` (Dividido em ${splitCount}x R$ ${splitPerPerson.toFixed(2)})` : ''
+  }${params.waiterNotes ? ` - Obs: ${params.waiterNotes}` : ''}${
+    params.operatorName ? ` por ${params.operatorName}` : ''
+  }`;
+
+  const updatedHistory: StatusHistoryEntry[] = [
+    ...currentOrder.statusHistory,
+    {
+      status: 'entregue',
+      timestamp: 'Agora mesmo',
+      note: closeNote,
+    },
+  ];
+
+  const updatedOrder: Order = {
+    ...currentOrder,
+    status: 'entregue',
+    paymentMethod: params.paymentMethod,
+    discount,
+    deliveryFee: serviceFee, // service fee recorded in fee slot or final total
+    total: finalTotal,
+    paymentDetails: {
+      ...(currentOrder.paymentDetails || {}),
+      paid: true,
+    },
+    statusHistory: updatedHistory,
+    updatedAt: nowIso,
+  };
+
+  ordersCache[idx] = updatedOrder;
+  persistOrdersSync();
+
+  console.log(`[TABLE CLOSED] Mesa ${params.tableNumber} fechada com sucesso. Pedido ${updatedOrder.shortCode} finalizado/entregue.`);
+  return updatedOrder;
+}
+
