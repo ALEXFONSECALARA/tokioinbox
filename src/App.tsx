@@ -24,6 +24,7 @@ import { StaffAccessModal } from './components/StaffAccessModal';
 import { StationKdsView } from './components/StationKdsView';
 import { WaiterPdvTouch } from './components/WaiterPdvTouch';
 import { ClientTableView } from './components/ClientTableView';
+import { EnvironmentBar, OperationalEnvironment } from './components/EnvironmentBar';
 import { BRAND_CONFIG, BRAND_NAME, BRAND_SHORT_NAME } from './config/brand';
 import { Lock } from 'lucide-react';
 
@@ -256,12 +257,29 @@ function AppContent() {
     setIsTrackerOpen(true);
   };
 
+  const handleNavigateEnvironment = (env: OperationalEnvironment) => {
+    if (env === 'cliente') {
+      setView('menu');
+    } else if (env === 'pdv') {
+      setView('pdv');
+    } else if (env === 'cozinha') {
+      setView('cozinha');
+    } else if (env === 'bar') {
+      setView('bar');
+    } else if (env === 'sushibar') {
+      setView('sushibar');
+    } else if (env === 'admin') {
+      setView('admin');
+    }
+  };
+
   // If viewing PDV Touch Garçom / Salão
   if (view === 'pdv' || view === 'tables') {
     return (
       <WaiterPdvTouch
         onBackToApp={() => setView('home')}
         onOpenAdmin={() => setView('admin')}
+        onNavigateToEnvironment={handleNavigateEnvironment}
       />
     );
   }
@@ -269,33 +287,57 @@ function AppContent() {
   // If viewing Dedicated Bar KDS
   if (view === 'bar') {
     return (
-      <StationKdsView
-        station="bar"
-        onBack={() => setView('home')}
-        standalone
-      />
+      <div className="min-h-screen bg-[#07090E] flex flex-col">
+        <EnvironmentBar
+          currentEnvironment="bar"
+          onSelectEnvironment={handleNavigateEnvironment}
+        />
+        <div className="flex-1 p-4">
+          <StationKdsView
+            station="bar"
+            onBack={() => setView('home')}
+            standalone
+          />
+        </div>
+      </div>
     );
   }
 
   // If viewing Dedicated Kitchen KDS
   if (view === 'cozinha') {
     return (
-      <StationKdsView
-        station="cozinha"
-        onBack={() => setView('home')}
-        standalone
-      />
+      <div className="min-h-screen bg-[#07090E] flex flex-col">
+        <EnvironmentBar
+          currentEnvironment="cozinha"
+          onSelectEnvironment={handleNavigateEnvironment}
+        />
+        <div className="flex-1 p-4">
+          <StationKdsView
+            station="cozinha"
+            onBack={() => setView('home')}
+            standalone
+          />
+        </div>
+      </div>
     );
   }
 
   // If viewing Dedicated Sushibar KDS
   if (view === 'sushibar') {
     return (
-      <StationKdsView
-        station="sushibar"
-        onBack={() => setView('home')}
-        standalone
-      />
+      <div className="min-h-screen bg-[#07090E] flex flex-col">
+        <EnvironmentBar
+          currentEnvironment="sushibar"
+          onSelectEnvironment={handleNavigateEnvironment}
+        />
+        <div className="flex-1 p-4">
+          <StationKdsView
+            station="sushibar"
+            onBack={() => setView('home')}
+            standalone
+          />
+        </div>
+      </div>
     );
   }
 
@@ -312,11 +354,17 @@ function AppContent() {
   // If viewing Super-Admin
   if (view === 'admin') {
     return (
-      <div className="min-h-screen bg-[#07090E]">
-        <AdminLayout
-          onBackToApp={() => setView('home')}
-          initialTab={adminInitialTab}
+      <div className="min-h-screen bg-[#07090E] flex flex-col">
+        <EnvironmentBar
+          currentEnvironment="admin"
+          onSelectEnvironment={handleNavigateEnvironment}
         />
+        <div className="flex-1">
+          <AdminLayout
+            onBackToApp={() => setView('home')}
+            initialTab={adminInitialTab}
+          />
+        </div>
       </div>
     );
   }
@@ -332,6 +380,12 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-matte-black text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black">
+      {/* Environment Switcher Bar (Cliente, PDV, Cozinha, Bar, Sushibar, Admin) */}
+      <EnvironmentBar
+        currentEnvironment="cliente"
+        onSelectEnvironment={handleNavigateEnvironment}
+      />
+
       {/* Top Navbar */}
       <Navbar
         onOpenCart={() => setIsCartOpen(true)}
