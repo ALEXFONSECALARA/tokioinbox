@@ -1,5 +1,14 @@
 [
   {
+    "id": "log-1789700876701-c2mj",
+    "timestamp": "2026-09-18T03:07:56.701Z",
+    "userName": "Garçom Carlos",
+    "userRole": "garcom",
+    "action": "Fechou conta da Mesa 12 via PIX (#TK-3604)",
+    "details": "Total R$ 77.60 - Desc: R$ 6",
+    "category": "order"
+  },
+  {
     "id": "log-1789677096680-l6vw",
     "timestamp": "2026-09-17T20:31:36.680Z",
     "userName": "Administrador",

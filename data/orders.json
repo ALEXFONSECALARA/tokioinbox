@@ -1,5 +1,75 @@
 [
   {
+    "id": "ord-1789700874880-ka59",
+    "shortCode": "#TK-3604",
+    "restaurantSlug": "japones",
+    "restaurantName": "Sakura Sushi House",
+    "customerName": "Mesa 12",
+    "customerPhone": "(11) 98888-7777",
+    "customerPhoneNormalized": "5511988887777",
+    "orderType": "mesa",
+    "tableNumber": 12,
+    "items": [
+      {
+        "id": "item-1789700874880-0",
+        "name": "Sashimi Salmão 10 cortes",
+        "quantity": 1,
+        "unitPrice": 48,
+        "totalPrice": 48,
+        "selectedOptions": [],
+        "station": "sushibar",
+        "stationStatus": "recebido"
+      },
+      {
+        "id": "item-1789700874880-1",
+        "name": "Heineken Long Neck 330ml",
+        "quantity": 2,
+        "unitPrice": 14,
+        "totalPrice": 28,
+        "selectedOptions": [],
+        "station": "bar",
+        "stationStatus": "recebido"
+      }
+    ],
+    "stations": {
+      "sushibar": {
+        "station": "sushibar",
+        "status": "recebido",
+        "itemsCount": 1
+      },
+      "bar": {
+        "station": "bar",
+        "status": "recebido",
+        "itemsCount": 2
+      }
+    },
+    "subtotal": 76,
+    "deliveryFee": 7.6,
+    "discount": 6,
+    "total": 77.6,
+    "paymentMethod": "pix",
+    "paymentDetails": {
+      "paid": true
+    },
+    "status": "entregue",
+    "statusHistory": [
+      {
+        "status": "recebido",
+        "timestamp": "Agora",
+        "note": "Pedido recebido e confirmado no servidor (MESA)"
+      },
+      {
+        "status": "entregue",
+        "timestamp": "Agora mesmo",
+        "note": "Conta da Mesa 12 fechada via PIX (Desconto: R$ 6.00) (Taxa Serviço: R$ 7.60) (Dividido em 2x R$ 38.80) por Garçom Carlos"
+      }
+    ],
+    "printStatus": "pendente",
+    "idempotencyKey": "test-table-12-flow",
+    "createdAt": "2026-09-18T03:07:54.880Z",
+    "updatedAt": "2026-09-18T03:07:56.701Z"
+  },
+  {
     "id": "ord-1789643938614-1q9d",
     "shortCode": "#TK-2427",
     "restaurantSlug": "japones",
