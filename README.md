@@ -51,6 +51,7 @@ Demais colaboradores (cozinha, caixa, garçom, gerente, entregador) são criados
 | Pedidos | `data/orders.json` |
 | Usuários e sessões | `data/users.json`, `data/staff_sessions.json` |
 | Clientes (conta) | `data/customers.json` |
+| Estado operacional compartilhado da equipe: **caixa/turnos, mesas do salão, chamados, entregadores, CRM, configurações de impressão/atraso/canais** | `data/state.json` (`GET/PUT /api/state/:key`, versionado, com tempo real entre aparelhos) |
 | Fiscal | `data/fiscal/` |
 
 > **Atenção:** o diretório `data/` precisa ficar em **disco persistente** (ex.: Render Persistent Disk). Em disco efêmero os
@@ -69,15 +70,27 @@ Defina `FISCAL_ENCRYPTION_KEY` (mín. 24 caracteres) para habilitar o cofre de c
 
 ```bash
 npm run typecheck                    # TypeScript
-npm run build && npm run test:api    # 67 verificações de API/segurança/separação (sobe o servidor sozinho)
+npm run build && npm run test:api    # 81 verificações de API/segurança/estado/separação (sobe o servidor sozinho)
 pip install playwright && playwright install chromium
-npm run test:e2e                     # navegador real: cliente, pedido, painel, perfis, cardápio
+npm run test:e2e                     # 48 verificações em navegador real: cliente, pedido, painel, perfis, todas as áreas, caixa em 2 aparelhos, CRM, entregadores
 ```
+
+## Estado compartilhado entre aparelhos
+
+Caixa, mesas, chamados de garçom, entregadores, CRM e configurações não ficam mais no navegador: são documentos
+versionados em `data/state.json`. Cada gravação envia a versão que o aparelho conhecia; se outro aparelho gravou antes,
+o servidor responde 409 e o painel **reaplica a alteração sobre o valor mais novo** (dois caixas lançando ao mesmo tempo
+não perdem lançamentos). Mudanças chegam aos demais aparelhos em tempo real (SSE) com verificação periódica de segurança.
+Permissões por documento e por perfil em `server/stateService.ts` (ex.: cozinha não lê nem grava o caixa).
+
+- **Caixa:** começa **fechado**; alguém abre informando o troco inicial. Fechar arquiva o turno no histórico.
+- **CRM:** totais, último pedido e endereços são recalculados a partir dos pedidos reais (sem contagem em duplicidade).
+- **Entregadores:** não há mais entregadores de exemplo; cadastre em *Despacho & Motoboys*.
 
 ## Limitações conhecidas
 
 - Persistência em arquivos JSON (adequada a uma instância única). Para várias instâncias, migre para Postgres/Supabase.
-- CRM do painel, caixa/turnos, mesas e entregadores ainda guardam estado no navegador do painel (sem API própria).
 - Cupons do cliente usam lista embutida (`BEMVINDO10`, `TOKIO5`, `PRIMEIRACOMPRA`); o servidor é quem valida o valor.
-- Pedido por QR de mesa é público por natureza (limitado por taxa de requisições).
+- Pedido por QR de mesa é público por natureza (limitado por taxa de requisições); não existe botão "chamar garçom" no cardápio do cliente.
 - Integração real com SEFAZ (ver acima) e agente de impressão ESC/POS ainda não existem.
+- Preferências de som/alerta e a fila offline continuam por aparelho (de propósito).

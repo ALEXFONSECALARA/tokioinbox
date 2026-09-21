@@ -131,6 +131,7 @@ import {
   getClientIp,
   IS_PRODUCTION,
 } from './server/security';
+import { STATE_DOCS, isKnownKey, canAccess, readableKeys, getDoc, saveDoc } from './server/stateService';
 import {
   initializeCatalog,
   getCatalog,
@@ -160,6 +161,7 @@ app.use(corsMiddleware);
 // Parsers: limites pequenos por padrão; maiores só onde há upload/edição de catálogo (rotas de staff)
 app.use('/api/upload', express.json({ limit: '12mb' }));
 app.use('/api/catalog', express.json({ limit: '8mb' }));
+app.use('/api/state', express.json({ limit: '2mb' }));
 app.use(express.json({ limit: '256kb' }));
 
 // Limites de abuso para rotas públicas
@@ -1916,6 +1918,65 @@ app.put('/api/catalog', authenticateStaff, requireRole('super_admin', 'administr
     console.error('[CATALOG ERROR]:', error);
     res.status(500).json({ success: false, error: 'Falha ao salvar o catálogo.' });
   }
+});
+
+// ==========================================
+// ESTADO OPERACIONAL COMPARTILHADO (caixa, mesas, entregadores, CRM, configurações)
+// ==========================================
+function broadcastStateUpdate(key: string, version: number) {
+  const payload = JSON.stringify({ event: 'state_updated', key, version, timestamp: new Date().toISOString() });
+  sseOrderClients.forEach((client) => {
+    try {
+      client.res.write(`data: ${payload}\n\n`);
+    } catch {
+      /* cliente desconectado */
+    }
+  });
+}
+
+// Versões de todos os documentos que o usuário pode ler (barato: usado no polling de fallback)
+app.get('/api/state', authenticateStaff, (req, res) => {
+  const role = req.userSession!.role;
+  const versions: Record<string, number> = {};
+  for (const key of readableKeys(role)) versions[key] = getDoc(key)?.version ?? 0;
+  res.json({ success: true, versions });
+});
+
+app.get('/api/state/:key', authenticateStaff, (req, res) => {
+  const { key } = req.params;
+  if (!isKnownKey(key)) return res.status(404).json({ success: false, error: 'Documento desconhecido.' });
+  if (!canAccess(req.userSession!.role, key, 'read')) {
+    return res.status(403).json({ success: false, error: 'Sem permissão para este documento.' });
+  }
+  const doc = getDoc(key);
+  res.json({ success: true, key, exists: Boolean(doc), version: doc?.version ?? 0, value: doc?.value ?? null, updatedAt: doc?.updatedAt, updatedBy: doc?.updatedBy });
+});
+
+app.put('/api/state/:key', authenticateStaff, (req, res) => {
+  const { key } = req.params;
+  if (!isKnownKey(key)) return res.status(404).json({ success: false, error: 'Documento desconhecido.' });
+  if (!canAccess(req.userSession!.role, key, 'write')) {
+    return res.status(403).json({ success: false, error: 'Sem permissão para alterar este documento.' });
+  }
+  const { value, baseVersion } = req.body || {};
+  if (typeof baseVersion !== 'number' || !Number.isInteger(baseVersion) || baseVersion < 0) {
+    return res.status(400).json({ success: false, error: 'baseVersion (inteiro) é obrigatório.' });
+  }
+  const result: any = saveDoc(key, value, baseVersion, req.userSession!.name);
+  if (result.ok) {
+    broadcastStateUpdate(key, result.version);
+    return res.json({ success: true, key, version: result.version, updatedAt: result.updatedAt });
+  }
+  if (result.conflict) {
+    return res.status(409).json({
+      success: false,
+      conflict: true,
+      error: 'Outro aparelho alterou este documento primeiro.',
+      version: result.current?.version ?? 0,
+      value: result.current?.value ?? null,
+    });
+  }
+  return res.status(400).json({ success: false, error: result.error });
 });
 
 // ==========================================
