@@ -172,8 +172,17 @@ try {
   t('auditoria real retorna checks', audit.status === 200 && audit.body.checks.length > 5);
   t('auditoria não acusa senha padrão', audit.body.checks.find(c => c.id === 'default-passwords')?.status === 'ok');
 
-  // --- fiscal ---
-  t('public-order fiscal sem token => sem doc', (await j(`/api/fiscal/public-order/${trk.id}`)).body?.hasFiscalDoc === false);
+  // --- fiscal e mesa segura ---
+  t('fiscal desativado => rota inexistente', (await j(`/api/fiscal/public-order/${trk.id}`)).status === 404);
+  const tableSlug = slug;
+  const tableItem = item;
+  const tableBase = { restaurantSlug: tableSlug, customerName: 'Mesa Teste', customerPhone: '22999990000', orderType: 'mesa', tableNumber: 3, paymentMethod: 'pix', items: [{ menuItemId: tableItem.id, quantity: 1 }] };
+  const tableWithoutToken = await post('/api/orders', tableBase);
+  t('cliente não abre pedido de mesa sem QR assinado', tableWithoutToken.status === 403);
+  const unknownTableToken = await post('/api/orders', { ...tableBase, tableAccessToken: 'invalid.invalid' });
+  t('token de mesa inválido => 403', unknownTableToken.status === 403);
+  const qrEndpointWithoutStaff = await j(`/api/table/access-token?slug=${encodeURIComponent(tableSlug)}&table=3`);
+  t('geração de QR de mesa sem equipe => 401', qrEndpointWithoutStaff.status === 401);
   t('rota /api inexistente => JSON 404', (await j('/api/nao-existe')).status === 404);
 
   // --- separação cardápio do cliente x painel da equipe (requer `npm run build`) ---
