@@ -25,7 +25,14 @@ import {
   CustomerUser,
   ProductionStation,
   StationItemStatus,
+  SalesChannelConfig,
 } from '../types/restaurant';
+import {
+  getSimulatedOffline,
+  enqueueOfflineOperation,
+  getOfflineQueue,
+  removeOfflineOperation,
+} from '../utils/offlineQueueManager';
 import {
   INITIAL_RESTAURANTS,
   INITIAL_CATEGORIES,
@@ -227,6 +234,7 @@ interface StoreContextType {
   addRestaurant: (restaurant: RestaurantConfig) => void;
   deleteRestaurant: (slug: RestaurantSlug) => void;
   resetToDefaultData: () => void;
+  appMode: StoreMode;
 
   // Master Reset & Multi-Restaurant Order Flow
   masterResetOrders: (confirmation: string) => Promise<{ success: boolean; count: number; message: string }>;
@@ -282,6 +290,10 @@ interface StoreContextType {
   cashShift: CashRegisterShift;
   addCashMovement: (type: CashRegisterMovement['type'], amount: number, description: string) => void;
   closeCashShift: () => void;
+
+  // Sales Channels Configuration (Canais de Venda)
+  salesChannels: Record<string, SalesChannelConfig>;
+  updateSalesChannel: (channelId: string, updates: Partial<SalesChannelConfig>) => void;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -296,6 +308,76 @@ const STORAGE_KEYS = {
   PRINTER_SETTINGS: 'tokio_inbox_printer_settings_v25',
   SOUND_SETTINGS: 'tokio_inbox_sound_settings_v25',
   DELAY_SETTINGS: 'tokio_inbox_delay_settings_v25',
+  SALES_CHANNELS: 'tokio_sales_channels_v25',
+};
+
+export const INITIAL_SALES_CHANNELS: Record<string, SalesChannelConfig> = {
+  mesa: {
+    id: 'mesa',
+    orderType: 'mesa',
+    name: 'Salão / Mesa (Dine-in)',
+    enabled: true,
+    color: '#D97706', // COR 2 (Âmbar Ouro)
+    allowQrCodeCustomerOrder: true,
+    autoPrintReceipt: true,
+    productionStations: ['cozinha', 'sushibar', 'bar'],
+    acceptedPaymentMethods: ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'],
+    operationalHours: '11:00 às 23:30',
+    description: 'Atendimento presencial em mesas via Garçom Touch ou QR Code do cliente',
+  },
+  balcao: {
+    id: 'balcao',
+    orderType: 'balcao',
+    name: 'Balcão (Counter)',
+    enabled: true,
+    color: '#0284C7', // COR 1 (Azul Ciano)
+    allowQrCodeCustomerOrder: false,
+    autoPrintReceipt: true,
+    productionStations: ['cozinha', 'sushibar', 'bar'],
+    acceptedPaymentMethods: ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'],
+    operationalHours: '11:00 às 23:00',
+    description: 'Venda direta rápida com senha de retirada, sem abertura de mesa',
+  },
+  delivery: {
+    id: 'delivery',
+    orderType: 'delivery',
+    name: 'Delivery (Entrega)',
+    enabled: true,
+    color: '#059669', // Esmeralda
+    allowQrCodeCustomerOrder: false,
+    autoPrintReceipt: true,
+    productionStations: ['cozinha', 'sushibar'],
+    acceptedPaymentMethods: ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'],
+    operationalHours: '18:00 às 23:00',
+    minOrderValue: 30.0,
+    description: 'Entrega em domicílio com taxa e tempo estimado',
+  },
+  online: {
+    id: 'online',
+    orderType: 'online',
+    name: 'Cardápio Online Web',
+    enabled: true,
+    color: '#7C3AED', // COR 3 (Roxo Violeta)
+    allowQrCodeCustomerOrder: true,
+    autoPrintReceipt: true,
+    productionStations: ['cozinha', 'sushibar', 'bar'],
+    acceptedPaymentMethods: ['pix', 'cartao_credito', 'dinheiro'],
+    operationalHours: '11:00 às 23:30',
+    description: 'Acesso via internet com carrinho, escolha de delivery/retirada sem mesa',
+  },
+  retirada: {
+    id: 'retirada',
+    orderType: 'retirada',
+    name: 'Retirada Takeaway',
+    enabled: true,
+    color: '#2563EB', // Azul Royal
+    allowQrCodeCustomerOrder: false,
+    autoPrintReceipt: true,
+    productionStations: ['cozinha', 'sushibar'],
+    acceptedPaymentMethods: ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'],
+    operationalHours: '11:00 às 23:00',
+    description: 'Pedido online ou agendado para o cliente buscar no restaurante',
+  },
 };
 
 const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
@@ -307,8 +389,61 @@ const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   headerCustomNote: 'VIA DA COZINHA / EXPEDIÇÃO',
 };
 
-export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export type StoreMode = 'customer' | 'staff';
+
+const PUBLIC_CATALOG_CACHE_KEY = 'nx_public_catalog_v1';
+const MY_ORDERS_KEY = 'nx_my_orders_v1';
+
+interface MyOrderRef {
+  id: string;
+  t: string;
+}
+
+function readMyOrders(): MyOrderRef[] {
+  try {
+    const raw = localStorage.getItem(MY_ORDERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x) => x && x.id && x.t) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberMyOrders(orders: Array<{ id: string; trackingToken?: string }>) {
+  const withToken = orders.filter((o) => o.trackingToken);
+  if (withToken.length === 0) return;
+  try {
+    const current = readMyOrders().filter((r) => !withToken.some((o) => o.id === r.id));
+    const next = [...withToken.map((o) => ({ id: o.id, t: o.trackingToken as string })), ...current].slice(0, 30);
+    localStorage.setItem(MY_ORDERS_KEY, JSON.stringify(next));
+    window.dispatchEvent(new Event('nx-my-orders-changed'));
+  } catch {
+    /* storage cheio/bloqueado: rastreio só nesta sessão */
+  }
+}
+
+function readCachedPublicCatalog(): { restaurants: Record<string, RestaurantConfig>; categories: MenuCategory[]; menuItems: MenuItem[] } | null {
+  try {
+    const raw = localStorage.getItem(PUBLIC_CATALOG_CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (c && c.restaurants && Array.isArray(c.menuItems) && Array.isArray(c.categories)) return c;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> = ({ children, mode = 'customer' }) => {
+  // 'customer' (padrão, seguro) = cardápio público. 'staff' = painel autenticado da equipe.
+  const isStaffMode = mode === 'staff';
+
   const [restaurants, setRestaurants] = useState<Record<string, RestaurantConfig>>(() => {
+    if (!isStaffMode) {
+      const cached = readCachedPublicCatalog();
+      if (cached) return cached.restaurants;
+      return INITIAL_RESTAURANTS;
+    }
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.RESTAURANTS);
       const parsed = saved ? JSON.parse(saved) : {};
@@ -330,6 +465,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   });
 
   const [categories, setCategories] = useState<MenuCategory[]>(() => {
+    if (!isStaffMode) return readCachedPublicCatalog()?.categories || INITIAL_CATEGORIES;
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
       if (!saved) return INITIAL_CATEGORIES;
@@ -343,28 +479,39 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   });
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
+    if (!isStaffMode) return readCachedPublicCatalog()?.menuItems || INITIAL_MENU_ITEMS;
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.MENU_ITEMS);
       if (!saved) return INITIAL_MENU_ITEMS;
       const parsed: MenuItem[] = JSON.parse(saved);
-      const existingItemIds = new Set(parsed.map((i) => i.id));
+      const initialMap = new Map(INITIAL_MENU_ITEMS.map((i) => [i.id, i]));
+      const sanitized = parsed.map((item) => {
+        if (!item.station) {
+          const fromSeed = initialMap.get(item.id);
+          const cat = (item.categoryId || '').toLowerCase();
+          const fallbackStation = cat.includes('bebida') || cat.includes('vinho') || cat.includes('cerveja') || cat.includes('bar')
+            ? 'bar'
+            : cat.includes('sushi') || cat.includes('temaki') || cat.includes('combinado')
+            ? 'sushibar'
+            : 'cozinha';
+          return { ...item, station: fromSeed?.station || fallbackStation };
+        }
+        return item;
+      });
+      const existingItemIds = new Set(sanitized.map((i) => i.id));
       const missingItems = INITIAL_MENU_ITEMS.filter((i) => !existingItemIds.has(i.id));
-      return [...parsed, ...missingItems];
+      return [...sanitized, ...missingItems];
     } catch {
       return INITIAL_MENU_ITEMS;
     }
   });
 
-  const [orders, setOrders] = useState<Order[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ORDERS);
-      return saved ? JSON.parse(saved) : INITIAL_SAMPLE_ORDERS;
-    } catch {
-      return INITIAL_SAMPLE_ORDERS;
-    }
-  });
+  // Pedidos vêm SEMPRE do servidor (equipe: lista completa autenticada; cliente: só os próprios por token).
+  // Nada de dados pessoais de pedidos persistidos no navegador.
+  const [orders, setOrders] = useState<Order[]>([]);
 
   const [customers, setCustomers] = useState<CustomerRecord[]>(() => {
+    if (!isStaffMode) return [];
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
       return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
@@ -409,41 +556,42 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   });
 
+  const [salesChannels, setSalesChannels] = useState<Record<string, SalesChannelConfig>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SALES_CHANNELS);
+      return saved ? { ...INITIAL_SALES_CHANNELS, ...JSON.parse(saved) } : INITIAL_SALES_CHANNELS;
+    } catch {
+      return INITIAL_SALES_CHANNELS;
+    }
+  });
+
+  const updateSalesChannel = (channelId: string, updates: Partial<SalesChannelConfig>) => {
+    setSalesChannels((prev) => {
+      const current = prev[channelId] || INITIAL_SALES_CHANNELS[channelId];
+      if (!current) return prev;
+      const updated = {
+        ...prev,
+        [channelId]: { ...current, ...updates },
+      };
+      try {
+        localStorage.setItem(STORAGE_KEYS.SALES_CHANNELS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Falha ao salvar configurações de canais:', e);
+      }
+      return updated;
+    });
+    showToast(`Canal de venda atualizado com sucesso!`, 'success');
+  };
+
+  // Ninguém começa autenticado. Somente o painel (mode='staff') restaura a sessão do navegador,
+  // e ela é revalidada no servidor (/api/auth/me) logo após carregar.
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    if (!isStaffMode) return null;
     try {
       const saved = sessionStorage.getItem('tokio_current_user_v25');
-      if (saved === 'logged_out') return null;
-      if (saved) return JSON.parse(saved);
-      // Pre-authenticated super admin for seamless test environment
-      return {
-        id: 'usr-superadmin',
-        name: 'Super Administrador (Modo Teste)',
-        username: 'admin',
-        passwordHash: '',
-        passwordSalt: '',
-        role: 'super_admin',
-        restaurantSlug: 'all',
-        isActive: true,
-        permissions: {
-          can_view_orders: true,
-          can_create_orders: true,
-          can_edit_orders: true,
-          can_cancel_orders: true,
-          can_change_status: true,
-          can_view_menu: true,
-          can_edit_menu: true,
-          can_change_prices: true,
-          can_manage_categories: true,
-          can_manage_users: true,
-          can_manage_permissions: true,
-          can_configure_alerts: true,
-          can_connect_devices: true,
-          can_view_reports: true,
-          can_configure_restaurant: true,
-          can_manage_notifications: true,
-        },
-        createdAt: new Date().toISOString(),
-      };
+      const token = sessionStorage.getItem('tokio_staff_token');
+      if (!saved || saved === 'logged_out' || !token) return null;
+      return { ...JSON.parse(saved), token };
     } catch {
       return null;
     }
@@ -568,6 +716,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // Sync to localStorage
   useEffect(() => {
+    if (!isStaffMode) return;
     try {
       localStorage.setItem(STORAGE_KEYS.RESTAURANTS, JSON.stringify(restaurants));
     } catch (e) {
@@ -576,6 +725,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [restaurants]);
 
   useEffect(() => {
+    if (!isStaffMode) return;
     try {
       localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
     } catch (e) {
@@ -584,6 +734,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [categories]);
 
   useEffect(() => {
+    if (!isStaffMode) return;
     try {
       localStorage.setItem(STORAGE_KEYS.MENU_ITEMS, JSON.stringify(menuItems));
     } catch (e) {
@@ -592,14 +743,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [menuItems]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-    } catch (e) {
-      console.warn('Storage error', e);
-    }
-  }, [orders]);
-
-  useEffect(() => {
+    if (!isStaffMode) return;
     try {
       localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
     } catch (e) {
@@ -653,6 +797,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // Realtime Sync Function with ETag & 304 Not Modified bandwidth protection
   const fetchOrdersFromServer = useCallback(async (isInitial = false) => {
+    if (!isStaffMode) return;
     try {
       setIsSyncing(true);
       const headers: Record<string, string> = {};
@@ -665,6 +810,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       // HTTP 304 NOT MODIFIED: Zero bytes transferred, server state matches client
       if (res.status === 304) {
         setLastSyncTime(new Date());
+        return;
+      }
+
+      if (res.status === 401) {
+        // Sessão expirada/revogada: volta para a tela de login do painel
+        setCurrentUser(null);
+        sessionStorage.removeItem('tokio_staff_token');
+        sessionStorage.removeItem('tokio_current_user_v25');
         return;
       }
 
@@ -703,10 +856,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     } finally {
       setIsSyncing(false);
     }
-  }, [soundSettings]);
+  }, [soundSettings, isStaffMode]);
 
   // Network Listeners & Adaptive Background Polling (Tab Visibility Aware)
   useEffect(() => {
+    // Somente o painel autenticado sincroniza a lista completa de pedidos.
+    if (!isStaffMode || !currentUser) return undefined;
+    let disposed = false;
+
     const handleOnline = () => {
       console.log('[NETWORK] Conexão restabelecida. Sincronizando pedidos...');
       setIsOnline(true);
@@ -776,7 +933,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     let eventSource: EventSource | null = null;
     let sseRetryTimer: any = null;
 
-    const setupSSE = () => {
+    const setupSSE = async () => {
       if (typeof window === 'undefined' || typeof EventSource === 'undefined') return;
 
       try {
@@ -784,7 +941,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           eventSource.close();
         }
 
-        eventSource = new EventSource('/api/orders/stream');
+        // O stream exige um ticket de uso único emitido a um colaborador autenticado
+        const tk = await fetch('/api/orders/stream-ticket', { method: 'POST' });
+        if (!tk.ok) throw new Error(`ticket HTTP ${tk.status}`);
+        const { ticket } = await tk.json();
+        if (disposed) return;
+
+        eventSource = new EventSource(`/api/orders/stream?ticket=${encodeURIComponent(ticket)}`);
 
         eventSource.onopen = () => {
           setIsOnline(true);
@@ -838,12 +1001,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         };
       } catch (err) {
         console.warn('[SSE INIT ERROR]:', err);
+        if (!disposed) {
+          if (sseRetryTimer) clearTimeout(sseRetryTimer);
+          sseRetryTimer = setTimeout(() => setupSSE(), 8000);
+        }
       }
     };
 
     setupSSE();
 
     return () => {
+      disposed = true;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('focus', handleFocus);
@@ -852,10 +1020,204 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (sseRetryTimer) clearTimeout(sseRetryTimer);
       if (eventSource) eventSource.close();
     };
-  }, [fetchOrdersFromServer]);
+  }, [fetchOrdersFromServer, isStaffMode, currentUser?.id]);
+
+  // ===========================================================================
+  // CATÁLOGO (cardápio/restaurantes/categorias): fonte única no SERVIDOR
+  //  - cliente: lê /api/public/catalog (sem custos/fiscal) e guarda só um cache local
+  //  - painel: lê /api/catalog e grava alterações com PUT (debounce), então todos os
+  //    aparelhos enxergam o mesmo cardápio.
+  // ===========================================================================
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const catalogReadyRef = useRef(false);
+  const applyingServerCatalogRef = useRef(false);
+  const catalogEtagRef = useRef<string | null>(null);
+  const pushTimerRef = useRef<any>(null);
+  const pushInFlightRef = useRef(false);
+
+  const loadCatalog = useCallback(async () => {
+    try {
+      const headers: Record<string, string> = {};
+      if (catalogEtagRef.current) headers['If-None-Match'] = catalogEtagRef.current;
+      const res = await fetch(isStaffMode ? '/api/catalog' : '/api/public/catalog', { headers });
+      if (res.status === 304 || !res.ok) return;
+      const data = await res.json();
+      if (!data?.success || !data.restaurants || !Array.isArray(data.menuItems)) return;
+      catalogEtagRef.current = res.headers.get('ETag');
+      applyingServerCatalogRef.current = true;
+      setRestaurants(data.restaurants);
+      setCategories(data.categories || []);
+      setMenuItems(data.menuItems);
+      catalogReadyRef.current = true;
+      setCatalogLoaded(true);
+      if (!isStaffMode) {
+        try {
+          localStorage.setItem(
+            PUBLIC_CATALOG_CACHE_KEY,
+            JSON.stringify({ restaurants: data.restaurants, categories: data.categories || [], menuItems: data.menuItems })
+          );
+        } catch {
+          /* cache opcional */
+        }
+      }
+    } catch (e) {
+      console.warn('[CATALOG] Falha ao carregar do servidor (usando cache local):', e);
+    }
+  }, [isStaffMode]);
+
+  useEffect(() => {
+    if (isStaffMode && !currentUser) {
+      catalogReadyRef.current = false;
+      catalogEtagRef.current = null;
+      return undefined;
+    }
+    loadCatalog();
+    const id = setInterval(() => {
+      const visible = typeof document === 'undefined' || document.visibilityState === 'visible';
+      // Não sobrescreve edições do painel que ainda não foram enviadas
+      if (visible && !pushTimerRef.current && !pushInFlightRef.current) loadCatalog();
+    }, isStaffMode ? 30000 : 60000);
+    return () => clearInterval(id);
+  }, [isStaffMode, currentUser?.id, loadCatalog]);
+
+  // Painel: envia alterações do cardápio ao servidor
+  useEffect(() => {
+    if (!isStaffMode || !catalogReadyRef.current) return;
+    if (applyingServerCatalogRef.current) {
+      applyingServerCatalogRef.current = false; // veio do servidor, não é edição local
+      return;
+    }
+    const role = currentUser?.role;
+    if (role !== 'super_admin' && role !== 'administrador') return;
+
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(async () => {
+      pushInFlightRef.current = true;
+      try {
+        const res = await fetch('/api/catalog', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ restaurants, categories, menuItems }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          showToast(`Não foi possível salvar o cardápio: ${data.error || `erro ${res.status}`}`, 'error', 7000);
+          catalogEtagRef.current = null;
+          pushTimerRef.current = null;
+          pushInFlightRef.current = false;
+          loadCatalog(); // volta ao que está salvo no servidor
+          return;
+        }
+        catalogEtagRef.current = `W/"cat-${data.version}"`;
+      } catch {
+        showToast('Sem conexão: a alteração do cardápio não foi salva no servidor.', 'error', 7000);
+      } finally {
+        pushInFlightRef.current = false;
+        pushTimerRef.current = null;
+      }
+    }, 1200);
+  }, [restaurants, categories, menuItems]);
+
+  // Se o restaurante ativo deixou de existir no servidor, seleciona o primeiro disponível
+  useEffect(() => {
+    if (!catalogLoaded) return;
+    const keys = Object.keys(restaurants);
+    if (keys.length > 0 && !restaurants[activeRestaurantSlug]) {
+      setActiveRestaurantSlug(keys[0]);
+    }
+  }, [catalogLoaded, restaurants]);
+
+  // ===========================================================================
+  // CLIENTE: acompanha somente os PRÓPRIOS pedidos (id + token secreto deste aparelho)
+  // ===========================================================================
+  useEffect(() => {
+    if (isStaffMode) return undefined;
+    let stopped = false;
+    let timer: any = null;
+
+    const tick = async () => {
+      if (timer) clearTimeout(timer);
+      const mine = readMyOrders();
+      let nextDelay = 25000;
+      if (mine.length > 0) {
+        try {
+          const res = await fetch('/api/public/orders/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: mine }),
+          });
+          if (res.ok && !stopped) {
+            const data = await res.json();
+            if (Array.isArray(data.orders)) {
+              setOrders((prev) => {
+                const map = new Map<string, Order>(prev.map((o): [string, Order] => [o.id, o]));
+                data.orders.forEach((o: Order) => map.set(o.id, o));
+                return Array.from(map.values()).sort(
+                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                );
+              });
+              const hasActive = data.orders.some((o: Order) => !['entregue', 'finalizado', 'cancelado'].includes(o.status));
+              nextDelay = hasActive ? 8000 : 60000;
+            }
+          }
+        } catch {
+          /* sem rede: tenta de novo depois */
+        }
+      }
+      if (!stopped) timer = setTimeout(tick, nextDelay);
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    tick();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('nx-my-orders-changed', tick);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('nx-my-orders-changed', tick);
+    };
+  }, [isStaffMode]);
+
+  // ===========================================================================
+  // PAINEL: revalida no servidor a sessão restaurada do navegador
+  // ===========================================================================
+  useEffect(() => {
+    if (!isStaffMode) return;
+    const token = sessionStorage.getItem('tokio_staff_token');
+    if (!currentUser || !token) return;
+    let cancelled = false;
+    fetch('/api/auth/me')
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setCurrentUser(null);
+          sessionStorage.removeItem('tokio_staff_token');
+          sessionStorage.removeItem('tokio_current_user_v25');
+          return;
+        }
+        const data = await res.json();
+        if (data?.user) setCurrentUser((prev) => (prev ? { ...prev, ...data.user, token } : prev));
+      })
+      .catch(() => {
+        /* offline: mantém sessão local até a próxima chamada autenticada */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStaffMode]);
+
+  // Ao sair do painel, nenhum pedido/dado fica em memória
+  useEffect(() => {
+    if (isStaffMode && !currentUser) setOrders([]);
+  }, [isStaffMode, currentUser?.id]);
 
   // Repeating Sound Alert for Pending Orders
   useEffect(() => {
+    if (!isStaffMode || !currentUser) return;
     if (!soundSettings.enabled || !soundSettings.repeatUntilAcknowledged) return;
 
     const repeatInterval = setInterval(() => {
@@ -871,6 +1233,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // Repeating Delay Alert for Overdue Orders
   useEffect(() => {
+    if (!isStaffMode || !currentUser) return;
     if (!delaySettings.enabled || !soundSettings.enabled || soundSettings.alertOnDelay === false) return;
 
     const intervalMs = Math.max(1, delaySettings.repeatIntervalMinutes || 3) * 60 * 1000;
@@ -933,6 +1296,56 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const syncOrdersNow = async () => {
+    if (getSimulatedOffline() || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      console.log('[SYNC CANCELLED] Dispositivo em modo offline.');
+      return;
+    }
+
+    const queue = getOfflineQueue();
+    if (queue.length > 0) {
+      console.log(`[SYNC QUEUE] Sincronizando ${queue.length} operação(ões) offline com o servidor...`);
+      for (const op of queue) {
+        try {
+          if (op.type === 'CREATE_ORDER') {
+            const syncRes = await fetch('/api/orders', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(op.payload),
+            });
+            if (syncRes.ok) {
+              const synced = await syncRes.json().catch(() => null);
+              if (synced?.order && !isStaffMode) rememberMyOrders([synced.order]);
+              removeOfflineOperation(op.id);
+            } else if (syncRes.status >= 400 && syncRes.status < 500 && syncRes.status !== 401 && syncRes.status !== 429) {
+              removeOfflineOperation(op.id); // pedido inválido: não adianta reenviar
+            }
+          } else if (op.type === 'APPEND_TABLE_ITEMS') {
+            await fetch('/api/orders/table/append', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(op.payload),
+            });
+            removeOfflineOperation(op.id);
+          } else if (op.type === 'CLOSE_TABLE') {
+            await fetch(`/api/orders/${op.payload.orderId}/close-table`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(op.payload),
+            });
+            removeOfflineOperation(op.id);
+          } else if (op.type === 'UPDATE_STATUS') {
+            await fetch(`/api/orders/${op.payload.orderId}/status`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(op.payload),
+            });
+            removeOfflineOperation(op.id);
+          }
+        } catch (e) {
+          console.warn(`[SYNC FAIL] Falha ao processar operação ${op.type} (${op.id}):`, e);
+        }
+      }
+    }
     await fetchOrdersFromServer();
   };
 
@@ -948,9 +1361,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (!res.ok || !data.success) {
         return { success: false, error: data.error || 'Credenciais inválidas' };
       }
-      setCurrentUser(data.user);
-      sessionStorage.setItem('tokio_current_user_v25', JSON.stringify(data.user));
+      const userWithToken: UserAccount = {
+        ...data.user,
+        token: data.token,
+      };
+      setCurrentUser(userWithToken);
+      sessionStorage.setItem('tokio_current_user_v25', JSON.stringify(userWithToken));
       sessionStorage.setItem('tokio_admin_auth', 'true');
+      if (data.token) {
+        sessionStorage.setItem('tokio_staff_token', data.token);
+      }
       return { success: true };
     } catch (e: any) {
       return { success: false, error: 'Erro de conexão com o servidor' };
@@ -960,10 +1380,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const logoutUser = () => {
     if (currentUser) {
       logAction(`Logout do usuário @${currentUser.username}`, 'user');
+      const token = currentUser.token || sessionStorage.getItem('tokio_staff_token');
+      if (token) {
+        fetch('/api/auth/staff-logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }).catch(() => {});
+      }
     }
     setCurrentUser(null);
     sessionStorage.setItem('tokio_current_user_v25', 'logged_out');
     sessionStorage.removeItem('tokio_admin_auth');
+    sessionStorage.removeItem('tokio_staff_token');
   };
 
   const checkPermission = (permKey: keyof UserPermissions): boolean => {
@@ -1007,6 +1438,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     category: 'order' | 'user' | 'alert' | 'device' | 'system' = 'system',
     details?: string
   ) => {
+    if (!isStaffMode || !currentUser) return;
     try {
       await fetch('/api/audit-logs', {
         method: 'POST',
@@ -1024,9 +1456,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   useEffect(() => {
+    if (!isStaffMode || !currentUser) return;
     refreshDevices();
     refreshAuditLogs();
-  }, [refreshDevices, refreshAuditLogs]);
+  }, [refreshDevices, refreshAuditLogs, isStaffMode, currentUser?.id]);
 
   // Cart operations
   const addToCart = (
@@ -1146,9 +1579,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const itemsPayload = cart.map((c) => ({
       id: c.id,
+      menuItemId: c.menuItem.id, // o servidor recalcula o preço a partir do cardápio dele
       name: c.menuItem.name,
       quantity: c.quantity,
-      unitPrice: c.menuItem.price,
+      unitPrice: c.menuItem.promoPrice ?? c.menuItem.price,
       totalPrice: c.subtotal,
       selectedOptions: c.selectedOptions,
       notes: c.notes,
@@ -1174,41 +1608,104 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     console.log(`[ORDER DISPATCH] Enviando pedido com chave: ${finalKey}`);
 
     let confirmedOrder: Order;
+    const isOfflineMode = getSimulatedOffline() || (typeof navigator !== 'undefined' && !navigator.onLine);
 
-    try {
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+    if (isOfflineMode) {
+      // Offline-First execution: enqueue operation and generate local order
+      enqueueOfflineOperation('CREATE_ORDER', payload, finalKey);
+      const subtotalCalc = itemsPayload.reduce((acc, i) => acc + i.totalPrice, 0);
+      const deliveryFeeCalc = orderData.orderType === 'delivery' ? (restaurant.deliveryFee || 7.0) : 0;
+      const totalCalc = Math.max(0, subtotalCalc + deliveryFeeCalc - (appliedCoupon?.value || 0));
 
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || `Erro HTTP ${response.status} ao salvar pedido no servidor`);
-      }
-
-      const resData = await response.json();
-      confirmedOrder = resData.order;
-    } catch (networkErr: any) {
-      console.warn('[NETWORK RECOVERY] Verificando se pedido foi gravado antes da oscilação de rede:', networkErr);
+      confirmedOrder = {
+        id: `off-ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        shortCode: `#OFF-${Math.floor(100 + Math.random() * 900)}`,
+        restaurantSlug: activeRestaurantSlug,
+        restaurantName: restaurant.name,
+        customerName: orderData.customerName,
+        customerPhone: orderData.customerPhone,
+        orderType: orderData.orderType,
+        tableNumber: orderData.tableNumber,
+        pickupNumber: orderData.pickupNumber,
+        deliveryAddress: orderData.deliveryAddress,
+        items: itemsPayload.map((item, idx) => ({
+          ...item,
+          id: item.id || `item-off-${idx}-${Date.now()}`,
+          station: item.station || 'cozinha',
+          stationStatus: 'recebido',
+        })),
+        subtotal: subtotalCalc,
+        deliveryFee: deliveryFeeCalc,
+        discount: appliedCoupon?.value || 0,
+        couponCode: appliedCoupon?.code,
+        total: totalCalc,
+        paymentMethod: orderData.paymentMethod,
+        paymentDetails: orderData.paymentDetails,
+        notes: orderData.notes,
+        status: 'recebido',
+        statusHistory: [{ status: 'recebido', timestamp: 'Agora mesmo', note: 'Registrado localmente no PDV Offline' }],
+        printStatus: 'pendente',
+        idempotencyKey: finalKey,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      showToast(`Pedido #${confirmedOrder.shortCode} salvo localmente no PDV! (Modo Offline)`, 'info');
+    } else {
       try {
-        const checkRes = await fetch(`/api/orders/check-idempotency/${encodeURIComponent(finalKey)}`);
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          if (checkData.exists && checkData.order) {
-            console.log('[RECOVERY SUCCESS] Pedido recuperado com segurança no servidor:', checkData.order.id);
-            confirmedOrder = checkData.order;
-          } else {
-            throw networkErr;
-          }
-        } else {
-          throw networkErr;
+        const response = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => ({}));
+          throw new Error(errJson.error || `Erro HTTP ${response.status} ao salvar pedido no servidor`);
         }
-      } catch {
-        throw new Error(
-          networkErr.message ||
-            'Falha ao confirmar pedido com o restaurante. Verifique sua conexão e tente novamente.'
-        );
+
+        const resData = await response.json();
+        confirmedOrder = resData.order;
+        rememberMyOrders([confirmedOrder]);
+      } catch (networkErr: any) {
+        console.warn('[OFFLINE FALLBACK] Falha na rede, enfileirando operação localmente:', networkErr);
+        enqueueOfflineOperation('CREATE_ORDER', payload, finalKey);
+        const subtotalCalc = itemsPayload.reduce((acc, i) => acc + i.totalPrice, 0);
+        const deliveryFeeCalc = orderData.orderType === 'delivery' ? (restaurant.deliveryFee || 7.0) : 0;
+        const totalCalc = Math.max(0, subtotalCalc + deliveryFeeCalc - (appliedCoupon?.value || 0));
+
+        confirmedOrder = {
+          id: `off-ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          shortCode: `#OFF-${Math.floor(100 + Math.random() * 900)}`,
+          restaurantSlug: activeRestaurantSlug,
+          restaurantName: restaurant.name,
+          customerName: orderData.customerName,
+          customerPhone: orderData.customerPhone,
+          orderType: orderData.orderType,
+          tableNumber: orderData.tableNumber,
+          pickupNumber: orderData.pickupNumber,
+          deliveryAddress: orderData.deliveryAddress,
+          items: itemsPayload.map((item, idx) => ({
+            ...item,
+            id: item.id || `item-off-${idx}-${Date.now()}`,
+            station: item.station || 'cozinha',
+            stationStatus: 'recebido',
+          })),
+          subtotal: subtotalCalc,
+          deliveryFee: deliveryFeeCalc,
+          discount: appliedCoupon?.value || 0,
+          couponCode: appliedCoupon?.code,
+          total: totalCalc,
+          paymentMethod: orderData.paymentMethod,
+          paymentDetails: orderData.paymentDetails,
+          notes: orderData.notes,
+          status: 'recebido',
+          statusHistory: [{ status: 'recebido', timestamp: 'Agora mesmo', note: 'Salvo em modo de contingência offline' }],
+          printStatus: 'pendente',
+          idempotencyKey: finalKey,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        showToast(`Conexão instável: Pedido #${confirmedOrder.shortCode} salvo offline na fila!`, 'info');
       }
     }
 
@@ -1222,9 +1719,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setTrackingOrderId(confirmedOrder.id);
     clearCart();
 
-    // Auto-sync customer to Customers database
+    // Auto-sync customer to Customers database (CRM local: somente no painel)
     const nowIso = new Date().toISOString();
-    setCustomers((prevCustomers) => {
+    if (isStaffMode) setCustomers((prevCustomers) => {
       const phoneClean = orderData.customerPhone.replace(/\D/g, '');
       const existingIdx = prevCustomers.findIndex(
         (c) => c.phone.replace(/\D/g, '') === phoneClean || (phoneClean && c.phone === orderData.customerPhone)
@@ -1391,9 +1888,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     // 2. Persist to server
     try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           status,
           note,
@@ -1425,10 +1926,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const opName = operatorName || currentUser?.name || `Operador ${station.toUpperCase()}`;
       const opRole = currentUser?.role || station;
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
 
       const res = await fetch(`/api/orders/${orderId}/station-status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           station,
           status,
@@ -1477,10 +1982,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const restSlug = params.restaurantSlug || activeRestaurantSlug || 'japones';
       const restName = params.restaurantName || restaurants[restSlug]?.name || 'Restaurante';
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
 
       const res = await fetch('/api/orders/table/append', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           ...params,
           restaurantSlug: restSlug,
@@ -1495,6 +2004,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
       // Update in state
       if (data.order) {
+        if (!isStaffMode) rememberMyOrders([data.order]);
         setOrders((prev) => {
           const filtered = prev.filter((o) => o.id !== data.order.id);
           return [data.order, ...filtered];
@@ -1528,9 +2038,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     waiterNotes?: string;
   }): Promise<{ success: boolean; order?: Order; error?: string }> => {
     try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
       const res = await fetch(`/api/orders/${params.orderId}/close-table`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           ...params,
           operatorName: params.operatorName || currentUser?.name || 'Garçom',
@@ -1577,8 +2091,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const deleteOrder = async (orderId: string): Promise<void> => {
     setOrders((prev) => prev.filter((order) => order.id !== orderId));
     try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
       await fetch(`/api/orders/${orderId}`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
     } catch (err) {
       console.warn('Erro ao deletar pedido no servidor:', err);
@@ -1603,9 +2122,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     );
 
     try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
       await fetch('/api/orders/clear-history', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ slug, mode }),
       });
     } catch (err) {
@@ -1707,13 +2230,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (confirmation !== 'RESETAR PEDIDOS') {
       throw new Error('Confirmação inválida. Digite exatamente "RESETAR PEDIDOS".');
     }
+    const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
     const res = await fetch('/api/orders/master-reset', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({
         confirmation,
         operatorName: currentUser?.name || 'Super Admin',
-        operatorRole: currentUser?.role || 'super_admin',
       }),
     });
     const data = await res.json();
@@ -1772,9 +2298,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
       const itemsPayload = items.map((c) => ({
         id: c.id,
+        menuItemId: c.menuItem.id,
         name: c.menuItem.name,
         quantity: c.quantity,
-        unitPrice: c.menuItem.price,
+        unitPrice: c.menuItem.promoPrice ?? c.menuItem.price,
         totalPrice: getCartItemPrice(c),
         selectedOptions: c.selectedOptions,
         notes: c.notes,
@@ -1816,11 +2343,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     // Add to local state and alert refs
     created.forEach((ord) => alertedOrderIdsRef.current.add(ord.id));
+    rememberMyOrders(created);
     setOrders((prev) => [...created, ...prev]);
 
-    // Save customer record
+    // Save customer record (CRM local: somente no painel)
     const nowIso = new Date().toISOString();
-    setCustomers((prevCustomers) => {
+    if (isStaffMode) setCustomers((prevCustomers) => {
       const phoneClean = orderData.customerPhone.replace(/\D/g, '');
       const existingIdx = prevCustomers.findIndex(
         (c) => c.phone.replace(/\D/g, '') === phoneClean || (phoneClean && c.phone === orderData.customerPhone)
@@ -2012,7 +2540,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const currentRestaurant = restaurants[activeRestaurantSlug] || restaurants.japones;
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const cartSubtotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
+  const cartSubtotal = cart.reduce((sum, item) => sum + (item.subtotal || 0), 0);
   const cartDiscount = appliedCoupon
     ? appliedCoupon.type === 'percent'
       ? (cartSubtotal * appliedCoupon.value) / 100
@@ -2021,10 +2549,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const cartDeliveryFee = orderType === 'delivery' ? (currentRestaurant?.deliveryFee || 0) : 0;
   const cartTotal = Math.max(0, cartSubtotal - cartDiscount + cartDeliveryFee);
 
+  // Alias não enumerável: componentes antigos que usam `restaurants.japones` como último
+  // recurso nunca quebram se esse restaurante for removido do cardápio no servidor.
+  const safeRestaurants = React.useMemo(() => {
+    if (restaurants.japones) return restaurants;
+    const first = Object.values(restaurants)[0];
+    if (!first) return restaurants;
+    return Object.defineProperty({ ...restaurants }, 'japones', { value: first, enumerable: false });
+  }, [restaurants]);
+
   return (
     <StoreContext.Provider
       value={{
-        restaurants,
+        appMode: mode,
+        restaurants: safeRestaurants,
         categories,
         menuItems,
         orders,
@@ -2108,6 +2646,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         cashShift,
         addCashMovement,
         closeCashShift,
+        salesChannels,
+        updateSalesChannel,
         showToast,
       }}
     >
