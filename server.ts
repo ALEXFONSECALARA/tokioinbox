@@ -141,6 +141,7 @@ import {
   getRestaurant,
   restaurantExists,
 } from './server/catalogService';
+import { createTableAccessToken, verifyTableAccessToken } from './server/tableAccessService';
 
 const app = express();
 // Dynamic PORT: respects process.env.PORT on Render (e.g. 10000) or defaults to 3000 in local/dev
@@ -200,6 +201,28 @@ app.get('/api/health/ready', (req, res) => {
     res.json({ ready: true, time: new Date().toISOString() });
   } catch (err: any) {
     res.status(503).json({ ready: false, error: 'Armazenamento indisponível' });
+  }
+});
+
+// Token assinado para o QR físico de uma mesa. Somente a equipe autorizada pode gerar.
+app.get('/api/table/access-token', authenticateStaff, requirePermission('can_configure_restaurant'), (req, res) => {
+  const requestedSlug = String(req.query.slug || '');
+  const scopedSlug = resolveScopedSlug(req, requestedSlug);
+  const table = Number(req.query.table);
+
+  if (!scopedSlug || !restaurantExists(scopedSlug)) {
+    return res.status(404).json({ success: false, error: 'Restaurante não encontrado.' });
+  }
+  if (!Number.isInteger(table) || table < 1 || table > 999) {
+    return res.status(400).json({ success: false, error: 'Mesa inválida.' });
+  }
+
+  const restaurant = getRestaurant(scopedSlug);
+  try {
+    const token = createTableAccessToken(scopedSlug, table);
+    return res.json({ success: true, restaurantSlug: scopedSlug, tableNumber: table, token, restaurantName: restaurant?.name || scopedSlug });
+  } catch (error: any) {
+    return res.status(503).json({ success: false, error: error?.message || 'QR seguro indisponível: configure a chave da mesa.' });
   }
 });
 
@@ -1136,8 +1159,18 @@ app.post('/api/orders', publicWriteLimiter, optionalStaffAuth, (req, res) => {
   try {
     const payload = req.body;
     const isStaff = Boolean(req.userSession);
-    if (isStaff && !canAccessRestaurant(req, String(payload?.restaurantSlug || ''))) {
+    const restaurantSlug = String(payload?.restaurantSlug || '');
+    if (isStaff && !canAccessRestaurant(req, restaurantSlug)) {
       return res.status(403).json({ success: false, error: 'Seu usuário não tem acesso a este restaurante.' });
+    }
+
+    // Cliente público só pode abrir/adicionar mesa usando o QR assinado daquela mesa.
+    if (!isStaff && String(payload?.orderType || '').toLowerCase().includes('mesa')) {
+      const tableNumber = Number(payload?.tableNumber);
+      const tableToken = typeof payload?.tableAccessToken === 'string' ? payload.tableAccessToken : undefined;
+      if (!verifyTableAccessToken(tableToken, restaurantSlug, tableNumber)) {
+        return res.status(403).json({ success: false, error: 'Pedido de mesa permitido somente pelo QR Code da mesa.' });
+      }
     }
     const authCust = getAuthenticatedCustomer(req);
     if (authCust && !payload.customerId) {
@@ -1264,7 +1297,17 @@ app.post('/api/orders/table/append', publicWriteLimiter, optionalStaffAuth, (req
       waiterName,
       tableSessionId,
       idempotencyKey,
+      tableAccessToken,
     } = req.body;
+
+    const isStaff = Boolean(req.userSession);
+    const scopedRestaurantSlug = String(restaurantSlug || '');
+    if (isStaff && !canAccessRestaurant(req, scopedRestaurantSlug)) {
+      return res.status(403).json({ success: false, error: 'Seu usuário não tem acesso a este restaurante.' });
+    }
+    if (!isStaff && !verifyTableAccessToken(tableAccessToken, scopedRestaurantSlug, Number(tableNumber))) {
+      return res.status(403).json({ success: false, error: 'Mesa protegida: use o QR Code original desta mesa.' });
+    }
 
     if (!tableNumber || typeof tableNumber !== 'number') {
       return res.status(400).json({ success: false, error: 'Número de mesa válido é obrigatório' });
@@ -1283,7 +1326,7 @@ app.post('/api/orders/table/append', publicWriteLimiter, optionalStaffAuth, (req
       waiterName: req.userSession ? (waiterName || req.userSession.name) : undefined,
       tableSessionId,
       idempotencyKey,
-    }, { isStaff: Boolean(req.userSession) });
+    }, { isStaff });
 
     // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
     broadcastOrdersUpdate(result.isNew ? 'order_created' : 'table_items_appended', result.order);
@@ -1498,7 +1541,19 @@ app.post('/api/orders/batch', publicWriteLimiter, optionalStaffAuth, (req, res) 
     const isStaffBatch = Boolean(req.userSession);
     const createdOrders = [];
     for (const payload of ordersPayloads) {
-      if (!isStaffBatch) delete payload.customerId;
+      const slug = String(payload?.restaurantSlug || '');
+      if (isStaffBatch && !canAccessRestaurant(req, slug)) {
+        return res.status(403).json({ success: false, error: 'Seu usuário não tem acesso a um dos restaurantes do lote.' });
+      }
+      if (!isStaffBatch) {
+        if (String(payload?.orderType || '').toLowerCase().includes('mesa')) {
+          const tableNumber = Number(payload?.tableNumber);
+          if (!verifyTableAccessToken(payload?.tableAccessToken, slug, tableNumber)) {
+            return res.status(403).json({ success: false, error: 'Pedido de mesa permitido somente pelo QR Code da mesa.' });
+          }
+        }
+        delete payload.customerId;
+      }
       const result = createOrderTransactional(payload, { isStaff: isStaffBatch });
       createdOrders.push(result.order);
       broadcastOrdersUpdate('order_created', result.order);
@@ -2002,10 +2057,7 @@ app.get('/api/admin/system-audit', ...adminOnly, (req, res) => {
   add('public-orders', 'Listagem de pedidos protegida', 'ok', 'GET /api/orders, stream e alterações exigem login de colaborador.');
   add('server-pricing', 'Preço validado no servidor', 'ok', 'Pedidos são recalculados a partir do catálogo do servidor.');
 
-  const fiscalKey = process.env.FISCAL_ENCRYPTION_KEY;
-  add('fiscal-key', 'Chave do cofre de certificados', fiscalKey && fiscalKey.length >= 24 ? 'ok' : (IS_PRODUCTION ? 'fail' : 'warn'),
-    fiscalKey && fiscalKey.length >= 24 ? 'Configurada.' : 'Defina FISCAL_ENCRYPTION_KEY (mín. 24 caracteres).');
-  add('fiscal-real', 'Integração real com a SEFAZ', 'fail', 'Não implementada: em produção a emissão fiscal é recusada. Use provedor fiscal ou homologação.');
+  add('fiscal', 'Emissão fiscal', 'warn', 'Desativada nesta versão. O sistema opera sem nota fiscal.');
   add('print-agent-key', 'Chave do agente de impressão', process.env.PRINT_AGENT_KEY ? 'ok' : 'warn', process.env.PRINT_AGENT_KEY ? 'Configurada.' : 'Sem PRINT_AGENT_KEY: apenas usuários logados acessam a fila de impressão.');
   add('gemini', 'IA (Gemini)', process.env.GEMINI_API_KEY ? 'ok' : 'warn', process.env.GEMINI_API_KEY ? 'Chave configurada.' : 'Sem chave: recursos de IA usam respostas locais.');
   add('cloudinary', 'Upload de imagens (Cloudinary)', isCloudinaryConfigured() ? 'ok' : 'warn', isCloudinaryConfigured() ? 'Configurado.' : 'Não configurado.');
@@ -2022,8 +2074,7 @@ app.get('/api/admin/system-audit', ...adminOnly, (req, res) => {
 // ==========================================
 // FISCAL MODULE API (NFC-e, NF-e, CERTIFICADOS, CÁLCULO TRIBUTÁRIO)
 // ==========================================
-import { fiscalRouter } from './server/fiscal/fiscalRoutes';
-app.use('/api/fiscal', fiscalRouter);
+// Emissão fiscal desativada nesta versão: o sistema opera sem nota fiscal.
 
 // Áreas internas (equipe) são servidas por um aplicativo SEPARADO (painel.html).
 // Tudo o mais é o cardápio do cliente (index.html). Comparação por 1º segmento exato do caminho,
