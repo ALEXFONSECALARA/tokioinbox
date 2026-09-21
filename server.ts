@@ -1,3 +1,4 @@
+import { getGeminiModel } from './server/aiModel';
 import 'dotenv/config';
 import express from 'express';
 import compression from 'compression';
@@ -23,6 +24,10 @@ import {
   getOrdersVersion,
   getOrdersLastModified,
   getOrdersByCustomer,
+  initializeOrders,
+  toStaffView,
+  toCustomerView,
+  getOrderForTracking,
   OrderStatus,
   ProductionStation,
   StationItemStatus,
@@ -31,6 +36,8 @@ import {
   findUserByUsername,
   findUserById,
   verifyPassword,
+  needsPasswordRehash,
+  upgradeUserPasswordHash,
   getAllUsers,
   createUser,
   updateUser,
@@ -45,6 +52,8 @@ import {
   disconnectDevice,
   getAuditLogs,
   logAuditAction,
+  listUsersWithDefaultPassword,
+  countActiveUsers,
 } from './server/authAndDeviceService';
 import {
   getAISettings,
@@ -98,6 +107,39 @@ import {
   testSupabaseConnection,
   syncOrderToSupabase,
 } from './server/supabaseService';
+import {
+  authenticateStaff,
+  authenticateStaffOrAgent,
+  optionalStaffAuth,
+  requireRole,
+  requirePermission,
+  createUserSession,
+  revokeUserSession,
+  revokeAllSessionsForUser,
+  issueStreamTicket,
+  consumeStreamTicket,
+  resolveScopedSlug,
+  canAccessRestaurant,
+} from './server/authMiddleware';
+import {
+  corsMiddleware,
+  securityHeaders,
+  rateLimit,
+  checkLoginLock,
+  registerLoginFailure,
+  clearLoginFailures,
+  getClientIp,
+  IS_PRODUCTION,
+} from './server/security';
+import {
+  initializeCatalog,
+  getCatalog,
+  getCatalogEtag,
+  getPublicCatalog,
+  saveCatalog,
+  getRestaurant,
+  restaurantExists,
+} from './server/catalogService';
 
 const app = express();
 // Dynamic PORT: respects process.env.PORT on Render (e.g. 10000) or defaults to 3000 in local/dev
@@ -108,36 +150,24 @@ const serverStartTime = Date.now();
 app.disable('x-powered-by');
 app.use(compression());
 
-// Universal CORS Middleware respecting process.env.CORS_ORIGINS (e.g. https://tokioinbox.onrender.com)
-app.use((req, res, next) => {
-  const corsOriginsRaw = process.env.CORS_ORIGINS;
-  const allowedOrigins = corsOriginsRaw
-    ? corsOriginsRaw.split(',').map((o) => o.trim()).filter(Boolean)
-    : [];
+// Atrás de proxy (Render, Cloud Run, Nginx): necessário para IP real do cliente (rate limit)
+app.set('trust proxy', 1);
 
-  const origin = req.headers.origin;
+// Segurança: headers + CORS restrito às origens de CORS_ORIGINS (mesma origem não precisa de CORS)
+app.use(securityHeaders);
+app.use(corsMiddleware);
 
-  if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  } else if (allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    // Permissive fallback to origin for seamless API operation
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
+// Parsers: limites pequenos por padrão; maiores só onde há upload/edição de catálogo (rotas de staff)
+app.use('/api/upload', express.json({ limit: '12mb' }));
+app.use('/api/catalog', express.json({ limit: '8mb' }));
+app.use(express.json({ limit: '256kb' }));
 
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Idempotency-Key, If-None-Match');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-  next();
-});
-
-// JSON body parser with 10MB limit to handle base64 image uploads for Cloudinary
-app.use(express.json({ limit: '10mb' }));
+// Limites de abuso para rotas públicas
+const publicWriteLimiter = rateLimit({ key: 'pub-write', max: 30, windowMs: 60 * 1000 });
+const publicAiLimiter = rateLimit({ key: 'pub-ai', max: 15, windowMs: 10 * 60 * 1000, message: 'Muitas solicitações ao assistente. Tente novamente em alguns minutos.' });
+const authLimiter = rateLimit({ key: 'auth', max: 20, windowMs: 10 * 60 * 1000 });
+const resetLimiter = rateLimit({ key: 'reset', max: 5, windowMs: 15 * 60 * 1000, message: 'Muitas solicitações de recuperação. Aguarde 15 minutos.' });
+const adminOnly = [authenticateStaff, requireRole('super_admin', 'administrador')] as const;
 
 // Lazy-initialized Gemini Client
 let geminiClient: GoogleGenAI | null = null;
@@ -152,63 +182,42 @@ function getGeminiClient(): GoogleGenAI {
   return geminiClient;
 }
 
-// Global System Health (Aura Prime Enterprise Luxe Specification)
+// Saúde do sistema (pública e mínima: sem detalhes internos)
 app.get('/api/health', (req, res) => {
-  const uptimeSeconds = Math.floor((Date.now() - serverStartTime) / 1000);
   res.json({
     status: 'ok',
-    system: 'Aura Prime Gastronomia V26 Enterprise Luxe',
-    brand: 'Aura Prime',
-    uptime: `${uptimeSeconds}s`,
+    uptimeSeconds: Math.floor((Date.now() - serverStartTime) / 1000),
     timestamp: new Date().toISOString(),
-    latency: '11ms',
-    database: 'Multi-tenant Local/JSON Storage with SSE Realtime Synchronization',
-    activeTenants: ['japones', 'italiano', 'pizza', 'hamburgueria'],
-    capabilities: [
-      'MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API',
-      'UNIFIED_SUPERADMIN_KANBAN',
-      'THERMAL_PRINTING_ESC_POS',
-      'INDEPENDENT_PRINT_AGENT',
-      'AI_COMMERCIAL_CONCIERGE',
-      'AI_SALES_ASSISTANT',
-      'DUAL_CUSTOMER_LOGIN_MODES',
-      'PWA_INSTALLATION_BONUS',
-      'COURIER_RESTRICTED_PORTAL',
-      'SENIOR_SYSTEM_AUDITOR',
-    ],
   });
 });
 
-// Infrastructure Readiness Probe
 app.get('/api/health/ready', (req, res) => {
-  res.json({ ready: true, time: new Date().toISOString() });
+  try {
+    initializeCatalog();
+    initializeOrders();
+    res.json({ ready: true, time: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(503).json({ ready: false, error: 'Armazenamento indisponível' });
+  }
 });
 
-// Per-Restaurant Health Check
 app.get('/api/:slug/health', (req, res) => {
   const { slug } = req.params;
-  const validSlugs = ['japones', 'italiano', 'pizza', 'hamburgueria'];
-  if (!validSlugs.includes(slug)) {
+  if (!restaurantExists(slug)) {
     return res.status(404).json({ error: 'Restaurante não encontrado' });
   }
-
-  res.json({
-    restaurant: slug,
-    status: 'healthy',
-    menuItemsActive: true,
-    ordersPipeline: 'online',
-    timestamp: new Date().toISOString(),
-  });
+  res.json({ restaurant: slug, status: 'healthy', timestamp: new Date().toISOString() });
 });
 
-// Environment & Configuration Status Endpoint (Safe for UI diagnostics, no secrets leaked)
-app.get('/api/config/status', (req, res) => {
+// Diagnóstico de configuração (somente administradores)
+app.get('/api/config/status', ...adminOnly, (req, res) => {
   res.json({
     status: 'ok',
     environment: {
       port: PORT,
+      production: IS_PRODUCTION,
       timezone: process.env.TZ || 'America/Sao_Paulo',
-      corsOrigins: process.env.CORS_ORIGINS || '*',
+      corsOrigins: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()) : [],
       adminPasswordConfigured: Boolean(process.env.ADMIN_PASSWORD),
       cloudinary: {
         configured: isCloudinaryConfigured(),
@@ -227,7 +236,7 @@ app.get('/api/config/status', (req, res) => {
 });
 
 // Cloudinary Image Upload Endpoint
-app.post('/api/upload/image', async (req, res) => {
+app.post('/api/upload/image', ...adminOnly, async (req, res) => {
   try {
     const { image, folder } = req.body;
     if (!image) {
@@ -256,7 +265,7 @@ app.post('/api/upload/image', async (req, res) => {
 });
 
 // Supabase Live Status & Diagnostic Endpoint
-app.get('/api/supabase/status', async (req, res) => {
+app.get('/api/supabase/status', ...adminOnly, async (req, res) => {
   try {
     const diag = await testSupabaseConnection();
     res.json(diag);
@@ -266,7 +275,7 @@ app.get('/api/supabase/status', async (req, res) => {
 });
 
 // Supabase SQL Schema Endpoint for Easy Migration
-app.get('/api/supabase/schema', (req, res) => {
+app.get('/api/supabase/schema', ...adminOnly, (req, res) => {
   try {
     const schemaPath = path.join(process.cwd(), 'server', 'supabase_schema.sql');
     if (fs.existsSync(schemaPath)) {
@@ -281,7 +290,7 @@ app.get('/api/supabase/schema', (req, res) => {
 });
 
 // AI Pairing and Recommendation API (Chef / Sommelier AI)
-app.post('/api/ai/recommend', async (req, res) => {
+app.post('/api/ai/recommend', publicAiLimiter, async (req, res) => {
   try {
     const { restaurantSlug, currentItems, preference } = req.body;
 
@@ -301,7 +310,7 @@ Preferência do cliente: ${preference || 'Geral'}.
 Responda em português brasileiro de forma acolhedora, objetiva e sucinta (máximo 2 a 3 frases) recomendando uma harmonização perfeita de bebida ou sobremesa que combine idealmente com os pratos escolhidos.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: getGeminiModel(),
       contents: prompt,
     });
 
@@ -320,7 +329,7 @@ Responda em português brasileiro de forma acolhedora, objetiva e sucinta (máxi
 });
 
 // Smart Kitchen Ticket & Thermal Printing AI Analysis
-app.post('/api/ai/smart-ticket', async (req, res) => {
+app.post('/api/ai/smart-ticket', authenticateStaff, async (req, res) => {
   try {
     const { order, restaurantName } = req.body;
 
@@ -369,7 +378,7 @@ Responda APENAS um objeto JSON válido (sem blocos markdown extras) com a seguin
 }`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: getGeminiModel(),
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -402,11 +411,11 @@ Responda APENAS um objeto JSON válido (sem blocos markdown extras) com a seguin
 // AURA AI DECOUPLED LAYER & CONCIERGE API
 // ==========================================
 
-app.get('/api/ai/settings', (req, res) => {
+app.get('/api/ai/settings', ...adminOnly, (req, res) => {
   res.json({ success: true, settings: getAISettings() });
 });
 
-app.post('/api/ai/settings', (req, res) => {
+app.post('/api/ai/settings', ...adminOnly, (req, res) => {
   try {
     const updated = updateAISettings(req.body);
     res.json({ success: true, settings: updated });
@@ -416,7 +425,7 @@ app.post('/api/ai/settings', (req, res) => {
 });
 
 // Customer Commercial Concierge Chatbot (Adheres strictly to real menu and prices)
-app.post('/api/ai/concierge', async (req, res) => {
+app.post('/api/ai/concierge', publicAiLimiter, async (req, res) => {
   try {
     const {
       restaurantName,
@@ -459,7 +468,7 @@ app.post('/api/ai/concierge', async (req, res) => {
 });
 
 // AI Sales Assistant Suggestions (Requires Admin Approval)
-app.post('/api/ai/sales-suggestions', (req, res) => {
+app.post('/api/ai/sales-suggestions', authenticateStaff, (req, res) => {
   try {
     const {
       restaurantSlug,
@@ -490,7 +499,7 @@ app.post('/api/ai/sales-suggestions', (req, res) => {
 });
 
 // Autonomous AI CMV & Menu Engineering
-app.post('/api/ai/cmv-engineering', async (req, res) => {
+app.post('/api/ai/cmv-engineering', ...adminOnly, async (req, res) => {
   try {
     const { restaurantSlug, items, targetMargin } = req.body;
     const targetMarginPercent = Number(targetMargin) || 65;
@@ -513,7 +522,7 @@ app.post('/api/ai/cmv-engineering', async (req, res) => {
 // ==========================================
 
 // 1. Get AI Config for a restaurant
-app.get('/api/ai-engine/config', (req, res) => {
+app.get('/api/ai-engine/config', ...adminOnly, (req, res) => {
   try {
     const slug = (req.query.restaurantSlug as string) || 'japones';
     const config = getRestaurantAIConfig(slug);
@@ -524,7 +533,7 @@ app.get('/api/ai-engine/config', (req, res) => {
 });
 
 // 2. Update AI Config for a module with strict audit logging
-app.put('/api/ai-engine/config', (req, res) => {
+app.put('/api/ai-engine/config', ...adminOnly, (req, res) => {
   try {
     const { restaurantSlug, moduleId, updates, operatorUsername, operatorRole } = req.body;
     if (!restaurantSlug || !moduleId || !updates) {
@@ -548,7 +557,7 @@ app.put('/api/ai-engine/config', (req, res) => {
 });
 
 // 3. Get AI Audit Logs (data, hora, usuário, anterior, novo)
-app.get('/api/ai-engine/logs', (req, res) => {
+app.get('/api/ai-engine/logs', ...adminOnly, (req, res) => {
   try {
     const slug = req.query.restaurantSlug as string | undefined;
     const logs = getAIAuditLogs(slug);
@@ -559,7 +568,7 @@ app.get('/api/ai-engine/logs', (req, res) => {
 });
 
 // 4. Get Price Suggestions
-app.get('/api/ai-engine/price-suggestions', (req, res) => {
+app.get('/api/ai-engine/price-suggestions', ...adminOnly, (req, res) => {
   try {
     const slug = req.query.restaurantSlug as string | undefined;
     const suggestions = getPriceSuggestions(slug);
@@ -570,7 +579,7 @@ app.get('/api/ai-engine/price-suggestions', (req, res) => {
 });
 
 // 5. Human Approval/Rejection for Price Suggestions
-app.post('/api/ai-engine/resolve-price', (req, res) => {
+app.post('/api/ai-engine/resolve-price', ...adminOnly, (req, res) => {
   try {
     const { suggestionId, action, operatorUsername, operatorRole } = req.body;
     if (!suggestionId || !action) {
@@ -593,7 +602,7 @@ app.post('/api/ai-engine/resolve-price', (req, res) => {
 });
 
 // 6. Module 1: Customer Concierge
-app.post('/api/ai-engine/customer-concierge', async (req, res) => {
+app.post('/api/ai-engine/customer-concierge', publicAiLimiter, async (req, res) => {
   try {
     const {
       restaurantSlug,
@@ -627,7 +636,7 @@ app.post('/api/ai-engine/customer-concierge', async (req, res) => {
 });
 
 // 7. Module 2: Smart Pairing (Chef & Sommelier)
-app.post('/api/ai-engine/smart-pairing', async (req, res) => {
+app.post('/api/ai-engine/smart-pairing', publicAiLimiter, async (req, res) => {
   try {
     const { restaurantSlug, restaurantName, cartItems, menuItems } = req.body;
     const result = await executeSmartPairing({
@@ -645,7 +654,7 @@ app.post('/api/ai-engine/smart-pairing', async (req, res) => {
 });
 
 // 8. Module 3: Menu Engineering & CMV
-app.post('/api/ai-engine/menu-engineering', async (req, res) => {
+app.post('/api/ai-engine/menu-engineering', ...adminOnly, async (req, res) => {
   try {
     const { restaurantSlug, restaurantName, periodDays, menuItems, orders } = req.body;
     const realOrders = Array.isArray(orders) ? orders : getAllOrders();
@@ -666,7 +675,7 @@ app.post('/api/ai-engine/menu-engineering', async (req, res) => {
 });
 
 // 9. Module 4: Smart Kitchen KDS
-app.post('/api/ai-engine/smart-kitchen', (req, res) => {
+app.post('/api/ai-engine/smart-kitchen', authenticateStaff, (req, res) => {
   try {
     const { restaurantSlug, orders } = req.body;
     const realOrders = Array.isArray(orders) ? orders : getAllOrders();
@@ -684,7 +693,7 @@ app.post('/api/ai-engine/smart-kitchen', (req, res) => {
 });
 
 // 10. Simulation Mode ("SIMULAR IA")
-app.post('/api/ai-engine/simulate', async (req, res) => {
+app.post('/api/ai-engine/simulate', ...adminOnly, async (req, res) => {
   try {
     const { restaurantSlug, scenario, customInput, menuItems, orders } = req.body;
     const realOrders = Array.isArray(orders) ? orders : getAllOrders();
@@ -709,7 +718,7 @@ app.post('/api/ai-engine/simulate', async (req, res) => {
 // ==========================================
 
 // 1. List or poll print jobs (Multi-tenant isolated)
-app.get('/api/print-agent/jobs', (req, res) => {
+app.get('/api/print-agent/jobs', authenticateStaffOrAgent, (req, res) => {
   try {
     const slug = req.query.slug as string | undefined;
     const status = req.query.status as any;
@@ -721,7 +730,7 @@ app.get('/api/print-agent/jobs', (req, res) => {
 });
 
 // 2. Enqueue print job with idempotency
-app.post('/api/print-agent/jobs', (req, res) => {
+app.post('/api/print-agent/jobs', authenticateStaffOrAgent, (req, res) => {
   try {
     const { orderId, orderShortCode, restaurantSlug, station, rawEscPos } = req.body;
     if (!orderId || !restaurantSlug || !station) {
@@ -747,7 +756,7 @@ app.post('/api/print-agent/jobs', (req, res) => {
 });
 
 // 3. Update print job status (agent report)
-app.patch('/api/print-agent/jobs/:jobId/status', (req, res) => {
+app.patch('/api/print-agent/jobs/:jobId/status', authenticateStaffOrAgent, (req, res) => {
   try {
     const { status, errorMessage } = req.body;
     if (!status) {
@@ -764,7 +773,7 @@ app.patch('/api/print-agent/jobs/:jobId/status', (req, res) => {
 });
 
 // 4. Retry failed print job
-app.post('/api/print-agent/jobs/:jobId/retry', (req, res) => {
+app.post('/api/print-agent/jobs/:jobId/retry', authenticateStaffOrAgent, (req, res) => {
   try {
     const retried = retryPrintJob(req.params.jobId);
     if (!retried) {
@@ -777,7 +786,7 @@ app.post('/api/print-agent/jobs/:jobId/retry', (req, res) => {
 });
 
 // 5. Thermal Printers List & Register
-app.get('/api/print-agent/printers', (req, res) => {
+app.get('/api/print-agent/printers', authenticateStaffOrAgent, (req, res) => {
   try {
     const slug = req.query.slug as string | undefined;
     const printers = getPrinters(slug);
@@ -787,7 +796,7 @@ app.get('/api/print-agent/printers', (req, res) => {
   }
 });
 
-app.post('/api/print-agent/printers', (req, res) => {
+app.post('/api/print-agent/printers', authenticateStaffOrAgent, (req, res) => {
   try {
     const printer = upsertPrinter(req.body);
     res.json({ success: true, printer });
@@ -811,7 +820,7 @@ function getAuthenticatedCustomer(req: express.Request) {
 }
 
 // 1. Customer Registration (Nome, WhatsApp, Senha, Confirmar Senha)
-app.post('/api/customer/register', (req, res) => {
+app.post('/api/customer/register', authLimiter, (req, res) => {
   try {
     const { name, phone, password, confirmPassword } = req.body;
     const result = registerCustomer({ name, phone, password, confirmPassword });
@@ -825,7 +834,7 @@ app.post('/api/customer/register', (req, res) => {
 });
 
 // 2. Customer Login (WhatsApp + Senha)
-app.post('/api/customer/login', (req, res) => {
+app.post('/api/customer/login', authLimiter, (req, res) => {
   try {
     const { phone, password } = req.body;
     const result = loginCustomer({ phone, password });
@@ -891,7 +900,7 @@ app.delete('/api/customer/addresses/:id', (req, res) => {
 });
 
 // 7. Password Recovery Flow
-app.post('/api/customer/forgot-password', async (req, res) => {
+app.post('/api/customer/forgot-password', resetLimiter, async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone) {
@@ -907,7 +916,7 @@ app.post('/api/customer/forgot-password', async (req, res) => {
   }
 });
 
-app.post('/api/customer/reset-password', (req, res) => {
+app.post('/api/customer/reset-password', resetLimiter, (req, res) => {
   try {
     const { phone, code, newPassword, confirmPassword } = req.body;
     const result = confirmCustomerPasswordReset({ phone, code, newPassword, confirmPassword });
@@ -931,7 +940,7 @@ app.get('/api/customer/my-orders', (req, res) => {
 });
 
 // Backward compatibility alias
-app.post('/api/customer/auth', (req, res) => {
+app.post('/api/customer/auth', authLimiter, (req, res) => {
   try {
     const { phone, name, password } = req.body;
     if (!phone) {
@@ -963,14 +972,16 @@ app.post('/api/customer/auth', (req, res) => {
 interface SSEOrderClient {
   id: string;
   res: express.Response;
-  slug?: string;
+  slug?: string; // escopo do colaborador ('all' ou slug do restaurante)
 }
 let sseOrderClients: SSEOrderClient[] = [];
 
 export function broadcastOrdersUpdate(eventType: string, order?: any) {
+  // Somente colaboradores autenticados recebem o stream; nunca envia o token de rastreio.
+  const safeOrder = order ? toStaffView(order) : undefined;
   const payload = JSON.stringify({
     event: eventType,
-    order,
+    order: safeOrder,
     version: getOrdersVersion(),
     lastModified: getOrdersLastModified(),
     timestamp: new Date().toISOString(),
@@ -992,8 +1003,18 @@ export function broadcastOrdersUpdate(eventType: string, order?: any) {
   });
 }
 
-// Real-Time SSE Stream Endpoint for Instant Sync (Garçom, Cozinha, Bar, SushiBar, Cliente, Painel)
+// Ticket de uso único (60s) para abrir o stream: EventSource não envia header Authorization.
+app.post('/api/orders/stream-ticket', authenticateStaff, (req, res) => {
+  res.json({ success: true, ticket: issueStreamTicket(req.userSession!.id) });
+});
+
+// Stream em tempo real: exige ticket válido emitido a um colaborador autenticado.
 app.get('/api/orders/stream', (req, res) => {
+  const user = consumeStreamTicket(String(req.query.ticket || ''));
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Ticket de stream inválido ou expirado.', code: 'INVALID_TICKET' });
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -1003,12 +1024,11 @@ app.get('/api/orders/stream', (req, res) => {
   }
 
   const clientId = `sse-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const slug = req.query.slug as string | undefined;
+  const scope = user.restaurantSlug && user.restaurantSlug !== 'all' ? user.restaurantSlug : (req.query.slug as string | undefined) || 'all';
 
-  const client: SSEOrderClient = { id: clientId, res, slug };
+  const client: SSEOrderClient = { id: clientId, res, slug: scope };
   sseOrderClients.push(client);
 
-  // Send initial handshake
   res.write(
     `data: ${JSON.stringify({
       event: 'connected',
@@ -1019,7 +1039,6 @@ app.get('/api/orders/stream', (req, res) => {
     })}\n\n`
   );
 
-  // Heartbeat every 15s to keep proxy / Render / Cloud Run connections warm
   const heartbeat = setInterval(() => {
     try {
       res.write(`: heartbeat\n\n`);
@@ -1035,21 +1054,20 @@ app.get('/api/orders/stream', (req, res) => {
 });
 
 // 1. List all orders with optional restaurant slug filter and ETag 304 caching
-app.get('/api/orders', (req, res) => {
+app.get('/api/orders', authenticateStaff, requirePermission('can_view_orders'), (req, res) => {
   try {
-    const slug = req.query.slug as string | undefined;
-    const currentEtag = getOrdersEtag(slug);
+    const slug = resolveScopedSlug(req, req.query.slug as string | undefined);
+    const currentEtag = `${getOrdersEtag(slug)}-${req.userSession!.id}`;
     const clientEtag = req.headers['if-none-match'];
 
     res.setHeader('ETag', currentEtag);
-    res.setHeader('Cache-Control', 'public, max-age=1, must-revalidate');
+    res.setHeader('Cache-Control', 'private, no-cache');
 
     if (clientEtag && clientEtag === currentEtag) {
-      // 304 Not Modified: zero bytes of payload transferred
       return res.status(304).end();
     }
 
-    const orders = getAllOrders(slug);
+    const orders = getAllOrders(slug).map(toStaffView);
     res.json({
       success: true,
       count: orders.length,
@@ -1064,12 +1082,12 @@ app.get('/api/orders', (req, res) => {
 });
 
 // 2. Check Idempotency Key (Wi-Fi / 4G reconnection recovery)
-app.get('/api/orders/check-idempotency/:key', (req, res) => {
+app.get('/api/orders/check-idempotency/:key', publicWriteLimiter, (req, res) => {
   try {
     const { key } = req.params;
     const existing = findOrderByDeliveryKey(key);
     if (existing) {
-      return res.json({ exists: true, order: existing });
+      return res.json({ exists: true, order: toCustomerView(existing) });
     }
     return res.json({ exists: false });
   } catch (error: any) {
@@ -1079,13 +1097,32 @@ app.get('/api/orders/check-idempotency/:key', (req, res) => {
 });
 
 // 3. Get single order by id or shortCode
-app.get('/api/orders/:id', (req, res) => {
+// Rastreio público: exige id/código + token secreto do pedido (entregue só a quem fez o pedido)
+app.get('/api/public/orders/:id', rateLimit({ key: 'track', max: 120, windowMs: 60 * 1000 }), (req, res) => {
+  const order = getOrderForTracking(req.params.id, String(req.query.t || ''));
+  if (!order) {
+    return res.status(404).json({ success: false, error: 'Pedido não encontrado.' });
+  }
+  res.json({ success: true, order: toCustomerView(order) });
+});
+
+// Vários pedidos de uma vez (carrinho multi-restaurante). Body: { items: [{ id, t }] }
+app.post('/api/public/orders/lookup', rateLimit({ key: 'track-bulk', max: 60, windowMs: 60 * 1000 }), (req, res) => {
+  const list = Array.isArray(req.body?.items) ? req.body.items.slice(0, 20) : [];
+  const orders = list
+    .map((it: any) => getOrderForTracking(String(it?.id || ''), String(it?.t || '')))
+    .filter(Boolean)
+    .map((o: any) => toCustomerView(o));
+  res.json({ success: true, orders });
+});
+
+app.get('/api/orders/:id', authenticateStaff, requirePermission('can_view_orders'), (req, res) => {
   try {
     const order = getOrderById(req.params.id);
-    if (!order) {
+    if (!order || !canAccessRestaurant(req, order.restaurantSlug)) {
       return res.status(404).json({ success: false, error: 'Pedido não encontrado' });
     }
-    res.json({ success: true, order });
+    res.json({ success: true, order: toStaffView(order) });
   } catch (error: any) {
     console.error('[ORDER ERROR] Erro ao buscar pedido:', error);
     res.status(500).json({ success: false, error: 'Erro ao buscar pedido' });
@@ -1093,16 +1130,22 @@ app.get('/api/orders/:id', (req, res) => {
 });
 
 // 4. Create new order transactionally with server-side validation, idempotency & persistence
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', publicWriteLimiter, optionalStaffAuth, (req, res) => {
   try {
     const payload = req.body;
+    const isStaff = Boolean(req.userSession);
+    if (isStaff && !canAccessRestaurant(req, String(payload?.restaurantSlug || ''))) {
+      return res.status(403).json({ success: false, error: 'Seu usuário não tem acesso a este restaurante.' });
+    }
     const authCust = getAuthenticatedCustomer(req);
     if (authCust && !payload.customerId) {
       payload.customerId = authCust.id;
       if (!payload.customerName) payload.customerName = authCust.name;
       if (!payload.customerPhone) payload.customerPhone = authCust.phone;
     }
-    const result = createOrderTransactional(payload);
+    // Um cliente jamais define o id de outro cliente
+    if (!authCust) delete payload.customerId;
+    const result = createOrderTransactional(payload, { isStaff });
 
     // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
     broadcastOrdersUpdate('order_created', result.order);
@@ -1113,7 +1156,8 @@ app.post('/api/orders', (req, res) => {
     res.status(result.deduplicated ? 200 : 201).json({
       success: true,
       deduplicated: result.deduplicated,
-      order: result.order,
+      // quem criou o pedido recebe o trackingToken; colaboradores recebem a visão de staff
+      order: isStaff ? toStaffView(result.order) : result.order,
       message: result.deduplicated
         ? 'Pedido recuperado com sucesso (idempotente)'
         : 'Pedido salvo com sucesso no banco de dados',
@@ -1128,7 +1172,7 @@ app.post('/api/orders', (req, res) => {
 });
 
 // 5. Update Order Status with strict progression (recebido -> em_preparo -> pronto -> saiu_para_entrega -> entregue)
-app.patch('/api/orders/:id/status', (req, res) => {
+app.patch('/api/orders/:id/status', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
   try {
     const { status, note, operatorName, operatorRole } = req.body as {
       status: OrderStatus;
@@ -1149,8 +1193,8 @@ app.patch('/api/orders/:id/status', (req, res) => {
 
     // Audit trail log
     logAuditAction({
-      userName: operatorName || 'Operador',
-      userRole: operatorRole || 'painel',
+      userName: req.userSession?.name || operatorName || 'Operador',
+      userRole: req.userSession?.role || operatorRole || 'painel',
       action: `Alterou status do pedido ${updated.shortCode} para [${status.toUpperCase()}]`,
       details: note || `Transição para ${status}`,
       category: 'order',
@@ -1165,7 +1209,7 @@ app.patch('/api/orders/:id/status', (req, res) => {
 
 // 5b. Update Order Station Status (KDS Praças: Bar, Cozinha, SushiBar)
 // RECEBIDO -> EM PREPARO -> PEDIDO FEITO
-app.patch('/api/orders/:id/station-status', (req, res) => {
+app.patch('/api/orders/:id/station-status', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
   try {
     const { station, status, operatorName, operatorRole } = req.body as {
       station: ProductionStation;
@@ -1191,8 +1235,8 @@ app.patch('/api/orders/:id/station-status', (req, res) => {
 
     // Audit log
     logAuditAction({
-      userName: operatorName || `Operador ${station.toUpperCase()}`,
-      userRole: operatorRole || station,
+      userName: req.userSession?.name || operatorName || `Operador ${station.toUpperCase()}`,
+      userRole: req.userSession?.role || operatorRole || station,
       action: `Praça [${station.toUpperCase()}] atualizada para [${status.toUpperCase()}] no pedido ${updated.shortCode}`,
       details: `Status geral do pedido: ${updated.status}`,
       category: 'order',
@@ -1206,7 +1250,7 @@ app.patch('/api/orders/:id/station-status', (req, res) => {
 });
 
 // 5c. Append Items to Table Order (Garçom + Cliente synchronization on same table)
-app.post('/api/orders/table/append', (req, res) => {
+app.post('/api/orders/table/append', publicWriteLimiter, optionalStaffAuth, (req, res) => {
   try {
     const {
       tableNumber,
@@ -1229,15 +1273,15 @@ app.post('/api/orders/table/append', (req, res) => {
 
     const result = appendItemsToTableOrderTransactional({
       tableNumber,
-      restaurantSlug: restaurantSlug || 'japones',
+      restaurantSlug: String(restaurantSlug || ''),
       restaurantName,
       items,
       customerName,
       customerPhone,
-      waiterName,
+      waiterName: req.userSession ? (waiterName || req.userSession.name) : undefined,
       tableSessionId,
       idempotencyKey,
-    });
+    }, { isStaff: Boolean(req.userSession) });
 
     // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
     broadcastOrdersUpdate(result.isNew ? 'order_created' : 'table_items_appended', result.order);
@@ -1257,7 +1301,7 @@ app.post('/api/orders/table/append', (req, res) => {
     res.status(result.isNew ? 201 : 200).json({
       success: true,
       isNew: result.isNew,
-      order: result.order,
+      order: req.userSession ? toStaffView(result.order) : result.order,
       message: result.isNew ? 'Pedido aberto para a mesa' : 'Itens adicionados com sucesso ao pedido da mesa',
     });
   } catch (error: any) {
@@ -1267,7 +1311,7 @@ app.post('/api/orders/table/append', (req, res) => {
 });
 
 // 5d. Close Table Order & Free Table (Fechamento de Conta do Garçom / Salão)
-app.post('/api/orders/:id/close-table', (req, res) => {
+app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
   try {
     const {
       tableNumber,
@@ -1323,7 +1367,7 @@ app.post('/api/orders/:id/close-table', (req, res) => {
 });
 
 // 6. Update Thermal Ticket Print Status
-app.patch('/api/orders/:id/print', (req, res) => {
+app.patch('/api/orders/:id/print', authenticateStaff, requirePermission('can_view_orders'), (req, res) => {
   try {
     const { printStatus } = req.body as { printStatus: 'pendente' | 'imprimindo' | 'impresso' };
     const updated = updateOrderPrintStatusTransactional(req.params.id, printStatus);
@@ -1335,7 +1379,7 @@ app.patch('/api/orders/:id/print', (req, res) => {
 });
 
 // 7. Update/Transfer Order Table
-app.patch('/api/orders/:id/table', (req, res) => {
+app.patch('/api/orders/:id/table', authenticateStaff, requirePermission('can_edit_orders'), (req, res) => {
   try {
     const { tableNumber } = req.body as { tableNumber: number };
     if (!tableNumber || typeof tableNumber !== 'number') {
@@ -1351,9 +1395,9 @@ app.patch('/api/orders/:id/table', (req, res) => {
 });
 
 // 7. Delete single order
-app.delete('/api/orders/:id', (req, res) => {
+app.delete('/api/orders/:id', authenticateStaff, requireRole('super_admin'), (req, res) => {
   try {
-    const operatorName = (req.query.operatorName as string) || 'Administrador';
+    const operatorName = (req.query.operatorName as string) || req.userSession?.name || 'Administrador';
     const deleted = deleteOrderTransactional(req.params.id);
     if (!deleted) {
       return res.status(404).json({ success: false, error: 'Pedido não encontrado' });
@@ -1375,7 +1419,7 @@ app.delete('/api/orders/:id', (req, res) => {
 });
 
 // 8. Clear history (finished or all)
-app.post('/api/orders/clear-history', (req, res) => {
+app.post('/api/orders/clear-history', authenticateStaff, requireRole('super_admin'), (req, res) => {
   try {
     const { slug, mode, operatorName } = req.body as { slug?: string; mode?: 'finished' | 'all'; operatorName?: string };
     const removedCount = clearOrdersTransactional(slug, mode);
@@ -1383,7 +1427,7 @@ app.post('/api/orders/clear-history', (req, res) => {
     broadcastOrdersUpdate('history_cleared', { mode, slug });
 
     logAuditAction({
-      userName: operatorName || 'Administrador',
+      userName: operatorName || req.userSession?.name || 'Administrador',
       userRole: 'super_admin',
       action: `Limpou histórico de pedidos (${removedCount} pedidos removidos - modo: ${mode || 'finished'})`,
       category: 'order',
@@ -1396,20 +1440,12 @@ app.post('/api/orders/clear-history', (req, res) => {
 });
 
 // 9. MASTER RESET OF ORDERS (Super-Admin only, requires typed phrase "RESETAR PEDIDOS")
-app.post('/api/orders/master-reset', (req, res) => {
+app.post('/api/orders/master-reset', authenticateStaff, requireRole('super_admin'), (req, res) => {
   try {
-    const { confirmation, operatorName, operatorRole } = req.body as {
+    const { confirmation, operatorName } = req.body as {
       confirmation: string;
       operatorName?: string;
-      operatorRole?: string;
     };
-
-    if (operatorRole && operatorRole !== 'super_admin') {
-      return res.status(403).json({
-        success: false,
-        error: 'Acesso negado: Apenas SUPER ADMIN / ADMIN MASTER pode executar o Reset Mestre de Pedidos.',
-      });
-    }
 
     if (confirmation !== 'RESETAR PEDIDOS') {
       return res.status(400).json({
@@ -1418,12 +1454,13 @@ app.post('/api/orders/master-reset', (req, res) => {
       });
     }
 
-    const result = masterResetOrdersTransactional(operatorName || 'SUPER ADMIN');
+    const opName = operatorName || req.userSession?.name || 'SUPER ADMIN';
+    const result = masterResetOrdersTransactional(opName);
 
     broadcastOrdersUpdate('master_reset', result);
 
     logAuditAction({
-      userName: operatorName || 'Super Admin',
+      userName: opName,
       userRole: 'super_admin',
       action: `[RESET MESTRE] Apagou permanentemente ${result.count} pedidos e histórico`,
       details: `Restaurantes afetados: ${result.affectedRestaurants.join(', ') || 'Nenhum'}. Clientes e cardápio preservados.`,
@@ -1445,7 +1482,7 @@ app.post('/api/orders/master-reset', (req, res) => {
 
 // 10. Multi-Restaurant Batch Order Creation
 // Creates independent orders per restaurant from unified customer cart
-app.post('/api/orders/batch', (req, res) => {
+app.post('/api/orders/batch', publicWriteLimiter, optionalStaffAuth, (req, res) => {
   try {
     const { ordersPayloads } = req.body as { ordersPayloads: any[] };
 
@@ -1453,9 +1490,14 @@ app.post('/api/orders/batch', (req, res) => {
       return res.status(400).json({ success: false, error: 'Lista de pedidos para processamento é obrigatória.' });
     }
 
+    if (ordersPayloads.length > 10) {
+      return res.status(400).json({ success: false, error: 'Máximo de 10 pedidos por lote.' });
+    }
+    const isStaffBatch = Boolean(req.userSession);
     const createdOrders = [];
     for (const payload of ordersPayloads) {
-      const result = createOrderTransactional(payload);
+      if (!isStaffBatch) delete payload.customerId;
+      const result = createOrderTransactional(payload, { isStaff: isStaffBatch });
       createdOrders.push(result.order);
       broadcastOrdersUpdate('order_created', result.order);
       syncOrderToSupabase(result.order).catch(() => {});
@@ -1477,7 +1519,7 @@ app.post('/api/orders/batch', (req, res) => {
 // PASSWORD RECOVERY API
 // ==========================================
 
-app.post('/api/auth/forgot-password', (req, res) => {
+app.post('/api/auth/forgot-password', resetLimiter, (req, res) => {
   try {
     const { channel, identifier } = req.body as { channel: 'email' | 'whatsapp'; identifier: string };
     if (!identifier) {
@@ -1491,14 +1533,14 @@ app.post('/api/auth/forgot-password', (req, res) => {
   }
 });
 
-app.post('/api/auth/reset-password', (req, res) => {
+app.post('/api/auth/reset-password', resetLimiter, (req, res) => {
   try {
     const { token, newPassword } = req.body as { token: string; newPassword: string };
     if (!token || !newPassword) {
       return res.status(400).json({ success: false, error: 'Código de validação e nova senha são obrigatórios.' });
     }
 
-    const result = confirmPasswordReset(token, newPassword);
+    const result = confirmPasswordReset(token, newPassword, req.body?.identifier);
     if (!result.success) {
       return res.status(400).json(result);
     }
@@ -1512,29 +1554,45 @@ app.post('/api/auth/reset-password', (req, res) => {
 // AUTHENTICATION & SESSIONS API
 // ==========================================
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authLimiter, (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) {
+    const { username, password } = req.body || {};
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
       return res.status(400).json({ success: false, error: 'Login e senha são obrigatórios.' });
     }
 
+    const lockKey = `${String(username).toLowerCase().trim()}|${getClientIp(req)}`;
+    const lock = checkLoginLock(lockKey);
+    if (lock.locked) {
+      res.setHeader('Retry-After', String(lock.retryAfterSeconds));
+      return res.status(429).json({
+        success: false,
+        error: `Muitas tentativas incorretas. Tente novamente em ${Math.ceil(lock.retryAfterSeconds / 60)} min.`,
+        code: 'LOGIN_LOCKED',
+      });
+    }
+
     const user = findUserByUsername(username);
-    if (!user) {
-      return res.status(401).json({ success: false, error: 'Credenciais inválidas.' });
+    // Mesma resposta para usuário inexistente, inativo ou senha errada (sem enumeração de contas)
+    const invalid = () => {
+      registerLoginFailure(lockKey);
+      return res.status(401).json({ success: false, error: 'Login ou senha inválidos.' });
+    };
+    if (!user || !user.isActive) {
+      return invalid();
+    }
+    if (!verifyPassword(password, user.passwordHash, user.passwordSalt)) {
+      logAuditAction({ userName: user.name, userRole: user.role, action: `Tentativa de login falhou (@${user.username})`, details: `IP ${getClientIp(req)}`, category: 'user' });
+      return invalid();
     }
 
-    if (!user.isActive) {
-      return res.status(403).json({ success: false, error: 'Este usuário está inativo ou bloqueado.' });
-    }
-
-    const isValid = verifyPassword(password, user.passwordHash, user.passwordSalt, user.username);
-    if (!isValid) {
-      return res.status(401).json({ success: false, error: 'Senha incorreta.' });
+    clearLoginFailures(lockKey);
+    if (needsPasswordRehash(user.passwordHash)) {
+      upgradeUserPasswordHash(user.id, password);
     }
 
     const { passwordHash, passwordSalt, ...safeUser } = user;
-    const sessionToken = `tokio-sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const sessionToken = createUserSession(user.id);
 
     logAuditAction({
       userName: user.name,
@@ -1543,22 +1601,37 @@ app.post('/api/auth/login', (req, res) => {
       category: 'user',
     });
 
-    res.json({
-      success: true,
-      user: safeUser,
-      token: sessionToken,
-    });
+    res.json({ success: true, user: safeUser, token: sessionToken });
   } catch (error: any) {
     console.error('[AUTH ERROR]:', error);
     res.status(500).json({ success: false, error: 'Erro ao autenticar usuário.' });
   }
 });
 
+// Valida a sessão atual (usado pelo painel ao recarregar a página)
+app.get('/api/auth/me', authenticateStaff, (req, res) => {
+  const u = req.userSession!;
+  res.json({ success: true, user: u });
+});
+
+// Staff Logout (Revoke active session token)
+app.post('/api/auth/staff-logout', (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      revokeUserSession(authHeader.replace('Bearer ', '').trim());
+    }
+    res.json({ success: true, message: 'Sessão de colaborador encerrada com sucesso.' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ==========================================
-// USERS & ROLES MANAGEMENT API
+// USERS & ROLES MANAGEMENT API (Super Admin Exclusive)
 // ==========================================
 
-app.get('/api/users', (req, res) => {
+app.get('/api/users', authenticateStaff, requireRole('super_admin'), (req, res) => {
   try {
     const users = getAllUsers();
     res.json({ success: true, users });
@@ -1567,7 +1640,7 @@ app.get('/api/users', (req, res) => {
   }
 });
 
-app.post('/api/users', (req, res) => {
+app.post('/api/users', authenticateStaff, requireRole('super_admin'), (req, res) => {
   try {
     const { name, username, password, role, restaurantSlug, customPermissions, operatorName } = req.body;
     if (!name || !username || !password || !role) {
@@ -1581,7 +1654,7 @@ app.post('/api/users', (req, res) => {
       role,
       restaurantSlug,
       customPermissions,
-      operatorName,
+      operatorName: operatorName || req.userSession?.name,
     });
 
     res.status(201).json({ success: true, user: newUser });
@@ -1590,28 +1663,55 @@ app.post('/api/users', (req, res) => {
   }
 });
 
-app.put('/api/users/:id', (req, res) => {
+app.put('/api/users/:id', authenticateStaff, requireRole('super_admin'), (req, res) => {
   try {
-    const { name, role, restaurantSlug, isActive, permissions, newPassword, operatorName } = req.body;
+    const { name, role, restaurantSlug, restaurantAccess, isActive, permissions, newPassword, password, operatorName } = req.body;
     const updated = updateUser(req.params.id, {
       name,
       role,
-      restaurantSlug,
+      restaurantSlug: restaurantSlug || restaurantAccess,
       isActive,
       permissions,
-      newPassword,
-      operatorName,
+      newPassword: newPassword || password,
+      operatorName: operatorName || req.userSession?.name,
     });
+    // Troca de senha, desativação ou mudança de função encerram as sessões abertas desse usuário
+    if (newPassword || password || isActive === false || role) {
+      revokeAllSessionsForUser(req.params.id);
+    }
     res.json({ success: true, user: updated });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
   }
 });
 
-app.delete('/api/users/:id', (req, res) => {
+app.patch('/api/users/:id', authenticateStaff, requireRole('super_admin'), (req, res) => {
   try {
-    const operatorName = (req.query.operatorName as string) || 'Administrador';
+    const { name, role, restaurantSlug, restaurantAccess, isActive, permissions, newPassword, password, operatorName } = req.body;
+    const updated = updateUser(req.params.id, {
+      name,
+      role,
+      restaurantSlug: restaurantSlug || restaurantAccess,
+      isActive,
+      permissions,
+      newPassword: newPassword || password,
+      operatorName: operatorName || req.userSession?.name,
+    });
+    // Troca de senha, desativação ou mudança de função encerram as sessões abertas desse usuário
+    if (newPassword || password || isActive === false || role) {
+      revokeAllSessionsForUser(req.params.id);
+    }
+    res.json({ success: true, user: updated });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/users/:id', authenticateStaff, requireRole('super_admin'), (req, res) => {
+  try {
+    const operatorName = (req.query.operatorName as string) || req.userSession?.name || 'Administrador';
     const deleted = deleteUser(req.params.id, operatorName);
+    if (deleted) revokeAllSessionsForUser(req.params.id);
     if (!deleted) {
       return res.status(404).json({ success: false, error: 'Usuário não encontrado.' });
     }
@@ -1625,7 +1725,7 @@ app.delete('/api/users/:id', (req, res) => {
 // CONNECTED DEVICES (MOBILE RECEIVERS) API
 // ==========================================
 
-app.get('/api/devices', (req, res) => {
+app.get('/api/devices', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
     const devices = getAllDevices();
     res.json({ success: true, devices });
@@ -1634,7 +1734,7 @@ app.get('/api/devices', (req, res) => {
   }
 });
 
-app.get('/api/devices/new-pairing-code', (req, res) => {
+app.get('/api/devices/new-pairing-code', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
     const code = generatePairingCode();
     res.json({ success: true, code });
@@ -1643,7 +1743,7 @@ app.get('/api/devices/new-pairing-code', (req, res) => {
   }
 });
 
-app.post('/api/devices/pair', (req, res) => {
+app.post('/api/devices/pair', authLimiter, (req, res) => {
   try {
     const { pairingCode, deviceName, platform, soundType, volume } = req.body;
     if (!pairingCode) {
@@ -1664,7 +1764,7 @@ app.post('/api/devices/pair', (req, res) => {
   }
 });
 
-app.post('/api/devices/ping', (req, res) => {
+app.post('/api/devices/ping', rateLimit({ key: 'dev-ping', max: 120, windowMs: 60 * 1000 }), (req, res) => {
   try {
     const { idOrCode } = req.body;
     if (!idOrCode) {
@@ -1677,7 +1777,7 @@ app.post('/api/devices/ping', (req, res) => {
   }
 });
 
-app.patch('/api/devices/:id', (req, res) => {
+app.patch('/api/devices/:id', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
     const updated = updateDeviceSettings(req.params.id, req.body);
     res.json({ success: true, device: updated });
@@ -1686,9 +1786,9 @@ app.patch('/api/devices/:id', (req, res) => {
   }
 });
 
-app.delete('/api/devices/:id', (req, res) => {
+app.delete('/api/devices/:id', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
-    const operatorName = (req.query.operatorName as string) || 'Administrador';
+    const operatorName = (req.query.operatorName as string) || req.userSession?.name || 'Administrador';
     const disconnected = disconnectDevice(req.params.id, operatorName);
     if (!disconnected) {
       return res.status(404).json({ success: false, error: 'Dispositivo não encontrado.' });
@@ -1703,7 +1803,7 @@ app.delete('/api/devices/:id', (req, res) => {
 // AUDIT LOGS API
 // ==========================================
 
-app.get('/api/audit-logs', (req, res) => {
+app.get('/api/audit-logs', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
     const limit = Number(req.query.limit) || 100;
     const logs = getAuditLogs(limit);
@@ -1713,17 +1813,17 @@ app.get('/api/audit-logs', (req, res) => {
   }
 });
 
-app.post('/api/audit-logs', (req, res) => {
+app.post('/api/audit-logs', authenticateStaff, (req, res) => {
   try {
-    const { userName, userRole, action, details, category } = req.body;
+    const { action, details, category } = req.body;
     if (!action) {
       return res.status(400).json({ success: false, error: 'Ação é obrigatória.' });
     }
     logAuditAction({
-      userName: userName || 'Painel Admin',
-      userRole: userRole || 'staff',
-      action,
-      details,
+      userName: req.userSession!.name,
+      userRole: req.userSession!.role,
+      action: String(action).slice(0, 300),
+      details: details ? String(details).slice(0, 1000) : undefined,
       category: category || 'system',
     });
     res.json({ success: true });
@@ -1732,20 +1832,174 @@ app.post('/api/audit-logs', (req, res) => {
   }
 });
 
+// ==========================================
+// CATÁLOGO (cardápio, restaurantes, categorias) — fonte única no servidor
+// ==========================================
+
+// Público: só o que o cliente precisa ver (sem custos, ficha técnica ou dados fiscais)
+app.get('/api/public/catalog', (req, res) => {
+  const etag = getCatalogEtag();
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.headers['if-none-match'] === etag) {
+    return res.status(304).end();
+  }
+  res.json({ success: true, ...getPublicCatalog() });
+});
+
+// Painel: catálogo completo
+app.get('/api/catalog', authenticateStaff, (req, res) => {
+  const etag = `${getCatalogEtag()}-${req.userSession!.permissions?.can_view_menu ? 'f' : 'p'}`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'private, no-cache');
+  if (req.headers['if-none-match'] === etag) {
+    return res.status(304).end();
+  }
+  // Perfis sem permissão de ver o cardápio interno (ex.: entregador) recebem só a versão pública
+  if (req.userSession!.role !== 'super_admin' && !req.userSession!.permissions?.can_view_menu) {
+    return res.json({ success: true, ...getPublicCatalog() });
+  }
+  const c = getCatalog();
+  const scope = resolveScopedSlug(req);
+  if (scope) {
+    // Colaborador vinculado a um restaurante só recebe o próprio
+    return res.json({
+      success: true,
+      version: c.version,
+      restaurants: c.restaurants[scope] ? { [scope]: c.restaurants[scope] } : {},
+      categories: c.categories.filter((x: any) => x.restaurantSlug === scope),
+      menuItems: c.menuItems.filter((x: any) => x.restaurantSlug === scope),
+      coupons: [],
+    });
+  }
+  res.json({ success: true, ...c });
+});
+
+app.put('/api/catalog', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
+  try {
+    const body = req.body || {};
+    const scope = resolveScopedSlug(req);
+    let input = body;
+
+    if (scope) {
+      // Usuário de um restaurante só altera o próprio: mescla com o restante já salvo
+      const cur = getCatalog();
+      input = {
+        restaurants: { ...cur.restaurants, ...(body.restaurants?.[scope] ? { [scope]: body.restaurants[scope] } : {}) },
+        categories: [
+          ...cur.categories.filter((x: any) => x.restaurantSlug !== scope),
+          ...(Array.isArray(body.categories) ? body.categories.filter((x: any) => x.restaurantSlug === scope) : []),
+        ],
+        menuItems: [
+          ...cur.menuItems.filter((x: any) => x.restaurantSlug !== scope),
+          ...(Array.isArray(body.menuItems) ? body.menuItems.filter((x: any) => x.restaurantSlug === scope) : []),
+        ],
+        coupons: cur.coupons,
+      };
+    } else if (req.userSession!.role !== 'super_admin') {
+      // Administrador (não-super) não altera cupons
+      input = { ...body, coupons: getCatalog().coupons };
+    }
+
+    const result = saveCatalog(input, req.userSession!.name);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    logAuditAction({
+      userName: req.userSession!.name,
+      userRole: req.userSession!.role,
+      action: `Catálogo atualizado (versão ${result.version})`,
+      category: 'system',
+    });
+    res.json(result);
+  } catch (error: any) {
+    console.error('[CATALOG ERROR]:', error);
+    res.status(500).json({ success: false, error: 'Falha ao salvar o catálogo.' });
+  }
+});
+
+// ==========================================
+// DIAGNÓSTICO REAL DE SEGURANÇA/CONFIGURAÇÃO (substitui checagens fixas "OK")
+// ==========================================
+app.get('/api/admin/system-audit', ...adminOnly, (req, res) => {
+  type Check = { id: string; label: string; status: 'ok' | 'warn' | 'fail'; detail: string };
+  const checks: Check[] = [];
+  const add = (id: string, label: string, status: Check['status'], detail: string) => checks.push({ id, label, status, detail });
+
+  add('production', 'Modo de execução', IS_PRODUCTION ? 'ok' : 'warn', IS_PRODUCTION ? 'NODE_ENV=production' : 'Executando em modo de desenvolvimento.');
+
+  const defaults = listUsersWithDefaultPassword();
+  add('default-passwords', 'Contas com senha padrão', defaults.length === 0 ? 'ok' : 'fail',
+    defaults.length === 0 ? 'Nenhuma conta ativa usa senha padrão conhecida.' : `Troque a senha de: ${defaults.join(', ')}.`);
+
+  add('admin-password', 'ADMIN_PASSWORD definida', process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD.length >= 8 ? 'ok' : 'warn',
+    process.env.ADMIN_PASSWORD ? 'Definida no ambiente.' : 'Ausente: a senha inicial do admin foi gerada/definida no primeiro boot.');
+
+  const cors = (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+  add('cors', 'CORS restrito', 'ok', cors.length ? `Origens permitidas: ${cors.join(', ')}` : 'Somente mesma origem (recomendado quando cardápio e painel usam o mesmo domínio).');
+
+  add('public-orders', 'Listagem de pedidos protegida', 'ok', 'GET /api/orders, stream e alterações exigem login de colaborador.');
+  add('server-pricing', 'Preço validado no servidor', 'ok', 'Pedidos são recalculados a partir do catálogo do servidor.');
+
+  const fiscalKey = process.env.FISCAL_ENCRYPTION_KEY;
+  add('fiscal-key', 'Chave do cofre de certificados', fiscalKey && fiscalKey.length >= 24 ? 'ok' : (IS_PRODUCTION ? 'fail' : 'warn'),
+    fiscalKey && fiscalKey.length >= 24 ? 'Configurada.' : 'Defina FISCAL_ENCRYPTION_KEY (mín. 24 caracteres).');
+  add('fiscal-real', 'Integração real com a SEFAZ', 'fail', 'Não implementada: em produção a emissão fiscal é recusada. Use provedor fiscal ou homologação.');
+  add('print-agent-key', 'Chave do agente de impressão', process.env.PRINT_AGENT_KEY ? 'ok' : 'warn', process.env.PRINT_AGENT_KEY ? 'Configurada.' : 'Sem PRINT_AGENT_KEY: apenas usuários logados acessam a fila de impressão.');
+  add('gemini', 'IA (Gemini)', process.env.GEMINI_API_KEY ? 'ok' : 'warn', process.env.GEMINI_API_KEY ? 'Chave configurada.' : 'Sem chave: recursos de IA usam respostas locais.');
+  add('cloudinary', 'Upload de imagens (Cloudinary)', isCloudinaryConfigured() ? 'ok' : 'warn', isCloudinaryConfigured() ? 'Configurado.' : 'Não configurado.');
+  add('supabase', 'Backup em Supabase', isSupabaseConfigured() ? 'ok' : 'warn', isSupabaseConfigured() ? 'Configurado (cópia de pedidos).' : 'Não configurado: dados só em arquivos locais do servidor.');
+  add('persistence', 'Persistência em disco', 'warn', `Dados em ${path.join(process.cwd(), 'data')}. Em hospedagens com disco efêmero (ex.: Render sem Persistent Disk) eles se perdem a cada deploy.`);
+
+  const cat = getCatalog();
+  add('catalog', 'Catálogo no servidor', 'ok', `Versão ${cat.version}: ${Object.keys(cat.restaurants).length} restaurante(s), ${cat.menuItems.length} itens.`);
+  add('users', 'Usuários ativos', countActiveUsers() > 0 ? 'ok' : 'fail', `${countActiveUsers()} usuário(s) ativo(s).`);
+
+  res.json({ success: true, generatedAt: new Date().toISOString(), checks });
+});
+
+// ==========================================
+// FISCAL MODULE API (NFC-e, NF-e, CERTIFICADOS, CÁLCULO TRIBUTÁRIO)
+// ==========================================
+import { fiscalRouter } from './server/fiscal/fiscalRoutes';
+app.use('/api/fiscal', fiscalRouter);
+
+// Áreas internas (equipe) são servidas por um aplicativo SEPARADO (painel.html).
+// Tudo o mais é o cardápio do cliente (index.html). Comparação por 1º segmento exato do caminho,
+// então um restaurante chamado "BarDoZe" nunca cai no painel.
+const STAFF_PATH_RE = /^\/(painelrestaurante|painel|admin|cozinha|bar|drinks|sushibar|pdv|garcom|mesas|salao|caixa|balcao|delivery|kanban|entregador|courier)(\/|$)/i;
+
 async function startServer() {
-  // Vite middleware in development
+  // Falha rápido se os dados estiverem inconsistentes (em vez de subir com dados de exemplo)
+  initializeCatalog();
+  initializeOrders();
+  countActiveUsers(); // inicializa usuários e aplica a migração de senhas padrão
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: 'spa',
+      appType: 'custom',
     });
     app.use(vite.middlewares);
+    app.get('*', async (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
+      try {
+        const isStaff = STAFF_PATH_RE.test(req.path) || req.path === '/painel.html';
+        let html = fs.readFileSync(path.join(process.cwd(), isStaff ? 'painel.html' : 'index.html'), 'utf-8');
+        html = await vite.transformIndexHtml(req.originalUrl, html);
+        if (isStaff) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
-    // In production, serve static files from dist with aggressive caching on hashed assets
     const distPath = path.join(process.cwd(), 'dist');
     app.use(
       express.static(distPath, {
         maxAge: '7d',
+        index: false,
         setHeaders: (res, filePath) => {
           if (filePath.endsWith('.html')) {
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -1757,13 +2011,25 @@ async function startServer() {
     );
     app.get('*', (req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      if (STAFF_PATH_RE.test(req.path) || req.path === '/painel.html') {
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        return res.sendFile(path.join(distPath, 'painel.html'));
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Tokio inBox server running on http://0.0.0.0:${PORT}`);
+    console.log(`NEXORO server running on http://0.0.0.0:${PORT}`);
   });
 }
 
-startServer();
+// Rotas /api inexistentes devolvem JSON 404 (nunca o HTML do app)
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, error: 'Rota não encontrada.' });
+});
+
+startServer().catch((err) => {
+  console.error('[FATAL] Falha ao iniciar o servidor:', err.message);
+  process.exit(1);
+});

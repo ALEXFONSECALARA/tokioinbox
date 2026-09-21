@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Dados de execução (pedidos, usuários, sessões, certificados fiscais, catálogo).
+# NUNCA versionar: contêm dados pessoais, hashes de senha e certificados.
+data/*
+!data/.gitkeep
