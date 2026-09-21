@@ -30,26 +30,33 @@ type CustomerView = 'home' | 'menu' | 'client_table';
 // Primeiros segmentos de caminho que NÃO são restaurantes
 const RESERVED_SEGMENTS = new Set(['login', 'cadastro', 'minha-conta', 'meus-pedidos', 'pedido', 'mesa', 'restaurantes', 'api', 'assets']);
 
-function parseTableFromLocation(): { table: number; restaurantSegment?: string } | null {
+function parseTableFromLocation(): { table: number; restaurantSegment?: string; accessToken?: string } | null {
   if (typeof window === 'undefined') return null;
   const path = window.location.pathname;
   const pathMatch = path.match(/^\/(?:([^/]+)\/)?mesa\/(\d+)/i);
   if (pathMatch) {
     const table = parseInt(pathMatch[2], 10);
-    if (table > 0) return { table, restaurantSegment: pathMatch[1] };
+    if (table > 0) {
+      try {
+        const token = new URLSearchParams(window.location.search).get('mesa_token') || undefined;
+        return { table, restaurantSegment: pathMatch[1], accessToken: token };
+      } catch {
+        return { table, restaurantSegment: pathMatch[1] };
+      }
+    }
   }
   try {
     const params = new URLSearchParams(window.location.search);
     const val = params.get('mesa') || params.get('table');
     if (val) {
       const num = parseInt(val, 10);
-      if (!isNaN(num) && num > 0) return { table: num, restaurantSegment: params.get('r') || undefined };
+      if (!isNaN(num) && num > 0) return { table: num, restaurantSegment: params.get('r') || undefined, accessToken: params.get('mesa_token') || undefined };
     }
   } catch {
     /* ignore */
   }
   const hashMatch = window.location.hash.toLowerCase().match(/(?:mesa|table)[=/](\d+)/);
-  if (hashMatch) return { table: parseInt(hashMatch[1], 10) };
+  if (hashMatch) return { table: parseInt(hashMatch[1], 10), accessToken: undefined };
   return null;
 }
 
@@ -57,8 +64,10 @@ export function CustomerApp() {
   const { restaurants, currentRestaurant, setActiveRestaurantSlug, cartItemCount, cartTotal } = useStore();
 
   const initialTable = useRef(parseTableFromLocation()).current;
-  const [view, setView] = useState<CustomerView>(initialTable ? 'client_table' : 'home');
+  const hasSignedTableEntry = Boolean(initialTable?.table && initialTable?.accessToken && initialTable?.restaurantSegment);
+  const [view, setView] = useState<CustomerView>(hasSignedTableEntry ? 'client_table' : 'home');
   const [clientTableNumber] = useState<number>(initialTable?.table || 1);
+  const [clientTableAccessToken] = useState<string | undefined>(initialTable?.accessToken);
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -143,8 +152,8 @@ export function CustomerApp() {
   };
 
   // Pedido feito pelo QR Code da mesa
-  if (view === 'client_table') {
-    return <ClienteModule tableNumber={clientTableNumber} onExitToHome={goHome} />;
+  if (view === 'client_table' && hasSignedTableEntry) {
+    return <ClienteModule tableNumber={clientTableNumber} tableAccessToken={clientTableAccessToken} onExitToHome={goHome} />;
   }
 
   const restaurantNames = Object.values(restaurants)
@@ -177,7 +186,7 @@ export function CustomerApp() {
           <HomeHub onSelectRestaurant={handleSelectRestaurant} onOpenTracker={openTracker} />
         ) : (
           <div className="space-y-6">
-            <RestaurantHeader />
+            <RestaurantHeader allowTableOrders={hasSignedTableEntry} />
             <MenuSection onSelectProduct={(item) => setSelectedProduct(item)} />
           </div>
         )}
