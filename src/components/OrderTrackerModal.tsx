@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, OrderStatus } from '../types/restaurant';
 import {
@@ -15,6 +15,12 @@ import {
   UtensilsCrossed,
   Receipt,
   Store,
+  Copy,
+  Check,
+  ExternalLink,
+  FileCode,
+  FileText,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface OrderTrackerModalProps {
@@ -67,6 +73,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
 }) => {
   const { orders, restaurants } = useStore();
   const [searchCode, setSearchCode] = useState('');
+  const [fiscalDoc, setFiscalDoc] = useState<any | null>(null);
+  const [isLoadingFiscal, setIsLoadingFiscal] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   // Current active order to view
   const currentOrder: Order | undefined = defaultOrderId
@@ -80,6 +89,44 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     : orders[0]; // defaults to most recent order
 
   const restaurant = currentOrder ? restaurants[currentOrder.restaurantSlug] : null;
+
+  useEffect(() => {
+    if (!currentOrder?.id) {
+      setFiscalDoc(null);
+      return;
+    }
+    let isMounted = true;
+    setIsLoadingFiscal(true);
+    fetch(`/api/fiscal/public-order/${encodeURIComponent(currentOrder.id)}?t=${encodeURIComponent(currentOrder.trackingToken || '')}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted) {
+          if (data.success && data.hasFiscalDoc) {
+            setFiscalDoc(data.document);
+          } else {
+            setFiscalDoc(null);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Erro ao consultar NFC-e do pedido:', err);
+        if (isMounted) setFiscalDoc(null);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingFiscal(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentOrder?.id]);
+
+  const handleCopyKey = () => {
+    if (!fiscalDoc?.accessKey) return;
+    navigator.clipboard?.writeText(fiscalDoc.accessKey);
+    setCopiedKey(true);
+    setTimeout(() => setCopiedKey(false), 2000);
+  };
 
   const getStepIndex = (status: OrderStatus) => {
     switch (status) {
@@ -315,6 +362,117 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* NFC-e Cupom Fiscal do Consumidor */}
+              {isLoadingFiscal ? (
+                <div className="p-3 bg-slate-950/50 rounded-2xl border border-slate-800 text-center animate-pulse text-xs text-slate-400">
+                  Verificando emissão do Cupom Fiscal (NFC-e)...
+                </div>
+              ) : fiscalDoc ? (
+                <div className="p-4 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/20 border border-emerald-500/30 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                        <Receipt className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                          Cupom Fiscal Eletrônico (NFC-e)
+                          <span className="text-[10px] text-emerald-400 font-mono font-normal">
+                            Mod {fiscalDoc.type || 65}
+                          </span>
+                        </h4>
+                        <p className="text-[10px] text-slate-400">
+                          Série {fiscalDoc.series} • Nº {String(fiscalDoc.number).padStart(6, '0')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                        fiscalDoc.status === 'homologado'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          : fiscalDoc.status === 'contingencia'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                      }`}
+                    >
+                      <ShieldCheck className="w-3 h-3" />
+                      {fiscalDoc.status === 'homologado'
+                        ? 'Autorizada SEFAZ'
+                        : fiscalDoc.status === 'contingencia'
+                        ? 'Contingência'
+                        : 'Cancelada'}
+                    </span>
+                  </div>
+
+                  {/* Chave de Acesso */}
+                  <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+                        Chave de Acesso (44 dígitos)
+                      </span>
+                      <button
+                        onClick={handleCopyKey}
+                        className="text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20 transition-colors"
+                        title="Copiar chave de acesso completa"
+                      >
+                        {copiedKey ? (
+                          <>
+                            <Check className="w-3 h-3" /> Copiado!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" /> Copiar
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <p className="font-mono text-[10px] text-slate-300 select-all break-all leading-tight">
+                      {fiscalDoc.formattedAccessKey || fiscalDoc.accessKey}
+                    </p>
+                  </div>
+
+                  {/* Informações Tributárias & Protocolo */}
+                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                    <div className="p-2 rounded-lg bg-slate-950/40 border border-slate-800/80">
+                      <span className="text-slate-400 block">Protocolo SEFAZ</span>
+                      <span className="font-mono font-bold text-slate-200">
+                        {fiscalDoc.protocol || 'Transmissão em lote'}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-950/40 border border-slate-800/80">
+                      <span className="text-slate-400 block">Tributos Aprox. (Lei 12.741)</span>
+                      <span className="font-bold text-emerald-400">
+                        R$ {Number(fiscalDoc.approximateTaxesTotal || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Botões de Ação */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <a
+                      href={fiscalDoc.danfceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Ver DANFC-e</span>
+                      <ExternalLink className="w-3 h-3 opacity-70" />
+                    </a>
+
+                    <a
+                      href={fiscalDoc.xmlUrl}
+                      download={`NFCe_${fiscalDoc.accessKey}.xml`}
+                      className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 transition-colors"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Baixar XML</span>
+                    </a>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Contact Restaurant */}
               {restaurant && (

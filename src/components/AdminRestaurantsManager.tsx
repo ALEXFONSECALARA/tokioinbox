@@ -250,7 +250,7 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
           </div>
           <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
             Cada restaurante cadastrado possui sua própria URL dedicada HTTP (exemplo:{' '}
-            <code className="text-[#E3BD6A] font-bold">https://tokioinbox.onrender.com/SakuraSushiHouse</code>).
+            <code className="text-[#E3BD6A] font-bold">{window.location.origin}/SakuraSushiHouse</code>).
             Novos restaurantes criados aqui recebem automaticamente um endereço HTTP exclusivo e QR Code para mesas.
           </p>
         </div>

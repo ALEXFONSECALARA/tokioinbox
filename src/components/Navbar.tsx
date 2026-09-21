@@ -9,17 +9,15 @@ import {
   MapPin,
   Utensils,
   ChevronRight,
-  ShieldCheck,
   Search,
   User,
 } from 'lucide-react';
 import { useCustomerAuth } from '../context/CustomerAuthContext';
 
 interface NavbarProps {
-  currentView?: 'home' | 'menu' | 'admin';
-  setCurrentView?: (view: 'home' | 'menu' | 'admin') => void;
+  currentView?: 'home' | 'menu';
+  setCurrentView?: (view: 'home' | 'menu') => void;
   onOpenCart?: () => void;
-  onOpenAdmin?: () => void;
   onOpenTracker?: () => void;
   onNavigateHome?: () => void;
   onOpenAuth?: () => void;
@@ -29,7 +27,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentView = 'home',
   setCurrentView,
   onOpenCart,
-  onOpenAdmin,
   onOpenTracker,
   onNavigateHome,
   onOpenAuth,
@@ -45,39 +42,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const { customer, isAuthenticated } = useCustomerAuth();
 
-  const [logoTapCount, setLogoTapCount] = React.useState(0);
-  const tapTimerRef = React.useRef<any>(null);
-
   const handleGoHome = () => {
     if (onNavigateHome) onNavigateHome();
     if (setCurrentView) setCurrentView('home');
   };
 
-  const handleLogoClick = (e: React.MouseEvent) => {
-    if (e.altKey) {
-      handleGoAdmin();
-      return;
-    }
-    const newCount = logoTapCount + 1;
-    setLogoTapCount(newCount);
-    clearTimeout(tapTimerRef.current);
-    if (newCount >= 3) {
-      setLogoTapCount(0);
-      handleGoAdmin();
-    } else {
-      tapTimerRef.current = setTimeout(() => {
-        setLogoTapCount(0);
-      }, 700);
-      handleGoHome();
-    }
-  };
-
-  const handleGoAdmin = () => {
-    if (onOpenAdmin) {
-      onOpenAdmin();
-    } else if (setCurrentView) {
-      setCurrentView('admin');
-    }
+  // O logo apenas leva à página inicial. Não existe nenhuma porta para áreas internas aqui.
+  const handleLogoClick = () => {
+    handleGoHome();
   };
 
   const handleOpenCart = () => {

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, ProductionStation, StationItemStatus, RestaurantSlug } from '../types/restaurant';
+import { OrderOriginBadge } from './OrderOriginBadge';
+import { OfflineStatusIndicator } from './OfflineStatusIndicator';
 import {
   Beer,
   Utensils,
@@ -225,6 +227,8 @@ export const StationKdsView: React.FC<StationKdsViewProps> = ({
 
         {/* Stats bar */}
         <div className="flex items-center gap-3 flex-wrap">
+          <OfflineStatusIndicator />
+
           <div className="bg-[#181D28] px-4 py-2 rounded-xl border border-slate-800 flex items-center gap-2.5">
             <Timer className="w-4 h-4 text-amber-400" />
             <div>
@@ -284,7 +288,7 @@ export const StationKdsView: React.FC<StationKdsViewProps> = ({
               >
                 {/* Header Card */}
                 <div
-                  className={`p-3.5 border-b flex items-center justify-between ${
+                  className={`p-3.5 border-b flex items-start justify-between gap-2 ${
                     isDelayed
                       ? 'bg-red-950/60 border-red-900/60'
                       : stationStatus === 'em_preparo'
@@ -292,27 +296,25 @@ export const StationKdsView: React.FC<StationKdsViewProps> = ({
                       : 'bg-[#181D28] border-slate-800'
                   }`}
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-black text-white font-mono">
-                        #{order.shortCode}
-                      </span>
-                      <span className="text-[10px] bg-slate-800 text-amber-300 font-black px-2 py-0.5 rounded-lg border border-amber-500/20 uppercase">
-                        {order.orderType === 'mesa'
-                          ? `🍽 MESA ${order.tableNumber}`
-                          : order.orderType === 'balcao'
-                          ? `🥡 BALCÃO #${order.pickupNumber || ''}`
-                          : '🛵 DELIVERY'}
-                      </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="mb-1.5">
+                      <OrderOriginBadge
+                        orderType={order.orderType}
+                        tableNumber={order.tableNumber}
+                        pickupNumber={order.pickupNumber}
+                        shortCode={order.shortCode}
+                        variant="inline"
+                        className="text-xs"
+                      />
                     </div>
-                    <span className="text-xs text-slate-400 font-semibold block truncate mt-0.5">
+                    <span className="text-xs text-slate-300 font-bold block truncate">
                       {order.customerName} {order.waiterName ? `(Garçom: ${order.waiterName})` : ''}
                     </span>
                   </div>
 
                   {/* Timer Badge */}
                   <div
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-mono text-xs font-black border ${
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-mono text-xs font-black border shrink-0 ${
                       isDelayed
                         ? 'bg-red-500 text-white border-red-400 animate-bounce'
                         : 'bg-slate-900 text-slate-300 border-slate-700'

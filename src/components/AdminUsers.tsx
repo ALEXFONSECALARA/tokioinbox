@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 export const AdminUsers: React.FC = () => {
-  const { currentUser, checkPermission, logAction } = useStore();
+  const { currentUser, checkPermission, logAction, restaurants } = useStore();
 
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -48,10 +48,20 @@ export const AdminUsers: React.FC = () => {
 
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const getAuthHeaders = () => {
+    const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
   const fetchUsersList = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/users');
+      const res = await fetch('/api/users', {
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
       if (data.success && Array.isArray(data.users)) {
         setUsers(data.users);
@@ -149,7 +159,7 @@ export const AdminUsers: React.FC = () => {
         // Update user
         const res = await fetch(`/api/users/${editUser.id}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             name,
             username,
@@ -170,7 +180,7 @@ export const AdminUsers: React.FC = () => {
         // Create user
         const res = await fetch('/api/users', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             name,
             username,
@@ -201,7 +211,7 @@ export const AdminUsers: React.FC = () => {
     try {
       const res = await fetch(`/api/users/${user.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ isActive: !user.isActive }),
       });
       if (res.ok) {
@@ -221,7 +231,10 @@ export const AdminUsers: React.FC = () => {
     if (!window.confirm(`Tem certeza que deseja remover o usuário @${user.username}?`)) return;
 
     try {
-      const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
       if (data.success) {
         setStatusMsg({ type: 'success', text: `Usuário @${user.username} excluído.` });
@@ -319,30 +332,16 @@ export const AdminUsers: React.FC = () => {
         </div>
       )}
 
-      {/* Quick Credentials Info Card */}
+      {/* Política de senhas */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
-        <h4 className="text-xs font-bold text-slate-300 flex items-center gap-2 mb-2">
+        <h4 className="text-xs font-bold text-slate-300 flex items-center gap-2 mb-1">
           <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-          <span>Credenciais Padrão Pré-Configuradas para Testes Rápidos:</span>
+          <span>Senhas dos colaboradores</span>
         </h4>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-          <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-            <span className="font-bold text-purple-300 block">Super Admin</span>
-            <code className="text-slate-400">admin / admin123</code>
-          </div>
-          <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-            <span className="font-bold text-blue-300 block">Caixa</span>
-            <code className="text-slate-400">caixa / caixa123</code>
-          </div>
-          <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-            <span className="font-bold text-emerald-300 block">Cozinha</span>
-            <code className="text-slate-400">cozinha / cozinha123</code>
-          </div>
-          <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-            <span className="font-bold text-cyan-300 block">Entregador</span>
-            <code className="text-slate-400">entregador / entrega123</code>
-          </div>
-        </div>
+        <p className="text-[11px] text-slate-400">
+          Cada colaborador deve ter usuário e senha próprios (mínimo 8 caracteres, sem senhas óbvias como
+          "12345678" ou "senha123"). Ao trocar a senha ou desativar um usuário, as sessões abertas dele são encerradas.
+        </p>
       </div>
 
       {/* Users Table */}
@@ -506,6 +505,9 @@ export const AdminUsers: React.FC = () => {
                   >
                     <option value="caixa">Caixa &amp; Atendimento</option>
                     <option value="cozinha">Cozinha &amp; Produção</option>
+                    <option value="sushi_bar">Sushibar</option>
+                    <option value="bar">Bar &amp; Drinks</option>
+                    <option value="garcom">Garçom &amp; Salão</option>
                     <option value="entrega">Entregador &amp; Expedição</option>
                     <option value="administrador">Gerente / Admin</option>
                     <option value="super_admin">Super Administrador</option>
@@ -519,11 +521,12 @@ export const AdminUsers: React.FC = () => {
                     onChange={(e) => setRestaurantAccess(e.target.value as any)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-medium focus:border-amber-500 outline-none"
                   >
-                    <option value="all">Todas as 4 Operações</option>
-                    <option value="japones">Apenas Japonês</option>
-                    <option value="hamburgueria">Apenas Hambúrguer</option>
-                    <option value="pizzaria">Apenas Pizzaria</option>
-                    <option value="brasileiro">Apenas Brasileiro</option>
+                    <option value="all">Todos os restaurantes</option>
+                    {Object.values(restaurants).map((r: any) => (
+                      <option key={r.slug} value={r.slug}>
+                        Apenas {r.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

@@ -44,7 +44,7 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
   const [cloudConfig, setCloudConfig] = useState<{
     cloudinary?: { configured: boolean; cloudName: string | null };
     supabase?: { configured: boolean; url: string | null };
-    corsOrigins?: string;
+    corsOrigins?: string[] | string;
     timezone?: string;
     adminPasswordConfigured?: boolean;
   } | null>(null);
@@ -65,52 +65,59 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
     (o) => selectedSlug === 'all' || o.restaurantSlug === selectedSlug
   );
 
-  // Status counts
-  const realRecebidos = filteredOrders.filter((o) => o.status === 'recebido').length;
-  const realEmPreparo = filteredOrders.filter((o) => o.status === 'em_preparo').length;
-  const realEmEntrega = filteredOrders.filter((o) => o.status === 'saiu_para_entrega' || o.status === 'pronto').length;
-  const realEntregues = filteredOrders.filter((o) => o.status === 'entregue').length;
-  const realCancelados = filteredOrders.filter((o) => o.status === 'cancelado').length;
+  // ---------------------------------------------------------------------------
+  // MÉTRICAS REAIS: tudo é calculado a partir dos pedidos do servidor (nada de números de exemplo)
+  // ---------------------------------------------------------------------------
+  const now = Date.now();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const isToday = (iso: string) => new Date(iso).getTime() >= startOfToday.getTime();
+  const minutesSince = (iso: string) => Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000));
 
-  const realFaturamento = filteredOrders
-    .filter((o) => o.status !== 'cancelado')
+  const todayOrders = filteredOrders.filter((o) => isToday(o.createdAt));
+  const displayRecebidos = filteredOrders.filter((o) => o.status === 'recebido').length;
+  const displayEmPreparo = filteredOrders.filter((o) => o.status === 'em_preparo').length;
+  const displayEmEntrega = filteredOrders.filter((o) => o.status === 'saiu_para_entrega' || o.status === 'pronto').length;
+  const displayEntregues = todayOrders.filter((o) => o.status === 'entregue').length;
+  const displayCancelados = todayOrders.filter((o) => o.status === 'cancelado').length;
+  const displayFaturamento = todayOrders.filter((o) => o.status !== 'cancelado').reduce((acc, o) => acc + o.total, 0);
+
+  const palette = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#A855F7', '#EC4899', '#14B8A6', '#F97316'];
+  const restaurantCounts = Object.values(restaurants)
+    .filter((r: any) => r.isActive !== false)
+    .map((r: any, i: number) => ({
+      slug: r.slug,
+      name: (r.shortName as string) || r.name,
+      color: palette[i % palette.length],
+      count: orders.filter((o) => o.restaurantSlug === r.slug && isToday(o.createdAt)).length,
+    }));
+  const maxCount = Math.max(...restaurantCounts.map((r) => r.count), 1);
+
+  // Vendas dos últimos 7 dias (dia atual + 6 anteriores) e comparação com os 7 dias anteriores
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const paidOrders = filteredOrders.filter((o) => o.status !== 'cancelado');
+  const sales7Days = Array.from({ length: 7 }, (_, idx) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (6 - idx));
+    const valor = paidOrders
+      .filter((o) => dayKey(new Date(o.createdAt)) === dayKey(d))
+      .reduce((acc, o) => acc + o.total, 0);
+    return { dia: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', ''), valor };
+  });
+  const sales7Total = sales7Days.reduce((a, d) => a + d.valor, 0);
+  const prev7Total = paidOrders
+    .filter((o) => {
+      const age = (now - new Date(o.createdAt).getTime()) / 86400000;
+      return age >= 7 && age < 14;
+    })
     .reduce((acc, o) => acc + o.total, 0);
-
-  // Default values matching reference image mockup, blending gracefully with real orders
-  const displayRecebidos = realRecebidos > 0 ? realRecebidos : 24;
-  const displayEmPreparo = realEmPreparo > 0 ? realEmPreparo : 8;
-  const displayEmEntrega = realEmEntrega > 0 ? realEmEntrega : 6;
-  const displayEntregues = realEntregues > 0 ? realEntregues : 58;
-  const displayCancelados = realCancelados > 0 ? realCancelados : 2;
-  const displayFaturamento = realFaturamento > 0 ? realFaturamento : 4832.5;
-
-  // Breakdown by restaurant matching reference image:
-  // Japonês 38, Italiana 21, Pizza 16, Hambúrguer 12
-  const restaurantCounts = [
-    { slug: 'japones', name: 'Japonês', color: '#EF4444', count: orders.filter(o => o.restaurantSlug === 'japones').length || 38 },
-    { slug: 'italiano', name: 'Italiana', color: '#F59E0B', count: orders.filter(o => o.restaurantSlug === 'italiano').length || 21 },
-    { slug: 'pizza', name: 'Pizza', color: '#10B981', count: orders.filter(o => o.restaurantSlug === 'pizza').length || 16 },
-    { slug: 'hamburgueria', name: 'Hambúrguer', color: '#3B82F6', count: orders.filter(o => o.restaurantSlug === 'hamburgueria').length || 12 },
-  ];
-
-  const maxCount = Math.max(...restaurantCounts.map(r => r.count), 1);
-
-  // 7-day sales curve data matching reference image:
-  // Vendas (7 dias): R$ 27.480,00
-  const sales7Days = [
-    { dia: 'Seg', valor: 3240 },
-    { dia: 'Ter', valor: 3680 },
-    { dia: 'Qua', valor: 3120 },
-    { dia: 'Qui', valor: 4150 },
-    { dia: 'Sex', valor: 5290 },
-    { dia: 'Sáb', valor: 6840 },
-    { dia: 'Dom', valor: 4832.5 },
-  ];
+  const weeklyGrowth = prev7Total > 0 ? ((sales7Total - prev7Total) / prev7Total) * 100 : null;
 
   // SVG dimensions for pure custom high-fidelity golden chart
   const svgWidth = 320;
   const svgHeight = 120;
-  const maxSale = Math.max(...sales7Days.map((d) => d.valor)) * 1.15;
+  const maxSale = Math.max(...sales7Days.map((d) => d.valor), 1) * 1.15;
   const minSale = Math.min(...sales7Days.map((d) => d.valor)) * 0.8;
 
   const points = sales7Days.map((d, i) => {
@@ -131,45 +138,25 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
 
   const areaD = `${pathD} L ${points[points.length - 1].x} ${svgHeight - 10} L ${points[0].x} ${svgHeight - 10} Z`;
 
-  // Central de Exceções items matching reference image
-  const exceptionsList = [
-    {
-      id: 'exc-1',
-      title: 'Pedido atrasado #8472',
-      subtitle: 'Há 12 min - Cozinha',
-      type: 'delay',
-      icon: Clock,
-      severity: 'critical',
-      tab: 'kds',
-    },
-    {
-      id: 'exc-2',
-      title: 'Impressora offline',
-      subtitle: 'Cozinha - Impressora 1',
-      type: 'printer',
-      icon: Printer,
-      severity: 'warning',
-      tab: 'print_agent',
-    },
-    {
-      id: 'exc-3',
-      title: 'Entregador atrasado',
-      subtitle: 'Pedido #8341 - 18 min',
-      type: 'courier',
-      icon: Bike,
-      severity: 'warning',
-      tab: 'dispatch',
-    },
-    {
-      id: 'exc-4',
-      title: 'Pagamento pendente',
-      subtitle: 'Pedido #8320 - R$ 54,80',
-      type: 'payment',
-      icon: CreditCard,
-      severity: 'critical',
-      tab: 'cashier',
-    },
-  ];
+  // Central de Exceções: alertas calculados a partir dos pedidos reais em andamento
+  const exceptionsList: Array<{ id: string; title: string; subtitle: string; type: string; icon: any; severity: string; tab: string }> = [];
+  filteredOrders.forEach((o) => {
+    const mins = minutesSince(o.createdAt);
+    if (o.status === 'recebido' && mins >= 10) {
+      exceptionsList.push({ id: `exc-r-${o.id}`, title: `Pedido ${o.shortCode} sem aceite`, subtitle: `Há ${mins} min - aguardando início`, type: 'delay', icon: Clock, severity: 'critical', tab: 'kds' });
+    } else if (o.status === 'em_preparo' && mins >= 30) {
+      exceptionsList.push({ id: `exc-p-${o.id}`, title: `Pedido ${o.shortCode} atrasado`, subtitle: `Há ${mins} min - em preparo`, type: 'delay', icon: Clock, severity: 'critical', tab: 'kds' });
+    } else if (o.status === 'saiu_para_entrega' && mins >= 60) {
+      exceptionsList.push({ id: `exc-c-${o.id}`, title: `Entrega ${o.shortCode} demorada`, subtitle: `Há ${mins} min em rota`, type: 'courier', icon: Bike, severity: 'warning', tab: 'dispatch' });
+    }
+  });
+  filteredOrders
+    .filter((o) => o.printStatus === 'falha' && isToday(o.createdAt))
+    .slice(0, 3)
+    .forEach((o) =>
+      exceptionsList.push({ id: `exc-i-${o.id}`, title: `Falha de impressão ${o.shortCode}`, subtitle: 'Reimprimir pelo Print Agent', type: 'printer', icon: Printer, severity: 'warning', tab: 'print_agent' })
+    );
+  exceptionsList.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
 
   return (
     <div className="space-y-6">
@@ -188,7 +175,7 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
             <Cloud className="w-3.5 h-3.5 text-sky-400" />
             <span className="text-slate-400">Cloudinary:</span>
             <span className={`font-mono font-bold ${cloudConfig?.cloudinary?.configured ? 'text-emerald-400' : 'text-slate-300'}`}>
-              {cloudConfig?.cloudinary?.cloudName || 'nqnutmc7'}
+              {cloudConfig?.cloudinary?.configured ? cloudConfig.cloudinary.cloudName : 'Não configurado'}
             </span>
           </div>
 
@@ -196,8 +183,8 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
             <Database className="w-3.5 h-3.5 text-emerald-400" />
             <span className="text-slate-400">Supabase:</span>
-            <span className={`font-mono font-bold ${cloudConfig?.supabase?.configured ? 'text-emerald-400' : 'text-emerald-400'}`}>
-              {cloudConfig?.supabase?.url ? 'Conectado' : 'ojztmcng...'}
+            <span className={`font-mono font-bold ${cloudConfig?.supabase?.configured ? 'text-emerald-400' : 'text-slate-300'}`}>
+              {cloudConfig?.supabase?.configured ? 'Conectado' : 'Não configurado'}
             </span>
           </div>
 
@@ -206,7 +193,7 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
             <Globe className="w-3.5 h-3.5 text-amber-400" />
             <span className="text-slate-400">CORS:</span>
             <span className="font-mono font-bold text-slate-200">
-              {cloudConfig?.corsOrigins || 'tokioinbox.onrender.com'}
+              {Array.isArray(cloudConfig?.corsOrigins) && cloudConfig.corsOrigins.length > 0 ? cloudConfig.corsOrigins.join(', ') : 'mesma origem'}
             </span>
           </div>
 
@@ -243,9 +230,6 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
           </div>
           <div className="flex items-baseline justify-between">
             <span className="text-2xl sm:text-3xl font-black text-white">{displayRecebidos}</span>
-            <span className="text-[11px] font-bold text-[#00C896] flex items-center">
-              <ArrowUpRight className="w-3 h-3" /> +12%
-            </span>
           </div>
         </div>
 
@@ -340,9 +324,6 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
             <span className="text-lg sm:text-xl font-black text-[#D4AF37] tracking-tight">
               R$ {displayFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            <span className="text-[11px] font-bold text-[#00C896] flex items-center">
-              <ArrowUpRight className="w-3 h-3" /> +18%
-            </span>
           </div>
         </div>
       </div>
@@ -360,12 +341,15 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
                 </h3>
               </div>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950/60 text-rose-300 border border-rose-500/30">
-                {exceptionsList.length} ativas
+                {exceptionsList.length} {exceptionsList.length === 1 ? 'ativa' : 'ativas'}
               </span>
             </div>
 
             <div className="space-y-2.5">
-              {exceptionsList.map((exc) => {
+              {exceptionsList.length === 0 && (
+                <p className="text-xs text-slate-500 py-6 text-center">Nenhuma exceção ativa. Todos os pedidos estão dentro do prazo.</p>
+              )}
+              {exceptionsList.slice(0, 6).map((exc) => {
                 const Icon = exc.icon;
                 return (
                   <div
@@ -451,7 +435,7 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
           </div>
 
           <div className="mt-4 pt-4 border-t border-[#1C1C1C] flex items-center justify-between text-xs text-slate-400">
-            <span>Rede ativa: 4 Lojas</span>
+            <span>Rede ativa: {restaurantCounts.length} {restaurantCounts.length === 1 ? 'loja' : 'lojas'}</span>
             <button
               onClick={() => onNavigateTab('vitrine')}
               className="text-[#D4AF37] font-bold hover:underline flex items-center gap-1"
@@ -473,7 +457,7 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
                 </h3>
               </div>
               <span className="text-xs font-black text-[#D4AF37] bg-[#D4AF37]/10 px-2 py-0.5 rounded-lg border border-[#D4AF37]/20">
-                R$ 27.480,00
+                R$ {sales7Total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mb-2">
@@ -551,10 +535,15 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
           </div>
 
           <div className="mt-4 pt-4 border-t border-[#1C1C1C] flex items-center justify-between text-xs">
-            <span className="text-slate-400">Crescimento semanal:</span>
-            <span className="font-bold text-[#00C896] flex items-center gap-1">
-              <ArrowUpRight className="w-3.5 h-3.5" /> +14.2% vs semana anterior
-            </span>
+            <span className="text-slate-400">Comparação com a semana anterior:</span>
+            {weeklyGrowth === null ? (
+              <span className="font-bold text-slate-500">Sem base de comparação</span>
+            ) : (
+              <span className={`font-bold flex items-center gap-1 ${weeklyGrowth >= 0 ? 'text-[#00C896]' : 'text-rose-400'}`}>
+                {weeklyGrowth >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                {weeklyGrowth >= 0 ? '+' : ''}{weeklyGrowth.toFixed(1)}% vs semana anterior
+              </span>
+            )}
           </div>
         </div>
       </div>

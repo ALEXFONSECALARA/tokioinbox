@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { MenuItem, Order } from '../types/restaurant';
+import { OrderOriginBadge } from './OrderOriginBadge';
 import {
   Utensils,
   ShoppingBag,
@@ -146,16 +147,14 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
     <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col font-sans">
       {/* Top Header do Cliente */}
       <header className="sticky top-0 z-30 bg-[#0F131D]/90 backdrop-blur-md border-b border-slate-800 px-4 py-3 sm:px-6 flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-black text-amber-400">
+        <div className="flex items-center gap-3">
+          <OrderOriginBadge orderType="mesa" tableNumber={tableNumber} variant="inline" />
+          <div>
+            <span className="text-sm font-black text-amber-400 block">
               {restaurant?.name || 'Cardápio Digital'}
             </span>
-            <span className="text-[10px] bg-amber-500/20 text-amber-300 font-black px-2 py-0.5 rounded-full border border-amber-500/30 font-mono">
-              MESA #{tableNumber}
-            </span>
+            <p className="text-[11px] text-slate-400">Faça seus pedidos e acompanhe direto na mesa</p>
           </div>
-          <p className="text-[11px] text-slate-400">Faça seus pedidos e acompanhe direto na mesa</p>
         </div>
 
         {/* View Cart Button */}
@@ -172,30 +171,65 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
 
       {/* Live Order Status Banner if Table has active order */}
       {currentTableOrder && (
-        <div className="bg-[#121724] border-b border-slate-800 p-4">
-          <div className="max-w-3xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
-                <Flame className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black uppercase text-amber-400">
-                    Acompanhamento do Pedido #{currentTableOrder.shortCode}
-                  </span>
-                  <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-white font-bold uppercase">
-                    {currentTableOrder.status === 'pronto'
-                      ? '🟢 Pronto p/ Servir'
-                      : currentTableOrder.status === 'em_preparo'
-                      ? '🟡 Em Preparo'
-                      : '🔵 Recebido'}
+        <div className="bg-[#0E131F] border-b border-amber-500/20 p-4">
+          <div className="max-w-4xl mx-auto space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                  <Flame className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black uppercase text-amber-400">
+                      Pedido em Andamento #{currentTableOrder.shortCode}
+                    </span>
+                    <span className="text-[10px] bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-white font-bold uppercase">
+                      {currentTableOrder.status === 'pronto'
+                        ? '🟢 Pronto p/ Servir'
+                        : currentTableOrder.status === 'em_preparo'
+                        ? '🟡 Em Preparo'
+                        : '🔵 Recebido na Cozinha'}
+                    </span>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded font-bold">
+                      🔒 Itens Enviados Bloqueados
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    {currentTableOrder.items.length} item(s) já enviados • Total acumulado: R${' '}
+                    {currentTableOrder.total.toFixed(2)}
                   </span>
                 </div>
-                <span className="text-[11px] text-slate-400">
-                  {currentTableOrder.items.length} item(s) • Total: R${' '}
-                  {currentTableOrder.total.toFixed(2)}
-                </span>
               </div>
+            </div>
+
+            {/* Itens já enviados em produção na mesa */}
+            <div className="bg-[#080B11] border border-slate-800/80 rounded-xl p-2.5 max-h-36 overflow-y-auto space-y-1.5 text-xs">
+              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                Itens Confirmados e em Produção:
+              </span>
+              {currentTableOrder.items.map((it, idx) => (
+                <div key={idx} className="flex items-center justify-between py-1 border-b border-slate-900 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-amber-400 font-mono">{it.quantity}x</span>
+                    <span className="text-slate-200 font-medium">{it.name}</span>
+                    {it.notes && <span className="text-[10px] text-slate-500 italic">({it.notes})</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      R$ {(it.totalPrice || it.unitPrice * it.quantity).toFixed(2)}
+                    </span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${
+                      it.stationStatus === 'pedido_feito'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : it.stationStatus === 'em_preparo'
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    }`}>
+                      {it.stationStatus === 'pedido_feito' ? 'Pronto' : it.stationStatus === 'em_preparo' ? 'Preparo' : 'Fila'}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

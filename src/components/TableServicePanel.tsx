@@ -30,8 +30,10 @@ import {
   CreditCard,
   Banknote,
   History,
-  Smartphone
+  Smartphone,
+  FileText,
 } from 'lucide-react';
+import { AdminFiscalModal } from './AdminFiscalModal';
 import { BRAND_NAME } from '../config/brand';
 import { playAlertSound } from '../utils/audioAlert';
 
@@ -68,18 +70,16 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     restaurants,
     activeRestaurantSlug,
     currentUser,
+    loginUser,
     updateOrderStatus,
     showToast,
     soundSettings,
   } = useStore();
 
   // Authentication State
-  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('tokio_table_service_unlocked') === 'true';
-    }
-    return false;
-  });
+  // O acesso ao painel já exige login no servidor; o "bloqueio de tela" só pede a senha
+  // do PRÓPRIO usuário logado (validada no servidor). Nenhuma senha/PIN fixo no navegador.
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(true);
 
   // PIN / Password inputs
   const [enteredPin, setEnteredPin] = useState('');
@@ -124,6 +124,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [showShiftHistoryModal, setShowShiftHistoryModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro'>('pix');
   const [cashReceived, setCashReceived] = useState('');
+  const [fiscalTableOrder, setFiscalTableOrder] = useState<Order | null>(null);
   
   // Waiter Calls tracking
   const [waiterCalls, setWaiterCalls] = useState<Record<number, { timestamp: number; table: number }>>(() => {
@@ -239,41 +240,31 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     setPinError(null);
   };
 
-  const validatePin = (pinToTest: string) => {
-    // Standard default PIN: 1234 or 0000 or 9999
-    if (pinToTest === '1234' || pinToTest === '0000' || pinToTest === '9999' || pinToTest === '2026') {
-      setIsUnlocked(true);
-      sessionStorage.setItem('tokio_table_service_unlocked', 'true');
-      showToast('Acesso ao Salão liberado com sucesso!', 'success');
-      setEnteredPin('');
-    } else {
-      setPinError('PIN incorreto. Tente novamente ou use 1234.');
-      setEnteredPin('');
-    }
+  const validatePin = (_pinToTest: string) => {
+    setPinError('PIN local desativado. Use a senha do seu usuário para desbloquear.');
+    setEnteredPin('');
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinError(null);
     const pass = passwordInput.trim();
-    if (
-      pass === 'salao123' ||
-      pass === 'admin123' ||
-      pass === 'gerente123' ||
-      pass === '1234'
-    ) {
+    if (!currentUser || !pass) {
+      setPinError('Informe a senha do seu usuário.');
+      return;
+    }
+    const res = await loginUser(currentUser.username, pass);
+    if (res.success) {
       setIsUnlocked(true);
-      sessionStorage.setItem('tokio_table_service_unlocked', 'true');
-      showToast('Acesso de equipe autorizado!', 'success');
+      showToast('Painel do salão desbloqueado!', 'success');
       setPasswordInput('');
     } else {
-      setPinError('Senha inválida. Use salao123 ou o PIN 1234.');
+      setPinError(res.error || 'Senha inválida.');
     }
   };
 
   const handleLockPanel = () => {
     setIsUnlocked(false);
-    sessionStorage.removeItem('tokio_table_service_unlocked');
     setActiveTableId(null);
     showToast('Painel do salão bloqueado com segurança.', 'info');
   };
@@ -615,13 +606,13 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
             <form onSubmit={handlePasswordSubmit} className="space-y-4">
               <div className="text-left space-y-1">
                 <label className="text-xs font-semibold text-stone-300">
-                  Senha da Equipe de Salão:
+                  Senha do seu usuário:
                 </label>
                 <input
                   type="password"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="Ex: salao123"
+                  placeholder="Senha do seu usuário"
                   className="w-full px-4 py-3 rounded-xl bg-stone-950 border border-stone-700 text-white focus:outline-none focus:border-amber-400 text-sm"
                   autoFocus
                 />
@@ -1525,9 +1516,10 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                     )}
                   </div>
 
-                  {/* Actions: Print and Close */}
+                  {/* Actions: Print, Fiscal and Close */}
                   <div className="space-y-2 pt-2">
                     <button
+                      type="button"
                       onClick={() => setShowPrintModal(true)}
                       className="w-full py-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-white font-bold text-xs flex items-center justify-center gap-2 border border-stone-700 transition-colors"
                     >
@@ -1536,6 +1528,22 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                     </button>
 
                     <button
+                      type="button"
+                      onClick={() => {
+                        if (activeTableOrders.length > 0) {
+                          setFiscalTableOrder(activeTableOrders[0]);
+                        } else {
+                          showToast('Não há pedido ativo com itens para emitir cupom fiscal nesta mesa.', 'warning');
+                        }
+                      }}
+                      className="w-full py-3 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
+                    >
+                      <FileText className="w-4 h-4 text-emerald-400" />
+                      Emitir Cupom Fiscal NFC-e (SEFAZ)
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleCloseTable(activeTableId)}
                       className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-600/20"
                     >
@@ -1928,6 +1936,16 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Fiscal para Emissão de NFC-e na Mesa */}
+      {fiscalTableOrder && (
+        <AdminFiscalModal
+          isOpen={!!fiscalTableOrder}
+          order={fiscalTableOrder}
+          restaurantSlug={fiscalTableOrder.restaurantSlug}
+          onClose={() => setFiscalTableOrder(null)}
+        />
       )}
     </div>
   );

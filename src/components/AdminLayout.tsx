@@ -30,6 +30,8 @@ import { AdminSeniorAuditor } from './AdminSeniorAuditor';
 import { AdminBackupRestore } from './AdminBackupRestore';
 import { AdminAdministrativeSuite } from './AdminAdministrativeSuite';
 import { AdminAiEngineCenter } from './AdminAiEngineCenter';
+import { AdminSalesChannelsSettings } from './AdminSalesChannelsSettings';
+import { AdminFiscalModule } from './AdminFiscalModule';
 import { NexoroBrandFooter } from './NexoroBrandFooter';
 import { AdminViewAsBar, ViewAsRole } from './AdminViewAsBar';
 import { AdminNexoroDashboard } from './AdminNexoroDashboard';
@@ -84,6 +86,7 @@ import {
   BarChart3,
   Bot,
   Sliders,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
 import { TableServicePanel } from './TableServicePanel';
@@ -107,6 +110,7 @@ interface AdminLayoutProps {
     | 'users'
     | 'audit'
     | 'settings'
+    | 'sales_channels'
     | 'health'
     | 'ai_sales'
     | 'marketing'
@@ -118,7 +122,8 @@ interface AdminLayoutProps {
     | 'auditor'
     | 'backup'
     | 'admin_suite'
-    | 'ai_engine';
+    | 'ai_engine'
+    | 'fiscal';
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTab }) => {
@@ -136,7 +141,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
   } = useStore();
 
   const [usernameInput, setUsernameInput] = useState('admin');
-  const [passwordInput, setPasswordInput] = useState('admin123');
+  const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -158,6 +163,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
     | 'users'
     | 'audit'
     | 'settings'
+    | 'sales_channels'
     | 'health'
     | 'ai_sales'
     | 'marketing'
@@ -170,6 +176,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
     | 'backup'
     | 'admin_suite'
     | 'ai_engine'
+    | 'fiscal'
   >(initialTab || 'dashboard');
 
   useEffect(() => {
@@ -190,6 +197,31 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
   // Filter for restaurant in admin: 'all' or specific slug
   const [selectedFilterSlug, setSelectedFilterSlug] = useState<RestaurantSlug | 'all'>('all');
 
+  // 6 Categorias Canônicas
+  const [selectedCategory, setSelectedCategory] = useState<
+    'TODAS' | 'OPERAÇÃO' | 'CARDÁPIO' | 'EQUIPE' | 'GESTÃO' | 'INTELIGÊNCIA' | 'SISTEMA'
+  >('TODAS');
+
+  const isTabInCategory = (tab: string) => {
+    if (selectedCategory === 'TODAS') return true;
+    switch (selectedCategory) {
+      case 'OPERAÇÃO':
+        return ['kanban', 'kds', 'tables', 'dispatch', 'cashier', 'issues'].includes(tab);
+      case 'CARDÁPIO':
+        return ['menu', 'pricing', 'vitrine', 'restaurants'].includes(tab);
+      case 'EQUIPE':
+        return ['users', 'devices', 'audit'].includes(tab);
+      case 'GESTÃO':
+        return ['dashboard', 'cashier', 'customers', 'crm_recovery', 'auditor', 'fiscal'].includes(tab);
+      case 'INTELIGÊNCIA':
+        return ['ai_engine', 'ai_sales', 'marketing', 'promotions'].includes(tab);
+      case 'SISTEMA':
+        return ['settings', 'fiscal', 'sales_channels', 'print_agent', 'delivery_areas', 'backup', 'health', 'admin_suite', 'tools_catalog'].includes(tab);
+      default:
+        return true;
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
@@ -200,18 +232,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
 
     if (!res.success) {
       setAuthError(res.error || 'Usuário ou senha incorretos.');
-    }
-  };
-
-  const handleQuickLogin = async (usr: string, pass: string) => {
-    setUsernameInput(usr);
-    setPasswordInput(pass);
-    setIsLoggingIn(true);
-    setAuthError(null);
-    const res = await loginUser(usr, pass);
-    setIsLoggingIn(false);
-    if (!res.success) {
-      setAuthError(res.error || 'Erro no login.');
     }
   };
 
@@ -239,6 +259,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
   const validOrders = filteredOrders.filter((o) => o.status !== 'cancelado');
   const grossRevenue = validOrders.reduce((sum, o) => sum + (o.total || 0), 0);
   const averageTicket = validOrders.length > 0 ? grossRevenue / validOrders.length : 0;
+
+  // Preparo médio REAL: minutos entre a criação e o momento em que o pedido ficou "pronto"
+  const prepDurations = validOrders
+    .map((o) => {
+      const ready = (o.statusHistory || []).find((h) => h.status === 'pronto');
+      if (!ready) return null;
+      const mins = (new Date(ready.timestamp).getTime() - new Date(o.createdAt).getTime()) / 60000;
+      return mins >= 0 && mins < 240 ? mins : null;
+    })
+    .filter((m): m is number => m !== null);
+  const averagePrepMinutes = prepDurations.length
+    ? Math.round(prepDurations.reduce((a, b) => a + b, 0) / prepDurations.length)
+    : null;
 
   // Delayed orders calculation (> 25 min in prep)
   const now = Date.now();
@@ -326,47 +359,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             </button>
           </form>
 
-          {/* Quick Demo Logins */}
-          <div className="p-3.5 bg-[#07090E] rounded-2xl border border-slate-800/80 text-left space-y-2">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              Acesso Rápido para Demonstração:
-            </span>
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('admin', 'admin123')}
-                className="p-2 rounded-xl bg-[#0E121B] hover:bg-slate-800 border border-slate-800 text-left transition-colors"
-              >
-                <span className="font-bold text-[#E3BD6A] block text-[11px]">Super Admin</span>
-                <span className="text-[10px] text-slate-400 font-mono">admin / admin123</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('caixa', 'caixa123')}
-                className="p-2 rounded-xl bg-[#0E121B] hover:bg-slate-800 border border-slate-800 text-left transition-colors"
-              >
-                <span className="font-bold text-blue-400 block text-[11px]">Operador Caixa</span>
-                <span className="text-[10px] text-slate-400 font-mono">caixa / caixa123</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('cozinha', 'cozinha123')}
-                className="p-2 rounded-xl bg-[#0E121B] hover:bg-slate-800 border border-slate-800 text-left transition-colors"
-              >
-                <span className="font-bold text-emerald-400 block text-[11px]">Cozinha KDS</span>
-                <span className="text-[10px] text-slate-400 font-mono">cozinha / cozinha123</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('entregador', 'entrega123')}
-                className="p-2 rounded-xl bg-[#0E121B] hover:bg-slate-800 border border-slate-800 text-left transition-colors"
-              >
-                <span className="font-bold text-cyan-400 block text-[11px]">Expedição &amp; Entrega</span>
-                <span className="text-[10px] text-slate-400 font-mono">entregador / entrega123</span>
-              </button>
-            </div>
-          </div>
-
           <div className="flex items-center justify-between text-xs pt-1">
             <button
               onClick={() => setIsMobileReceiverOpen(true)}
@@ -392,6 +384,55 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
   // Active single restaurant slug for tabs that manage one restaurant at a time
   const activeSingleSlug: RestaurantSlug =
     selectedFilterSlug === 'all' ? 'japones' : selectedFilterSlug;
+
+  // STRICT RBAC CHECK: Admin Panel is exclusively for super_admin or administrador/admin/gerente
+  // Other profiles (caixa, cozinha, entrega, garcom) MUST NOT access Admin Management
+  const hasAdminAccess =
+    currentUser.role === 'super_admin' ||
+    currentUser.role === 'administrador' ||
+    currentUser.role === 'admin' ||
+    currentUser.role === 'admin_master' ||
+    currentUser.role === 'gerente';
+
+  if (!hasAdminAccess) {
+    return (
+      <div className="min-h-screen bg-[#07090E] flex flex-col items-center justify-center p-4">
+        <div className="bg-[#0E121B] border border-rose-500/30 rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.9)] text-center space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/15 text-rose-400 border border-rose-500/40 flex items-center justify-center mx-auto text-2xl shadow-[0_0_20px_rgba(244,63,94,0.25)]">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <div>
+            <h1 className="text-xl font-black text-white tracking-tight">
+              Acesso Proibido • Perfil Restrito
+            </h1>
+            <p className="text-xs text-slate-400 mt-2">
+              Seu perfil atual é <span className="font-bold text-amber-400 uppercase tracking-wider">{currentUser.role}</span>. Este perfil não possui permissão para acessar as configurações de gestão administrativa e financeira do sistema.
+            </p>
+          </div>
+
+          <div className="p-3 bg-[#07090E] rounded-xl border border-slate-800 text-xs text-slate-400">
+            Cada operador possui sua tela e rotas operacionais separadas (Caixa, KDS Cozinha, Garçom/Salão ou Expedição).
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              onClick={handleLogout}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition-all"
+            >
+              Trocar de Usuário (Logout)
+            </button>
+            <button
+              onClick={onBackToApp}
+              className="w-full py-3 bg-[#E3BD6A] hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all"
+            >
+              Voltar ao Ambiente Operacional
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col font-sans">
@@ -627,7 +668,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
                 <Clock className="w-3.5 h-3.5 text-cyan-400" />
                 <span className="text-[11px] text-slate-400 font-medium">Preparo Médio:</span>
                 <span className="text-xs font-black text-white">
-                  ~20 min
+                  {averagePrepMinutes !== null ? `${averagePrepMinutes} min` : '—'}
                 </span>
               </div>
 
@@ -649,148 +690,186 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           </div>
         </div>
 
+        {/* BARRA DAS 6 CATEGORIAS CANÔNICAS */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2.5 pb-1 flex items-center gap-1.5 border-t border-slate-800/80 overflow-x-auto no-scrollbar">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 mr-1 shrink-0">
+            Categorias:
+          </span>
+          {(['TODAS', 'OPERAÇÃO', 'CARDÁPIO', 'EQUIPE', 'GESTÃO', 'INTELIGÊNCIA', 'SISTEMA'] as const).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-3 py-1 rounded-xl text-[11px] font-black tracking-wide uppercase transition-all shrink-0 ${
+                selectedCategory === cat
+                  ? 'bg-gradient-to-r from-amber-500 to-[#FF7A00] text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-slate-900/90 text-slate-400 border border-slate-800 hover:text-white hover:border-slate-700'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
         {/* 3. BARRA DE NAVEGAÇÃO DE ABAS */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-1 border-t border-slate-800/80 overflow-x-auto no-scrollbar py-1.5">
           {/* 01. Painel Geral Tab (food nexoro.png) */}
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'dashboard'
-                ? 'bg-[#D4AF37] text-slate-950 font-black shadow-[0_0_15px_rgba(212,175,55,0.4)]'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Boxes className="w-3.5 h-3.5" />
-            <span>01. Painel Geral</span>
-          </button>
+          {isTabInCategory('dashboard') && (
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'dashboard'
+                  ? 'bg-[#D4AF37] text-slate-950 font-black shadow-[0_0_15px_rgba(212,175,55,0.4)]'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Boxes className="w-3.5 h-3.5" />
+              <span>01. Painel Geral</span>
+            </button>
+          )}
 
           {/* Ferramentas (23 Módulos) Tab (food nexoro2.png) */}
-          <button
-            onClick={() => setActiveTab('tools_catalog')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'tools_catalog'
-                ? 'bg-[#D4AF37] text-slate-950 font-black shadow-[0_0_15px_rgba(212,175,55,0.4)]'
-                : 'text-[#D4AF37] bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 border border-[#D4AF37]/30'
-            }`}
-          >
-            <Wrench className="w-3.5 h-3.5" />
-            <span>Ferramentas</span>
-            <span className="bg-[#D4AF37] text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-              23
-            </span>
-          </button>
+          {isTabInCategory('tools_catalog') && (
+            <button
+              onClick={() => setActiveTab('tools_catalog')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'tools_catalog'
+                  ? 'bg-[#D4AF37] text-slate-950 font-black shadow-[0_0_15px_rgba(212,175,55,0.4)]'
+                  : 'text-[#D4AF37] bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 border border-[#D4AF37]/30'
+              }`}
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              <span>Ferramentas</span>
+              <span className="bg-[#D4AF37] text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                23
+              </span>
+            </button>
+          )}
 
           {/* Central de IA (AI Engine) Tab */}
-          <button
-            onClick={() => setActiveTab('ai_engine')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'ai_engine'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black shadow-[0_0_15px_rgba(147,51,234,0.5)]'
-                : 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30'
-            }`}
-          >
-            <Bot className="w-3.5 h-3.5" />
-            <span>Central de IA</span>
-            <span className="bg-purple-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
-              AI
-            </span>
-          </button>
+          {isTabInCategory('ai_engine') && (
+            <button
+              onClick={() => setActiveTab('ai_engine')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'ai_engine'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black shadow-[0_0_15px_rgba(147,51,234,0.5)]'
+                  : 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30'
+              }`}
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>Central de IA</span>
+              <span className="bg-purple-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                AI
+              </span>
+            </button>
+          )}
 
           {/* 20. Suite Admin Tab */}
-          <button
-            onClick={() => setActiveTab('admin_suite')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'admin_suite'
-                ? 'bg-[#D4AF37] text-slate-950 font-black shadow-[0_0_15px_rgba(212,175,55,0.4)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5 text-[#D4AF37]" />
-            <span>20. Suite Admin</span>
-          </button>
+          {isTabInCategory('admin_suite') && (
+            <button
+              onClick={() => setActiveTab('admin_suite')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'admin_suite'
+                  ? 'bg-[#D4AF37] text-slate-950 font-black shadow-[0_0_15px_rgba(212,175,55,0.4)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>20. Suite Admin</span>
+            </button>
+          )}
 
           {/* Kanban Tab */}
-          <button
-            onClick={() => setActiveTab('kanban')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'kanban'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <LayoutDashboard className="w-3.5 h-3.5" />
-            <span>Kanban Pedidos</span>
-            {countRecebido > 0 && (
-              <span className="bg-rose-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black animate-pulse">
-                {countRecebido}
-              </span>
-            )}
-          </button>
+          {isTabInCategory('kanban') && (
+            <button
+              onClick={() => setActiveTab('kanban')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'kanban'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              <span>Kanban Pedidos</span>
+              {countRecebido > 0 && (
+                <span className="bg-rose-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black animate-pulse">
+                  {countRecebido}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* KDS Cozinha Tab */}
-          <button
-            onClick={() => setActiveTab('kds')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'kds'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <ChefHat className="w-3.5 h-3.5" />
-            <span>Cozinha KDS</span>
-            {countEmPreparo > 0 && (
-              <span className="bg-orange-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-                {countEmPreparo}
-              </span>
-            )}
-          </button>
+          {isTabInCategory('kds') && (
+            <button
+              onClick={() => setActiveTab('kds')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'kds'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <ChefHat className="w-3.5 h-3.5" />
+              <span>Cozinha KDS</span>
+              {countEmPreparo > 0 && (
+                <span className="bg-orange-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                  {countEmPreparo}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Salão & Mesas Tab */}
-          <button
-            onClick={() => setActiveTab('tables')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'tables'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Utensils className="w-3.5 h-3.5" />
-            <span>Salão &amp; Mesas</span>
-          </button>
+          {isTabInCategory('tables') && (
+            <button
+              onClick={() => setActiveTab('tables')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'tables'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Utensils className="w-3.5 h-3.5" />
+              <span>Salão &amp; Mesas</span>
+            </button>
+          )}
 
           {/* Despacho & Entregas Tab */}
-          <button
-            onClick={() => setActiveTab('dispatch')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'dispatch'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Bike className="w-3.5 h-3.5" />
-            <span>Despacho &amp; Motoboys</span>
-            {countPronto > 0 && (
-              <span className="bg-emerald-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-                {countPronto}
-              </span>
-            )}
-          </button>
+          {isTabInCategory('dispatch') && (
+            <button
+              onClick={() => setActiveTab('dispatch')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'dispatch'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Bike className="w-3.5 h-3.5" />
+              <span>Despacho &amp; Motoboys</span>
+              {countPronto > 0 && (
+                <span className="bg-emerald-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                  {countPronto}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Caixa & Turno Tab */}
-          <button
-            onClick={() => setActiveTab('cashier')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'cashier'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Wallet className="w-3.5 h-3.5" />
-            <span>Caixa &amp; Turnos</span>
-          </button>
+          {isTabInCategory('cashier') && (
+            <button
+              onClick={() => setActiveTab('cashier')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'cashier'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              <span>Caixa &amp; Turnos</span>
+            </button>
+          )}
 
           {/* Precificação & CMV Tab */}
-          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_change_prices) && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_change_prices) && isTabInCategory('pricing') && (
             <button
               onClick={() => setActiveTab('pricing')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -805,7 +884,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Gestor da Vitrine Principal Tab */}
-          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('vitrine') && (
             <button
               onClick={() => setActiveTab('vitrine')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -820,7 +899,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Cardápios & Preços */}
-          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_edit_menu) && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_edit_menu) && isTabInCategory('menu') && (
             <button
               onClick={() => setActiveTab('menu')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -835,62 +914,68 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Lojas & Links HTTP Tab */}
-          <button
-            onClick={() => setActiveTab('restaurants')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'restaurants'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>Lojas HTTP</span>
-          </button>
+          {isTabInCategory('restaurants') && (
+            <button
+              onClick={() => setActiveTab('restaurants')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'restaurants'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Lojas HTTP</span>
+            </button>
+          )}
 
           {/* Clientes Tab */}
-          <button
-            onClick={() => setActiveTab('customers')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'customers'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Clientes CRM</span>
-            {customers.length > 0 && (
-              <span className="bg-slate-800 text-[#E3BD6A] text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                {customers.length}
-              </span>
-            )}
-          </button>
+          {isTabInCategory('customers') && (
+            <button
+              onClick={() => setActiveTab('customers')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'customers'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Clientes CRM</span>
+              {customers.length > 0 && (
+                <span className="bg-slate-800 text-[#E3BD6A] text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                  {customers.length}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Dispositivos Conectados Tab */}
-          <button
-            onClick={() => setActiveTab('devices')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'devices'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Celulares</span>
-            {onlineDevicesCount > 0 && (
-              <span className="bg-emerald-500/30 text-emerald-300 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                {onlineDevicesCount}
-              </span>
-            )}
-          </button>
+          {isTabInCategory('devices') && (
+            <button
+              onClick={() => setActiveTab('devices')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'devices'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Celulares</span>
+              {onlineDevicesCount > 0 && (
+                <span className="bg-emerald-500/30 text-emerald-300 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                  {onlineDevicesCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Usuários Tab */}
-          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_manage_users) && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_manage_users) && isTabInCategory('users') && (
             <button
               onClick={() => setActiveTab('users')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
                 activeTab === 'users'
                   ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5" />
@@ -899,20 +984,22 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Auditoria Tab */}
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'audit'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Auditoria</span>
-          </button>
+          {isTabInCategory('audit') && (
+            <button
+              onClick={() => setActiveTab('audit')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'audit'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Auditoria</span>
+            </button>
+          )}
 
           {/* Configurações Tab */}
-          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_alerts) && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_alerts) && isTabInCategory('settings') && (
             <button
               onClick={() => setActiveTab('settings')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -926,140 +1013,193 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             </button>
           )}
 
-          {/* Central de Problemas & Exceções */}
-          <button
-            onClick={() => setActiveTab('issues')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'issues'
-                ? 'bg-rose-600 text-white font-black shadow-[0_0_15px_rgba(225,29,72,0.4)]'
-                : 'text-rose-400 hover:text-white hover:bg-rose-950/40'
-            }`}
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-            <span>Problemas &amp; Alertas</span>
-            {delayedOrders.length > 0 && (
-              <span className="bg-rose-950 border border-rose-500 text-rose-300 text-[10px] px-1.5 py-0.2 rounded-full font-bold animate-pulse">
-                {delayedOrders.length}
+          {/* Módulo Fiscal Tab (SEFAZ NFC-e / NF-e) */}
+          {(currentUser.role === 'super_admin' || currentUser.role === 'administrador') && isTabInCategory('fiscal') && (
+            <button
+              onClick={() => setActiveTab('fiscal')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'fiscal'
+                  ? 'bg-emerald-600 text-white font-black shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+                  : 'text-emerald-400 hover:text-white hover:bg-emerald-950/40 border border-emerald-500/20'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Módulo Fiscal</span>
+              <span className="bg-emerald-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                SEFAZ
               </span>
-            )}
-          </button>
+            </button>
+          )}
+
+          {/* Canais de Venda Tab */}
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('sales_channels') && (
+            <button
+              onClick={() => setActiveTab('sales_channels')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'sales_channels'
+                  ? 'bg-indigo-600 text-white font-black shadow-[0_0_15px_rgba(79,70,229,0.4)]'
+                  : 'text-indigo-400 hover:text-white hover:bg-indigo-950/40'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Canais de Venda</span>
+            </button>
+          )}
+
+          {/* Central de Problemas & Exceções */}
+          {isTabInCategory('issues') && (
+            <button
+              onClick={() => setActiveTab('issues')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'issues'
+                  ? 'bg-rose-600 text-white font-black shadow-[0_0_15px_rgba(225,29,72,0.4)]'
+                  : 'text-rose-400 hover:text-white hover:bg-rose-950/40'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Problemas &amp; Alertas</span>
+              {delayedOrders.length > 0 && (
+                <span className="bg-rose-950 border border-rose-500 text-rose-300 text-[10px] px-1.5 py-0.2 rounded-full font-bold animate-pulse">
+                  {delayedOrders.length}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Assistente de Vendas IA */}
-          <button
-            onClick={() => setActiveTab('ai_sales')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'ai_sales'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-[#E3BD6A]" />
-            <span>Vendas IA</span>
-          </button>
+          {isTabInCategory('ai_sales') && (
+            <button
+              onClick={() => setActiveTab('ai_sales')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'ai_sales'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#E3BD6A]" />
+              <span>Vendas IA</span>
+            </button>
+          )}
 
           {/* Central de Marketing */}
-          <button
-            onClick={() => setActiveTab('marketing')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'marketing'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Megaphone className="w-3.5 h-3.5" />
-            <span>Marketing</span>
-          </button>
+          {isTabInCategory('marketing') && (
+            <button
+              onClick={() => setActiveTab('marketing')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'marketing'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Megaphone className="w-3.5 h-3.5" />
+              <span>Marketing</span>
+            </button>
+          )}
 
           {/* Promoções IA */}
-          <button
-            onClick={() => setActiveTab('promotions')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'promotions'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Tag className="w-3.5 h-3.5" />
-            <span>Promoções</span>
-          </button>
+          {isTabInCategory('promotions') && (
+            <button
+              onClick={() => setActiveTab('promotions')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'promotions'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Tag className="w-3.5 h-3.5" />
+              <span>Promoções</span>
+            </button>
+          )}
 
           {/* Print Agent Térmico */}
-          <button
-            onClick={() => setActiveTab('print_agent')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'print_agent'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Print Agent</span>
-          </button>
+          {isTabInCategory('print_agent') && (
+            <button
+              onClick={() => setActiveTab('print_agent')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'print_agent'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print Agent</span>
+            </button>
+          )}
 
           {/* Áreas de Entrega */}
-          <button
-            onClick={() => setActiveTab('delivery_areas')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'delivery_areas'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <MapPin className="w-3.5 h-3.5" />
-            <span>Áreas &amp; Taxas</span>
-          </button>
+          {isTabInCategory('delivery_areas') && (
+            <button
+              onClick={() => setActiveTab('delivery_areas')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'delivery_areas'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span>Áreas &amp; Taxas</span>
+            </button>
+          )}
 
           {/* CRM & Carrinhos Abandonados */}
-          <button
-            onClick={() => setActiveTab('crm_recovery')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'crm_recovery'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>CRM &amp; Carrinho</span>
-          </button>
+          {isTabInCategory('crm_recovery') && (
+            <button
+              onClick={() => setActiveTab('crm_recovery')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'crm_recovery'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>CRM &amp; Carrinho</span>
+            </button>
+          )}
 
           {/* Auditor Sênior */}
-          <button
-            onClick={() => setActiveTab('auditor')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'auditor'
-                ? 'bg-cyan-500 text-slate-950 font-black shadow-[0_0_15px_rgba(6,182,212,0.4)]'
-                : 'text-cyan-400 hover:text-white hover:bg-cyan-950/40'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Auditor Sênior</span>
-          </button>
+          {isTabInCategory('auditor') && (
+            <button
+              onClick={() => setActiveTab('auditor')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'auditor'
+                  ? 'bg-cyan-500 text-slate-950 font-black shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                  : 'text-cyan-400 hover:text-white hover:bg-cyan-950/40'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Auditor Sênior</span>
+            </button>
+          )}
 
           {/* Backup & Restauração */}
-          <button
-            onClick={() => setActiveTab('backup')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'backup'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Backup Seguro</span>
-          </button>
+          {isTabInCategory('backup') && (
+            <button
+              onClick={() => setActiveTab('backup')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'backup'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Backup Seguro</span>
+            </button>
+          )}
 
           {/* Diagnóstico Tab */}
-          <button
-            onClick={() => setActiveTab('health')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'health'
-                ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>Diagnóstico</span>
-          </button>
+          {isTabInCategory('health') && (
+            <button
+              onClick={() => setActiveTab('health')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'health'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Diagnóstico</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -1182,6 +1322,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
 
         {activeTab === 'settings' && (
           <AdminSettings currentRestaurantSlug={activeSingleSlug} />
+        )}
+
+        {activeTab === 'fiscal' && (
+          <AdminFiscalModule selectedSlug={selectedFilterSlug} />
+        )}
+
+        {activeTab === 'sales_channels' && (
+          <AdminSalesChannelsSettings />
         )}
 
         {activeTab === 'health' && <AdminHealthCheck />}

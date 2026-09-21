@@ -481,6 +481,25 @@ export const NEXORO_TOOLS: NexoroToolDefinition[] = [
     tabTarget: 'auditor',
     actionLabel: 'Executar Auditor',
   },
+  {
+    id: 24,
+    code: '24',
+    title: 'MÓDULO FISCAL & SEFAZ',
+    category: 'gestao',
+    icon: Receipt,
+    summary: 'Emissão de NFC-e/NF-e, Certificado A1, DANFCE térmico e Inutilização.',
+    items: [
+      'Emissão e transmissão autorizada de NFC-e (mod 65) e NF-e (mod 55)',
+      'Cofre criptografado AES-256 para Certificado Digital A1 (.pfx / .p12)',
+      'Impressão de DANFCE térmico com QR Code oficial e contingência offline',
+      'Inutilização de numeração SEFAZ (Ajuste SINIEF 07/05) e cancelamentos',
+      'Motor tributário com PIS/COFINS Monofásico, ICMS-ST e Simulação Contábil',
+    ],
+    status: 'operacional',
+    badgeColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
+    tabTarget: 'fiscal',
+    actionLabel: 'Abrir Módulo Fiscal',
+  },
 ];
 
 interface AdminNexoroToolsHubProps {
@@ -530,7 +549,7 @@ export const AdminNexoroToolsHub: React.FC<AdminNexoroToolsHubProps> = ({
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40">
-                Catálogo Oficial • 23 Ferramentas Integradas
+                Catálogo Oficial • 24 Ferramentas Integradas
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold text-[#00C896] bg-[#00C896]/10 border border-[#00C896]/30 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#00C896] animate-pulse" />
@@ -544,14 +563,14 @@ export const AdminNexoroToolsHub: React.FC<AdminNexoroToolsHubProps> = ({
               <span className="text-slate-400 text-lg sm:text-2xl font-normal">| Ferramentas</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-2 max-w-2xl">
-              "Mais que pedidos, uma experiência completa." Selecione qualquer um dos 23 módulos para monitorar, configurar e operar seu ecossistema gastronômico.
+              "Mais que pedidos, uma experiência completa." Selecione qualquer um dos 24 módulos para monitorar, configurar e operar seu ecossistema gastronômico.
             </p>
           </div>
 
           {/* Quick Metrics */}
           <div className="flex items-center gap-3 shrink-0">
             <div className="bg-[#151515] border border-[#2A2A2A] rounded-2xl p-3.5 text-center min-w-[100px]">
-              <span className="text-2xl font-black text-[#D4AF37]">23</span>
+              <span className="text-2xl font-black text-[#D4AF37]">24</span>
               <span className="text-[10px] text-slate-400 block uppercase font-bold">Módulos</span>
             </div>
             <div className="bg-[#151515] border border-[#2A2A2A] rounded-2xl p-3.5 text-center min-w-[100px]">

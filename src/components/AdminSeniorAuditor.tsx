@@ -1,178 +1,121 @@
-import React, { useState } from 'react';
-import { useStore } from '../context/StoreContext';
-import {
-  ShieldCheck,
-  CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Cpu,
-  Lock,
-  Database,
-  Radio,
-  Wrench,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Loader2 } from 'lucide-react';
 
 interface AuditCheck {
   id: string;
-  category: 'SEGURANÇA' | 'MULTI_TENANT' | 'ROUTING' | 'REALTIME' | 'DADOS';
-  name: string;
-  status: 'OK' | 'ALERTA' | 'CRITICO';
-  details: string;
-  autoFixAvailable?: boolean;
+  label: string;
+  status: 'ok' | 'warn' | 'fail';
+  detail: string;
 }
 
+/**
+ * Auditoria de segurança e configuração.
+ * Todas as verificações são calculadas AGORA pelo servidor (GET /api/admin/system-audit),
+ * a partir da configuração e dos dados reais. Nada aqui é texto fixo.
+ */
 export const AdminSeniorAuditor: React.FC = () => {
-  const { restaurants, orders } = useStore();
-  const [isRunningScan, setIsRunningScan] = useState(false);
-  const [fixedCheckIds, setFixedCheckIds] = useState<string[]>([]);
+  const [checks, setChecks] = useState<AuditCheck[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
 
-  const checks: AuditCheck[] = [
-    {
-      id: 'chk-1',
-      category: 'MULTI_TENANT',
-      name: 'Isolamento de Restaurantes no Backend',
-      status: 'OK',
-      details:
-        'Validação atestada: Requisições de restaurante filtram estritamente por slug no backend. Restaurante Japonês não acessa dados da Pizzaria.',
-    },
-    {
-      id: 'chk-2',
-      category: 'SEGURANÇA',
-      name: 'Sanitização de Senhas e Segredos',
-      status: 'OK',
-      details:
-        'Endpoints de listagem de usuários e logs omitem estritamente passwordHash, salts e chaves de API sensíveis.',
-    },
-    {
-      id: 'chk-3',
-      category: 'REALTIME',
-      name: 'Canal SSE (Server-Sent Events) & Polling',
-      status: 'OK',
-      details:
-        'Fluxo SSE ativo no endpoint /api/orders/realtime/stream com reconexão exponencial e buffer de eventos offline.',
-    },
-    {
-      id: 'chk-4',
-      category: 'DADOS',
-      name: 'Idempotência na Fila de Impressão Térmica',
-      status: 'OK',
-      details:
-        'Checksum SHA-256 e hashes de pedido únicos impedem que o mesmo pedido seja impresso duplicado na cozinha.',
-    },
-    {
-      id: 'chk-5',
-      category: 'ROUTING',
-      name: 'Fallback do Atendente IA para Cardápio Real',
-      status: 'OK',
-      details:
-        'Motor de IA configurado para não inventar pratos nem preços, consultando estritamente os dados oficiais do restaurante.',
-    },
-    {
-      id: 'chk-6',
-      category: 'SEGURANÇA',
-      name: 'Higienização de Memória e Sessões Antigas',
-      status: fixedCheckIds.includes('chk-6') ? 'OK' : 'ALERTA',
-      details: fixedCheckIds.includes('chk-6')
-        ? 'Memória e sessões sanitizadas com sucesso.'
-        : 'Recomenda-se purgar sessões de teste e conexões temporárias de depuração.',
-      autoFixAvailable: true,
-    },
-  ];
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/system-audit');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setError(data.error || `Não foi possível executar a auditoria (erro ${res.status}).`);
+        setChecks([]);
+      } else {
+        setChecks(data.checks);
+        setGeneratedAt(data.generatedAt);
+      }
+    } catch {
+      setError('Sem conexão com o servidor.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const handleAutoFix = (id: string) => {
-    setFixedCheckIds((prev) => [...prev, id]);
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const handleRunFullScan = () => {
-    setIsRunningScan(true);
-    setTimeout(() => {
-      setIsRunningScan(false);
-      alert('Varredura completa concluída! O sistema está em conformidade com as diretrizes de segurança.');
-    }, 1200);
-  };
+  const fails = checks.filter((c) => c.status === 'fail').length;
+  const warns = checks.filter((c) => c.status === 'warn').length;
+  const oks = checks.filter((c) => c.status === 'ok').length;
 
-  const totalOk = checks.filter((c) => c.status === 'OK' || fixedCheckIds.includes(c.id)).length;
+  const icon = (s: AuditCheck['status']) =>
+    s === 'ok' ? (
+      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+    ) : s === 'warn' ? (
+      <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+    ) : (
+      <XCircle className="w-5 h-5 text-rose-400 shrink-0" />
+    );
+
+  const order = { fail: 0, warn: 1, ok: 2 } as const;
+  const sorted = [...checks].sort((a, b) => order[a.status] - order[b.status]);
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="p-5 rounded-2xl bg-gradient-to-br from-[#10141f] via-[#121622] to-[#0A0D14] border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-black shadow-md shrink-0">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black text-white tracking-tight">
-                Auditor Sênior do Sistema (Security &amp; Architecture Audit)
-              </h2>
-              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                Score: {Math.round((totalOk / checks.length) * 100)}%
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              Inspeção estrita de segurança, segregação multi-tenant, sanitização e saúde operacional
-            </p>
-          </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black text-white flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-amber-400" />
+            Auditoria de segurança e configuração
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Verificações reais feitas pelo servidor neste momento
+            {generatedAt ? ` (${new Date(generatedAt).toLocaleString('pt-BR')})` : ''}.
+          </p>
         </div>
-
         <button
-          onClick={handleRunFullScan}
-          disabled={isRunningScan}
-          className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs shadow flex items-center gap-2 transition-all self-start sm:self-auto"
+          onClick={load}
+          disabled={loading}
+          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-2 disabled:opacity-60"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isRunningScan ? 'animate-spin' : ''}`} />
-          <span>{isRunningScan ? 'Auditando Sistema...' : 'Executar Varredura Completa'}</span>
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          Executar novamente
         </button>
       </div>
 
-      {/* Audit Checklist */}
-      <div className="space-y-3">
-        {checks.map((check) => {
-          const isFixed = fixedCheckIds.includes(check.id);
-          const isOk = check.status === 'OK' || isFixed;
+      {error && (
+        <div role="alert" className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/25 rounded-xl p-3">
+          {error}
+        </div>
+      )}
 
-          return (
-            <div
-              key={check.id}
-              className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                isOk
-                  ? 'bg-[#121622] border-slate-800'
-                  : 'bg-amber-950/20 border-amber-500/40'
-              }`}
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-bold">
-                    {check.category}
-                  </span>
-                  <h4 className="text-xs sm:text-sm font-bold text-white">{check.name}</h4>
-                  <span
-                    className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                      isOk
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : 'bg-amber-500/20 text-amber-400'
-                    }`}
-                  >
-                    {isOk ? 'APROVADO' : 'ATENÇÃO'}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed">{check.details}</p>
-              </div>
+      {checks.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-2xl bg-rose-500/10 border border-rose-500/25 p-3 text-center">
+            <div className="text-2xl font-black text-rose-300">{fails}</div>
+            <div className="text-[11px] text-slate-400">Críticos</div>
+          </div>
+          <div className="rounded-2xl bg-amber-500/10 border border-amber-500/25 p-3 text-center">
+            <div className="text-2xl font-black text-amber-300">{warns}</div>
+            <div className="text-[11px] text-slate-400">Atenção</div>
+          </div>
+          <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/25 p-3 text-center">
+            <div className="text-2xl font-black text-emerald-300">{oks}</div>
+            <div className="text-[11px] text-slate-400">Em ordem</div>
+          </div>
+        </div>
+      )}
 
-              {!isOk && check.autoFixAvailable && (
-                <button
-                  onClick={() => handleAutoFix(check.id)}
-                  className="py-1.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 transition-colors"
-                >
-                  <Wrench className="w-3.5 h-3.5" />
-                  <span>Aplicar Auto-Fix Seguro</span>
-                </button>
-              )}
+      <ul className="space-y-2">
+        {sorted.map((c) => (
+          <li key={c.id} className="flex items-start gap-3 rounded-2xl bg-slate-900/60 border border-slate-800 p-3.5">
+            {icon(c.status)}
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-white">{c.label}</div>
+              <div className="text-xs text-slate-400 mt-0.5 break-words">{c.detail}</div>
             </div>
-          );
-        })}
-      </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };

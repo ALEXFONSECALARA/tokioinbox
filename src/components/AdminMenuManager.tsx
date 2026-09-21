@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
-import { MenuItem, RestaurantSlug } from '../types/restaurant';
+import { MenuItem, RestaurantSlug, ProductionStation } from '../types/restaurant';
 import {
   Plus,
   Edit2,
@@ -17,6 +17,10 @@ import {
   Percent,
   CloudUpload,
   Loader2,
+  ChefHat,
+  Fish,
+  Beer,
+  FileText,
 } from 'lucide-react';
 
 interface AdminMenuManagerProps {
@@ -49,8 +53,18 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
   const [formCmvCost, setFormCmvCost] = useState('');
   const [formImage, setFormImage] = useState('');
   const [formCategory, setFormCategory] = useState('');
+  const [formStation, setFormStation] = useState<ProductionStation>('cozinha');
   const [formIsAvailable, setFormIsAvailable] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Fiscal form states
+  const [formNcm, setFormNcm] = useState('2106.90.90');
+  const [formCest, setFormCest] = useState('');
+  const [formCfop, setFormCfop] = useState('5102');
+  const [formOrigem, setFormOrigem] = useState<number>(0);
+  const [formCsosn, setFormCsosn] = useState('102');
+  const [formIsMonofasico, setFormIsMonofasico] = useState(false);
+  const [formIsSubstituicaoTributaria, setFormIsSubstituicaoTributaria] = useState(false);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -124,7 +138,16 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
       'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80'
     );
     setFormCategory(restaurantCategories[0]?.id || '');
+    setFormStation('cozinha');
     setFormIsAvailable(true);
+    // Fiscal defaults
+    setFormNcm('2106.90.90');
+    setFormCest('');
+    setFormCfop('5102');
+    setFormOrigem(0);
+    setFormCsosn('102');
+    setFormIsMonofasico(false);
+    setFormIsSubstituicaoTributaria(false);
   };
 
   const openEditModal = (item: MenuItem) => {
@@ -137,7 +160,16 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
     setFormCmvCost(item.cmvCost ? item.cmvCost.toString() : '');
     setFormImage(item.image);
     setFormCategory(item.categoryId);
+    setFormStation(item.station || 'cozinha');
     setFormIsAvailable(item.available);
+    // Fiscal fields
+    setFormNcm(item.ncm || '2106.90.90');
+    setFormCest(item.cest || '');
+    setFormCfop(item.cfop || '5102');
+    setFormOrigem(item.origem !== undefined ? item.origem : 0);
+    setFormCsosn(item.csosn || '102');
+    setFormIsMonofasico(item.isMonofasico ?? false);
+    setFormIsSubstituicaoTributaria(item.isSubstituicaoTributaria ?? false);
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -167,7 +199,16 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
         cmvCost: cmvCostNum,
         image: formImage.trim(),
         categoryId: formCategory,
+        station: formStation,
         available: formIsAvailable,
+        // Fiscal
+        ncm: formNcm.trim() || '2106.90.90',
+        cest: formCest.trim() || undefined,
+        cfop: formCfop.trim() || '5102',
+        origem: formOrigem,
+        csosn: formCsosn.trim() || '102',
+        isMonofasico: formIsMonofasico,
+        isSubstituicaoTributaria: formIsSubstituicaoTributaria,
       });
       showToast(`Prato "${formName.trim()}" atualizado com sucesso!`, 'success');
     } else {
@@ -182,8 +223,17 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
         image:
           formImage.trim() ||
           'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
+        station: formStation,
         available: formIsAvailable,
         tags: ['destaque'],
+        // Fiscal
+        ncm: formNcm.trim() || '2106.90.90',
+        cest: formCest.trim() || undefined,
+        cfop: formCfop.trim() || '5102',
+        origem: formOrigem,
+        csosn: formCsosn.trim() || '102',
+        isMonofasico: formIsMonofasico,
+        isSubstituicaoTributaria: formIsSubstituicaoTributaria,
       });
       showToast(`Prato "${formName.trim()}" cadastrado com sucesso!`, 'success');
     }
@@ -282,9 +332,40 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                     <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">
                       {cat?.name || 'Geral'}
                     </span>
+                    {/* Station badge */}
+                    {item.station === 'sushibar' ? (
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
+                        <Fish className="w-2.5 h-2.5" />
+                        <span>Sushibar</span>
+                      </span>
+                    ) : item.station === 'bar' ? (
+                      <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
+                        <Beer className="w-2.5 h-2.5" />
+                        <span>Bar</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
+                        <ChefHat className="w-2.5 h-2.5" />
+                        <span>Cozinha</span>
+                      </span>
+                    )}
                     {item.tags?.includes('mais_vendido') && (
                       <span className="text-[10px] bg-amber-500/20 text-amber-400 font-bold px-1.5 py-0.5 rounded">
                         Top
+                      </span>
+                    )}
+                    {/* Fiscal Tags */}
+                    <span className="text-[9px] bg-slate-900 border border-slate-700 text-slate-400 font-mono px-1.5 py-0.5 rounded">
+                      NCM {item.ncm || '2106.90.90'}
+                    </span>
+                    {item.isMonofasico && (
+                      <span className="text-[9px] bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 font-bold px-1.5 py-0.5 rounded">
+                        PIS Monofásico
+                      </span>
+                    )}
+                    {item.isSubstituicaoTributaria && (
+                      <span className="text-[9px] bg-sky-950/60 border border-sky-500/30 text-sky-300 font-bold px-1.5 py-0.5 rounded">
+                        ICMS-ST
                       </span>
                     )}
                   </div>
@@ -497,6 +578,62 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                 </select>
               </div>
 
+              {/* Setor de Produção Obrigatório (KDS) */}
+              <div className="p-3 bg-[#0E1015] border border-slate-800 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Setor de Produção Obrigatório (KDS) *</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    Roteamento explícito de comanda
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormStation('cozinha')}
+                    className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold flex flex-col items-center gap-1 transition-all ${
+                      formStation === 'cozinha'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <ChefHat className="w-4 h-4 text-amber-400" />
+                    <span>COZINHA</span>
+                    <span className="text-[9px] text-slate-500 font-normal">Quentes / Chapas</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormStation('sushibar')}
+                    className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold flex flex-col items-center gap-1 transition-all ${
+                      formStation === 'sushibar'
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <Fish className="w-4 h-4 text-emerald-400" />
+                    <span>SUSHIBAR</span>
+                    <span className="text-[9px] text-slate-500 font-normal">Sushis / Frios</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormStation('bar')}
+                    className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold flex flex-col items-center gap-1 transition-all ${
+                      formStation === 'bar'
+                        ? 'bg-purple-500/20 text-purple-300 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.2)]'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <Beer className="w-4 h-4 text-purple-400" />
+                    <span>BAR</span>
+                    <span className="text-[9px] text-slate-500 font-normal">Bebidas / Drinks</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-slate-400 text-xs font-bold">Foto do Prato (Cloudinary / CDN)</label>
@@ -534,6 +671,97 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                       <img src={formImage} alt="Preview" className="w-full h-full object-cover" />
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Dados Tributários & Fiscais (SEFAZ / NFC-e) */}
+              <div className="p-3.5 bg-[#0A0D14] border border-emerald-500/30 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Dados Tributários &amp; Fiscais (SEFAZ / NFC-e)</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    Obrigatório para emissão de Cupom Fiscal
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">NCM *</label>
+                    <input
+                      type="text"
+                      value={formNcm}
+                      onChange={(e) => setFormNcm(e.target.value)}
+                      placeholder="2106.90.90"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">CEST (ST)</label>
+                    <input
+                      type="text"
+                      value={formCest}
+                      onChange={(e) => setFormCest(e.target.value)}
+                      placeholder="03.010.00"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">CFOP *</label>
+                    <input
+                      type="text"
+                      value={formCfop}
+                      onChange={(e) => setFormCfop(e.target.value)}
+                      placeholder="5102"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">CSOSN *</label>
+                    <select
+                      value={formCsosn}
+                      onChange={(e) => setFormCsosn(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white font-mono"
+                    >
+                      <option value="102">102 - Tributada pelo Simples</option>
+                      <option value="500">500 - ICMS cobrado por ST</option>
+                      <option value="101">101 - Com permissão de crédito</option>
+                      <option value="300">300 - Imune</option>
+                      <option value="400">400 - Não tributada</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800/80 cursor-pointer hover:border-emerald-500/40 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={formIsMonofasico}
+                      onChange={(e) => setFormIsMonofasico(e.target.checked)}
+                      className="accent-emerald-500 w-4 h-4"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-200">Monofásico PIS/COFINS</span>
+                      <p className="text-[10px] text-slate-400">Bebidas frias (refrigerante, cerveja, água) - segrega no PGDAS</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800/80 cursor-pointer hover:border-emerald-500/40 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={formIsSubstituicaoTributaria}
+                      onChange={(e) => setFormIsSubstituicaoTributaria(e.target.checked)}
+                      className="accent-emerald-500 w-4 h-4"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-200">Substituição Tributária (ICMS-ST)</span>
+                      <p className="text-[10px] text-slate-400">ICMS recolhido anteriormente na fonte pela distribuidora</p>
+                    </div>
+                  </label>
                 </div>
               </div>
 

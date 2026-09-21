@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { RestaurantSlug, OrderSoundType } from '../types/restaurant';
 import { SOUND_PRESETS, playDelayAlertSound, triggerVibrate } from '../utils/audioAlert';
+import { AdminFiscalModule } from './AdminFiscalModule';
 import {
   Save,
   CheckCircle2,
@@ -26,6 +27,8 @@ import {
   Smartphone,
   Globe,
   Copy,
+  FileText,
+  Sliders,
 } from 'lucide-react';
 
 interface AdminSettingsProps {
@@ -86,6 +89,9 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   const [enableSmartAi, setEnableSmartAi] = useState(printerSettings?.enableSmartTicketAI ?? true);
   const [defaultPrinterName, setDefaultPrinterName] = useState(printerSettings?.defaultPrinterName || 'Impressora Cozinha ESC/POS');
 
+  // Sub-aba: Geral vs Fiscal (ADMIN -> CONFIGURAÇÕES -> FISCAL)
+  const [settingsTab, setSettingsTab] = useState<'geral' | 'fiscal'>('geral');
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -134,44 +140,80 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   };
 
   return (
-    <form onSubmit={handleSave} className="space-y-6 max-w-4xl mx-auto">
-      {/* Top Banner with Open/Closed switch */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="text-3xl">{restaurant.emoji}</div>
-          <div>
-            <h2 className="text-base font-bold text-white">
-              Configurações: {restaurant.name}
-            </h2>
-            <p className="text-xs text-slate-400">
-              Personalize regras operacionais, delivery, PIX e horários deste restaurante
-            </p>
-          </div>
-        </div>
-
-        {/* Status Aberto / Fechado Switch */}
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Selector: Geral vs Fiscal (ADMIN -> CONFIGURAÇÕES -> FISCAL) */}
+      <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 shadow-md">
         <button
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className={`px-4 py-2.5 rounded-xl border flex items-center gap-2 font-bold text-xs transition-all shadow-md ${
-            isOpen
-              ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300'
-              : 'bg-rose-500/15 border-rose-500 text-rose-300'
+          onClick={() => setSettingsTab('geral')}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            settingsTab === 'geral'
+              ? 'bg-amber-500 text-slate-950 font-black shadow-lg'
+              : 'text-slate-400 hover:text-white'
           }`}
         >
-          {isOpen ? (
-            <>
-              <ToggleRight className="w-5 h-5 text-emerald-400" />
-              <span>LOJA ABERTA (Recebendo Pedidos)</span>
-            </>
-          ) : (
-            <>
-              <ToggleLeft className="w-5 h-5 text-rose-400" />
-              <span>LOJA FECHADA (Cardápio em Pausa)</span>
-            </>
-          )}
+          <Sliders className="w-4 h-4" />
+          <span>Configurações Gerais &amp; Loja</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSettingsTab('fiscal')}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            settingsTab === 'fiscal'
+              ? 'bg-emerald-600 text-white font-black shadow-lg'
+              : 'text-emerald-400 hover:text-white hover:bg-emerald-950/40'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>Configurações Fiscais (NFC-e / NF-e / SEFAZ)</span>
+          <span className="bg-emerald-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
+            NOVO
+          </span>
         </button>
       </div>
+
+      {settingsTab === 'fiscal' ? (
+        <AdminFiscalModule selectedSlug={currentRestaurantSlug} />
+      ) : (
+        <form onSubmit={handleSave} className="space-y-6">
+          {/* Top Banner with Open/Closed switch */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl">{restaurant.emoji}</div>
+              <div>
+                <h2 className="text-base font-bold text-white">
+                  Configurações: {restaurant.name}
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Personalize regras operacionais, delivery, PIX e horários deste restaurante
+                </p>
+              </div>
+            </div>
+
+            {/* Status Aberto / Fechado Switch */}
+            <button
+              type="button"
+              onClick={() => setIsOpen(!isOpen)}
+              className={`px-4 py-2.5 rounded-xl border flex items-center gap-2 font-bold text-xs transition-all shadow-md ${
+                isOpen
+                  ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300'
+                  : 'bg-rose-500/15 border-rose-500 text-rose-300'
+              }`}
+            >
+              {isOpen ? (
+                <>
+                  <ToggleRight className="w-5 h-5 text-emerald-400" />
+                  <span>LOJA ABERTA (Recebendo Pedidos)</span>
+                </>
+              ) : (
+                <>
+                  <ToggleLeft className="w-5 h-5 text-rose-400" />
+                  <span>LOJA FECHADA (Cardápio em Pausa)</span>
+                </>
+              )}
+            </button>
+          </div>
 
       {savedSuccess && (
         <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-2 animate-in fade-in">
@@ -190,7 +232,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
               <span>Link HTTP Próprio / Endereço Dedicado desta Loja</span>
             </div>
             <span className="text-[10px] text-slate-400 font-normal lowercase font-mono">
-              https://tokioinbox.onrender.com/{customUrlPath}
+              {window.location.origin}/{customUrlPath}
             </span>
           </div>
 
@@ -200,7 +242,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
                 Slug / Rota Exclusiva (ex: SakuraSushiHouse, CantinaBellaVista)
               </label>
               <div className="flex items-center bg-slate-950 border border-slate-800 focus-within:border-amber-500 rounded-xl px-3 py-2 text-white font-mono">
-                <span className="text-slate-500 text-xs">https://tokioinbox.onrender.com/</span>
+                <span className="text-slate-500 text-xs">{window.location.origin}/</span>
                 <input
                   type="text"
                   value={customUrlPath}
@@ -213,7 +255,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
             <button
               type="button"
               onClick={async () => {
-                await navigator.clipboard.writeText(`https://tokioinbox.onrender.com/${customUrlPath}`);
+                await navigator.clipboard.writeText(`${window.location.origin}/${customUrlPath}`);
                 setCopiedUrl(true);
                 setTimeout(() => setCopiedUrl(false), 2500);
               }}
@@ -749,6 +791,8 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
           <span>Salvar Alterações do Restaurante</span>
         </button>
       </div>
-    </form>
+        </form>
+      )}
+    </div>
   );
 };

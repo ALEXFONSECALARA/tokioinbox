@@ -47,6 +47,7 @@ import {
 import { playAlertSound } from '../utils/audioAlert';
 import { ThermalTicketModal } from './ThermalTicketModal';
 import { EnvironmentBar, OperationalEnvironment } from './EnvironmentBar';
+import { OfflineStatusIndicator } from './OfflineStatusIndicator';
 
 interface WaiterPdvTouchProps {
   onBackToApp?: () => void;
@@ -652,6 +653,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
         {/* Waiter Name & Fast Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
+          <OfflineStatusIndicator />
+
           <div className="flex items-center gap-2 bg-[#171C28] px-3 py-1.5 rounded-xl border border-slate-700">
             <UserCheck className="w-4 h-4 text-amber-400" />
             <input

@@ -6,7 +6,6 @@ import { RestaurantDossierModal } from './RestaurantDossierModal';
 import { RestaurantDirectLinkModal } from './RestaurantDirectLinkModal';
 import { VitrineRestaurantCard } from './VitrineRestaurantCard';
 import { BrandLogo } from './BrandLogo';
-import { NexoroBrandFooter } from './NexoroBrandFooter';
 import { BRAND_CONFIG, BRAND_NAME, BRAND_TAGLINE, BRAND_SLOGAN } from '../config/brand';
 import { getRestaurantDirectUrl, copyToClipboard } from '../utils/urlRouting';
 import {
@@ -32,18 +31,27 @@ import {
   Info,
   Globe,
   QrCode,
+  UserCheck,
+  Users,
+  Fish,
+  Beer,
+  Wallet,
+  Settings,
+  ArrowRight,
+  Truck,
+  Activity,
+  Bot,
+  TrendingUp,
 } from 'lucide-react';
 
 interface HomeHubProps {
   onSelectRestaurant: (slug: RestaurantSlug) => void;
   onOpenTracker: () => void;
-  onOpenAdmin: () => void;
 }
 
 export const HomeHub: React.FC<HomeHubProps> = ({
   onSelectRestaurant,
   onOpenTracker,
-  onOpenAdmin,
 }) => {
   const { restaurants, categories, menuItems } = useStore();
   const [searchFilter, setSearchFilter] = useState('');
@@ -235,65 +243,6 @@ export const HomeHub: React.FC<HomeHubProps> = ({
                 <span className="text-[#E3BD6A] text-[10px]">Temperatura Perfeita</span>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 👑 PILARES DO NEXORO FOOD SYSTEM (food nexoro.png) */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="p-4 rounded-2xl bg-[#0B0B0B] border border-[#2A2A2A] hover:border-[#D4AF37]/50 transition-all flex items-start gap-3 group">
-          <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] font-black text-lg shrink-0 group-hover:scale-105 transition-transform">
-            ⚡
-          </div>
-          <div>
-            <h4 className="text-xs font-black text-white group-hover:text-[#D4AF37] transition-colors">
-              Sistema Completo
-            </h4>
-            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-              Pedidos • Gestão • Marketing • Relatórios
-            </p>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-[#0B0B0B] border border-[#2A2A2A] hover:border-[#00C896]/50 transition-all flex items-start gap-3 group">
-          <div className="w-10 h-10 rounded-xl bg-[#00C896]/10 border border-[#00C896]/20 flex items-center justify-center text-[#00C896] font-black text-lg shrink-0 group-hover:scale-105 transition-transform">
-            📱
-          </div>
-          <div>
-            <h4 className="text-xs font-black text-white group-hover:text-[#00C896] transition-colors">
-              Todos os Dispositivos
-            </h4>
-            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-              Desktop • Tablet • Mobile • PWA Instalável
-            </p>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-[#0B0B0B] border border-[#2A2A2A] hover:border-emerald-500/50 transition-all flex items-start gap-3 group">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-black text-lg shrink-0 group-hover:scale-105 transition-transform">
-            🔒
-          </div>
-          <div>
-            <h4 className="text-xs font-black text-white group-hover:text-emerald-400 transition-colors">
-              Seguro e Confiável
-            </h4>
-            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-              Dados protegidos • Supabase • Políticas RLS
-            </p>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-[#0B0B0B] border border-[#2A2A2A] hover:border-amber-500/50 transition-all flex items-start gap-3 group">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-black text-lg shrink-0 group-hover:scale-105 transition-transform">
-            🚀
-          </div>
-          <div>
-            <h4 className="text-xs font-black text-white group-hover:text-amber-400 transition-colors">
-              Mais Vendas &amp; Resultados
-            </h4>
-            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-              Tecnologia de ponta a favor do seu negócio
-            </p>
           </div>
         </div>
       </section>
@@ -552,9 +501,6 @@ export const HomeHub: React.FC<HomeHubProps> = ({
           </button>
         </div>
       </section>
-
-      {/* 👑 DESIGN SYSTEM & BRAND SHOWCASE FOOTER (food nexoro.png) */}
-      <NexoroBrandFooter />
 
       {/* MODAL DE DOSSIÊ INDEPENDENTE DA CASA */}
       <RestaurantDossierModal
