@@ -8,7 +8,34 @@ export type RestaurantSlug =
   | 'vegano'
   | (string & {});
 
-export type OrderType = 'delivery' | 'retirada' | 'mesa' | 'balcao';
+export type OrderType = 'mesa' | 'balcao' | 'delivery' | 'retirada' | 'online';
+
+export function normalizeOrderType(raw: string | undefined | null): OrderType {
+  if (!raw) return 'mesa';
+  const clean = raw.toLowerCase().trim().replace(/ã/g, 'a').replace(/ç/g, 'c');
+  if (clean === 'dine_in' || clean === 'mesa' || clean.includes('mesa')) return 'mesa';
+  if (clean === 'counter' || clean === 'balcao' || clean.includes('balcao')) return 'balcao';
+  if (clean === 'delivery' || clean.includes('entrega')) return 'delivery';
+  if (clean === 'retirada' || clean === 'takeaway' || clean.includes('retirada')) return 'retirada';
+  if (clean === 'online' || clean.includes('web')) return 'online';
+  return 'mesa';
+}
+
+export interface SalesChannelConfig {
+  id: 'mesa' | 'balcao' | 'delivery' | 'online' | 'retirada';
+  orderType: OrderType;
+  name: string;
+  enabled: boolean;
+  color: string; // Admin-configurable color
+  textColor?: string;
+  allowQrCodeCustomerOrder?: boolean;
+  autoPrintReceipt?: boolean;
+  productionStations: ProductionStation[];
+  acceptedPaymentMethods: PaymentMethod[];
+  operationalHours?: string;
+  minOrderValue?: number;
+  description?: string;
+}
 
 export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro';
 
@@ -95,6 +122,16 @@ export interface MenuItem {
   station?: ProductionStation; // Optional explicit station override ('cozinha' | 'sushibar' | 'bar')
   tags?: ('mais_vendido' | 'promocao' | 'vegetariano' | 'destaque')[];
   optionGroups?: MenuItemOptionGroup[];
+  // Dados Fiscais para SEFAZ (NFC-e / NF-e)
+  ncm?: string;
+  cest?: string;
+  cfop?: string;
+  origem?: number;
+  csosn?: string;
+  cstIcms?: string;
+  isMonofasico?: boolean;
+  isSubstituicaoTributaria?: boolean;
+  aliquotaIcms?: number;
 }
 
 export interface MenuCategory {
@@ -229,6 +266,8 @@ export interface OrderItemRecord {
 
 export interface Order {
   id: string;
+  /** Token secreto de rastreio (só o cliente que criou o pedido recebe). */
+  trackingToken?: string;
   shortCode: string; // e.g. #TK-4821
   restaurantSlug: RestaurantSlug;
   restaurantName: string;
@@ -295,10 +334,15 @@ export interface DelayAlertSettings {
 export type UserRole =
   | 'super_admin'
   | 'administrador'
+  | 'admin'
+  | 'admin_master'
   | 'caixa'
   | 'cozinha'
+  | 'sushi_bar'
+  | 'bar'
   | 'entrega'
-  | 'garcom';
+  | 'garcom'
+  | 'gerente';
 
 export type TableStatus = 'livre' | 'ocupada' | 'preparando' | 'conta_solicitada';
 
@@ -344,6 +388,7 @@ export interface UserAccount {
   permissions: UserPermissions;
   createdAt: string;
   lastLoginAt?: string;
+  token?: string;
 }
 
 export interface ConnectedDevice {
