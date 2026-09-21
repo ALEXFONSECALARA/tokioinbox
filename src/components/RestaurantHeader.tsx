@@ -18,9 +18,10 @@ import {
 
 interface RestaurantHeaderProps {
   restaurant?: RestaurantConfig;
+  allowTableOrders?: boolean;
 }
 
-export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: propRestaurant }) => {
+export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: propRestaurant, allowTableOrders = false }) => {
   const { currentRestaurant, orderType, setOrderType, selectedTable, setSelectedTable } = useStore();
   const restaurant = propRestaurant || currentRestaurant;
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -165,22 +166,24 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
                 <span>Retirar no Balcão</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setOrderType('mesa');
-                  setShowTableSelector(true);
-                }}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
-                  orderType === 'mesa'
-                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                <UtensilsCrossed className="w-3.5 h-3.5" />
-                <span>
-                  {selectedTable ? `Mesa ${selectedTable}` : 'Consumo no Local / Mesa'}
-                </span>
-              </button>
+              {allowTableOrders && (
+                <button
+                  onClick={() => {
+                    setOrderType('mesa');
+                    setShowTableSelector(true);
+                  }}
+                  className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                    orderType === 'mesa'
+                      ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <UtensilsCrossed className="w-3.5 h-3.5" />
+                  <span>
+                    {selectedTable ? `Mesa ${selectedTable}` : 'Consumo no Local / Mesa'}
+                  </span>
+                </button>
+              )}
             </div>
 
             {/* Context Notice based on modality */}
@@ -200,7 +203,7 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
                   <span>Sem taxa de entrega • Retirada em {restaurant.estimatedTimeMin} min</span>
                 </>
               )}
-              {orderType === 'mesa' && (
+              {allowTableOrders && orderType === 'mesa' && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-amber-400 font-semibold">
                     {selectedTable ? `Mesa nº ${selectedTable} selecionada` : 'Por favor selecione sua mesa'}

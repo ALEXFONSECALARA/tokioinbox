@@ -80,7 +80,9 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     appendItemsToTableOrder,
     closeTableOrder,
     activeRestaurantSlug,
+    setActiveRestaurantSlug,
     restaurants,
+    currentUser,
     showToast,
   } = useStore();
 
@@ -130,11 +132,38 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const tableNumbers = useMemo(() => Array.from({ length: 24 }, (_, i) => i + 1), []);
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
+  const restaurantMenuItems = useMemo(
+    () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
+    [menuItems, restaurant?.slug]
+  );
+  const restaurantCategories = useMemo(
+    () => categories.filter((cat) => cat.restaurantSlug === restaurant?.slug),
+    [categories, restaurant?.slug]
+  );
+  const canSwitchRestaurant = Boolean(currentUser?.restaurantSlug === 'all' && currentUser?.permissions?.can_view_menu);
+
+  useEffect(() => {
+    if (currentUser?.restaurantSlug && currentUser.restaurantSlug !== 'all' && currentUser.restaurantSlug !== activeRestaurantSlug) {
+      setActiveRestaurantSlug(currentUser.restaurantSlug as RestaurantSlug);
+      setCurrentScreen('mesas');
+      setSelectedTable(null);
+      setDraftItems([]);
+    }
+  }, [currentUser?.restaurantSlug, activeRestaurantSlug, setActiveRestaurantSlug]);
+
+  useEffect(() => {
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setSelectedTable(null);
+    setDraftItems([]);
+    setCurrentScreen('mesas');
+  }, [activeRestaurantSlug]);
 
   // Map active orders by table
   const activeOrdersByTable = useMemo(() => {
     const map: Record<number, Order> = {};
     orders.forEach((ord) => {
+      if (ord.restaurantSlug !== activeRestaurantSlug) return;
       if (
         ord.orderType === 'mesa' &&
         ord.tableNumber &&
@@ -147,7 +176,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       }
     });
     return map;
-  }, [orders]);
+  }, [orders, activeRestaurantSlug]);
 
   // Current active order for selected table
   const currentTableOrder = selectedTable ? activeOrdersByTable[selectedTable] : null;
@@ -254,7 +283,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
   // Quick categories and popular items filter
   const filteredMenuItems = useMemo(() => {
-    return menuItems.filter((item) => {
+    return restaurantMenuItems.filter((item) => {
       // Must be available
       if (!item.available) return false;
 
@@ -285,7 +314,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
       return true;
     });
-  }, [menuItems, selectedCategory, searchQuery]);
+  }, [restaurantMenuItems, selectedCategory, searchQuery]);
 
   // Counts of draft items and totals
   const draftItemsCount = useMemo(
@@ -631,23 +660,41 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
             </button>
           )}
 
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center font-black text-slate-950 shadow-lg">
-              <Utensils className="w-5 h-5" />
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-slate-950 border border-amber-500/40 overflow-hidden flex items-center justify-center shadow-lg shrink-0">
+              {restaurant?.logo ? (
+                <img src={restaurant.logo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-xl">{restaurant?.emoji || '🍽️'}</span>
+              )}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-sm sm:text-base font-black text-white uppercase tracking-wider">
                   PDV TOUCH GARÇOM
                 </h1>
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30 truncate max-w-[220px]">
                   {restaurant?.name || 'Salão'}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Venda Rápida Touch • Cozinha • SushiBar • Bar
+              <p className="text-[11px] text-slate-400 truncate">
+                Cardápio exclusivo desta casa • Cozinha • SushiBar • Bar
               </p>
             </div>
+            {canSwitchRestaurant && (
+              <select
+                value={activeRestaurantSlug}
+                onChange={(e) => setActiveRestaurantSlug(e.target.value as RestaurantSlug)}
+                className="ml-1 max-w-[190px] bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold text-amber-300 focus:outline-none focus:border-amber-500"
+                aria-label="Selecionar restaurante do PDV"
+              >
+                {Object.values(restaurants).filter((r) => r.isActive !== false).map((r) => (
+                  <option key={r.slug} value={r.slug}>
+                    {r.emoji} {r.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -1007,7 +1054,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                   >
                     <span>Todos</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30 font-mono">
-                      {menuItems.filter((i) => i.available).length}
+                      {restaurantMenuItems.filter((i) => i.available).length}
                     </span>
                   </button>
 
@@ -1036,8 +1083,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                   </button>
 
                   {/* Categorias originais do restaurante */}
-                  {categories.map((cat) => {
-                    const count = menuItems.filter(
+                  {restaurantCategories.map((cat) => {
+                    const count = restaurantMenuItems.filter(
                       (i) => i.categoryId === cat.id && i.available
                     ).length;
                     return (

@@ -20,7 +20,6 @@ import {
   ChefHat,
   Fish,
   Beer,
-  FileText,
 } from 'lucide-react';
 
 interface AdminMenuManagerProps {
@@ -671,97 +670,6 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                       <img src={formImage} alt="Preview" className="w-full h-full object-cover" />
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* Dados Tributários & Fiscais (SEFAZ / NFC-e) */}
-              <div className="p-3.5 bg-[#0A0D14] border border-emerald-500/30 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Dados Tributários &amp; Fiscais (SEFAZ / NFC-e)</span>
-                  </label>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    Obrigatório para emissão de Cupom Fiscal
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">NCM *</label>
-                    <input
-                      type="text"
-                      value={formNcm}
-                      onChange={(e) => setFormNcm(e.target.value)}
-                      placeholder="2106.90.90"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">CEST (ST)</label>
-                    <input
-                      type="text"
-                      value={formCest}
-                      onChange={(e) => setFormCest(e.target.value)}
-                      placeholder="03.010.00"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">CFOP *</label>
-                    <input
-                      type="text"
-                      value={formCfop}
-                      onChange={(e) => setFormCfop(e.target.value)}
-                      placeholder="5102"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">CSOSN *</label>
-                    <select
-                      value={formCsosn}
-                      onChange={(e) => setFormCsosn(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white font-mono"
-                    >
-                      <option value="102">102 - Tributada pelo Simples</option>
-                      <option value="500">500 - ICMS cobrado por ST</option>
-                      <option value="101">101 - Com permissão de crédito</option>
-                      <option value="300">300 - Imune</option>
-                      <option value="400">400 - Não tributada</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800/80 cursor-pointer hover:border-emerald-500/40 transition-all">
-                    <input
-                      type="checkbox"
-                      checked={formIsMonofasico}
-                      onChange={(e) => setFormIsMonofasico(e.target.checked)}
-                      className="accent-emerald-500 w-4 h-4"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-slate-200">Monofásico PIS/COFINS</span>
-                      <p className="text-[10px] text-slate-400">Bebidas frias (refrigerante, cerveja, água) - segrega no PGDAS</p>
-                    </div>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800/80 cursor-pointer hover:border-emerald-500/40 transition-all">
-                    <input
-                      type="checkbox"
-                      checked={formIsSubstituicaoTributaria}
-                      onChange={(e) => setFormIsSubstituicaoTributaria(e.target.checked)}
-                      className="accent-emerald-500 w-4 h-4"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-slate-200">Substituição Tributária (ICMS-ST)</span>
-                      <p className="text-[10px] text-slate-400">ICMS recolhido anteriormente na fonte pela distribuidora</p>
-                    </div>
-                  </label>
                 </div>
               </div>
 

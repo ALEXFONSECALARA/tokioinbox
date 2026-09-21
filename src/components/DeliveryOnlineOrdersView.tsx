@@ -3,7 +3,6 @@ import { useStore } from '../context/StoreContext';
 import { Order, OrderStatus } from '../types/restaurant';
 import { OrderOriginBadge } from './OrderOriginBadge';
 import { ThermalTicketModal } from './ThermalTicketModal';
-import { AdminFiscalModal } from './AdminFiscalModal';
 import { OfflineStatusIndicator } from './OfflineStatusIndicator';
 import {
   Bike,
@@ -40,7 +39,6 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
   const [statusFilter, setStatusFilter] = useState<'ativos' | 'recebido' | 'em_preparo' | 'pronto' | 'saiu_para_entrega' | 'entregue'>('ativos');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTicketOrder, setSelectedTicketOrder] = useState<Order | null>(null);
-  const [selectedFiscalOrder, setSelectedFiscalOrder] = useState<Order | null>(null);
 
   // STRICT RULE: ONLY orders made outside the salon (NEVER mesa/dine-in)
   const onlineOrders = useMemo(() => {
@@ -454,14 +452,6 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
                         <Printer className="w-4 h-4" />
                       </button>
 
-                      <button
-                        onClick={() => setSelectedFiscalOrder(order)}
-                        className="p-2.5 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-500/30 transition-colors"
-                        title="Emitir Cupom Fiscal (NFC-e / SEFAZ)"
-                      >
-                        <Receipt className="w-4 h-4 text-emerald-400" />
-                      </button>
-
                       {order.status !== 'entregue' && order.status !== 'finalizado' ? (
                         <button
                           onClick={() => handleAdvanceStatus(order)}
@@ -501,15 +491,6 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
         />
       )}
 
-      {/* Official Fiscal NFC-e Modal */}
-      {selectedFiscalOrder && (
-        <AdminFiscalModal
-          order={selectedFiscalOrder}
-          isOpen={!!selectedFiscalOrder}
-          onClose={() => setSelectedFiscalOrder(null)}
-          restaurantSlug={selectedFiscalOrder.restaurantSlug}
-        />
-      )}
     </div>
   );
 };

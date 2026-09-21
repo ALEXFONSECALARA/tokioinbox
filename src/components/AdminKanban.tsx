@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, OrderStatus, RestaurantSlug } from '../types/restaurant';
 import { ThermalTicketModal } from './ThermalTicketModal';
-import { AdminFiscalModal } from './AdminFiscalModal';
 import { SOUND_PRESETS, playDelayAlertSound } from '../utils/audioAlert';
 import {
   Clock,
@@ -14,7 +13,6 @@ import {
   Bike,
   Store,
   UtensilsCrossed,
-  Receipt,
   Trash2,
   Volume2,
   VolumeX,
@@ -122,7 +120,6 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
   } = useStore();
 
   const [activeThermalOrder, setActiveThermalOrder] = useState<Order | null>(null);
-  const [activeFiscalOrder, setActiveFiscalOrder] = useState<Order | null>(null);
 
   const currentPreset = SOUND_PRESETS.find((p) => p.id === soundSettings.soundType) || SOUND_PRESETS[0];
 
@@ -511,16 +508,6 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
                             </span>
                           </button>
 
-                          {/* Fiscal Cupom NFC-e Button */}
-                          <button
-                            onClick={() => setActiveFiscalOrder(order)}
-                            className="p-1.5 rounded-lg border bg-slate-900 text-emerald-400 border-emerald-500/30 hover:bg-slate-800 transition-colors flex items-center gap-1 text-[11px] font-semibold"
-                            title="Emitir ou visualizar Cupom Fiscal (NFC-e / SEFAZ)"
-                          >
-                            <Receipt className="w-3.5 h-3.5 text-emerald-400" />
-                            <span className="hidden sm:inline">Fiscal</span>
-                          </button>
-
                           {/* Operational Advance Status Button */}
                           {col.nextStatus && (
                             <button
@@ -610,15 +597,6 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
         />
       )}
 
-      {/* Fiscal NFC-e Modal */}
-      {activeFiscalOrder && (
-        <AdminFiscalModal
-          order={activeFiscalOrder}
-          isOpen={!!activeFiscalOrder}
-          onClose={() => setActiveFiscalOrder(null)}
-          restaurantSlug={activeFiscalOrder.restaurantSlug}
-        />
-      )}
     </div>
   );
 };

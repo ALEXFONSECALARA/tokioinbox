@@ -31,7 +31,6 @@ import { AdminBackupRestore } from './AdminBackupRestore';
 import { AdminAdministrativeSuite } from './AdminAdministrativeSuite';
 import { AdminAiEngineCenter } from './AdminAiEngineCenter';
 import { AdminSalesChannelsSettings } from './AdminSalesChannelsSettings';
-import { AdminFiscalModule } from './AdminFiscalModule';
 import { NexoroBrandFooter } from './NexoroBrandFooter';
 import { AdminViewAsBar, ViewAsRole } from './AdminViewAsBar';
 import { AdminNexoroDashboard } from './AdminNexoroDashboard';
@@ -123,7 +122,7 @@ interface AdminLayoutProps {
     | 'backup'
     | 'admin_suite'
     | 'ai_engine'
-    | 'fiscal';
+
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTab }) => {
@@ -176,7 +175,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
     | 'backup'
     | 'admin_suite'
     | 'ai_engine'
-    | 'fiscal'
   >(initialTab || 'dashboard');
 
   useEffect(() => {
@@ -195,7 +193,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
   const [isDevicePreviewModalOpen, setIsDevicePreviewModalOpen] = useState(false);
 
   // Filter for restaurant in admin: 'all' or specific slug
-  const [selectedFilterSlug, setSelectedFilterSlug] = useState<RestaurantSlug | 'all'>('all');
+  const [selectedFilterSlug, setSelectedFilterSlug] = useState<RestaurantSlug | 'all'>(
+    currentUser?.restaurantSlug && currentUser.restaurantSlug !== 'all' ? (currentUser.restaurantSlug as RestaurantSlug) : 'all'
+  );
+
+  useEffect(() => {
+    if (currentUser?.restaurantSlug && currentUser.restaurantSlug !== 'all') {
+      setSelectedFilterSlug(currentUser.restaurantSlug as RestaurantSlug);
+    } else if (currentUser?.restaurantSlug === 'all') {
+      setSelectedFilterSlug((prev) => prev);
+    }
+  }, [currentUser?.restaurantSlug]);
 
   // 6 Categorias Canônicas
   const [selectedCategory, setSelectedCategory] = useState<
@@ -212,11 +220,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
       case 'EQUIPE':
         return ['users', 'devices', 'audit'].includes(tab);
       case 'GESTÃO':
-        return ['dashboard', 'cashier', 'customers', 'crm_recovery', 'auditor', 'fiscal'].includes(tab);
+        return ['dashboard', 'cashier', 'customers', 'crm_recovery', 'auditor'].includes(tab);
       case 'INTELIGÊNCIA':
         return ['ai_engine', 'ai_sales', 'marketing', 'promotions'].includes(tab);
       case 'SISTEMA':
-        return ['settings', 'fiscal', 'sales_channels', 'print_agent', 'delivery_areas', 'backup', 'health', 'admin_suite', 'tools_catalog'].includes(tab);
+        return ['settings', 'sales_channels', 'print_agent', 'delivery_areas', 'backup', 'health', 'admin_suite', 'tools_catalog'].includes(tab);
       default:
         return true;
     }
@@ -486,17 +494,22 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
               <span className="text-xs text-slate-400 font-bold whitespace-nowrap">Restaurante:</span>
               <select
                 value={selectedFilterSlug}
+                disabled={currentUser.restaurantSlug !== 'all'}
                 onChange={(e) => setSelectedFilterSlug(e.target.value as any)}
-                className="bg-transparent text-xs text-[#E3BD6A] font-black focus:outline-none cursor-pointer"
+                className="bg-transparent text-xs text-[#E3BD6A] font-black focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
               >
-                <option value="all" className="bg-[#0E121B] text-white">
-                  🌐 Todas as Lojas (Rede)
-                </option>
-                {Object.values(restaurants).map((r) => (
-                  <option key={r.slug} value={r.slug} className="bg-[#0E121B] text-white">
-                    {r.emoji} {r.name} {r.isOpen ? '• Aberto' : '• Fechado'}
+                {currentUser.restaurantSlug === 'all' && (
+                  <option value="all" className="bg-[#0E121B] text-white">
+                    🌐 Todas as Lojas (Rede)
                   </option>
-                ))}
+                )}
+                {Object.values(restaurants)
+                  .filter((r) => currentUser.restaurantSlug === 'all' || r.slug === currentUser.restaurantSlug)
+                  .map((r) => (
+                    <option key={r.slug} value={r.slug} className="bg-[#0E121B] text-white">
+                      {r.emoji} {r.name} {r.isOpen ? '• Aberto' : '• Fechado'}
+                    </option>
+                  ))}
               </select>
 
               {/* Status do restaurante selecionado */}
@@ -1013,24 +1026,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             </button>
           )}
 
-          {/* Módulo Fiscal Tab (SEFAZ NFC-e / NF-e) */}
-          {(currentUser.role === 'super_admin' || currentUser.role === 'administrador') && isTabInCategory('fiscal') && (
-            <button
-              onClick={() => setActiveTab('fiscal')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-                activeTab === 'fiscal'
-                  ? 'bg-emerald-600 text-white font-black shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-                  : 'text-emerald-400 hover:text-white hover:bg-emerald-950/40 border border-emerald-500/20'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Módulo Fiscal</span>
-              <span className="bg-emerald-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-                SEFAZ
-              </span>
-            </button>
-          )}
-
           {/* Canais de Venda Tab */}
           {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('sales_channels') && (
             <button
@@ -1322,10 +1317,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
 
         {activeTab === 'settings' && (
           <AdminSettings currentRestaurantSlug={activeSingleSlug} />
-        )}
-
-        {activeTab === 'fiscal' && (
-          <AdminFiscalModule selectedSlug={selectedFilterSlug} />
         )}
 
         {activeTab === 'sales_channels' && (

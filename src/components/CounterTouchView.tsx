@@ -1,10 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { MenuItem, PaymentMethod } from '../types/restaurant';
 import { OfflineStatusIndicator } from './OfflineStatusIndicator';
 import { OrderOriginBadge } from './OrderOriginBadge';
 import {
-  Store,
   Plus,
   Minus,
   Trash2,
@@ -35,6 +34,8 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp 
     orders,
     activeRestaurantSlug,
     restaurants,
+    currentUser,
+    setActiveRestaurantSlug,
     showToast,
   } = useStore();
 
@@ -49,16 +50,32 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp 
   const [lastFinishedOrder, setLastFinishedOrder] = useState<any | null>(null);
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
+  useEffect(() => {
+    if (currentUser?.restaurantSlug && currentUser.restaurantSlug !== 'all' && currentUser.restaurantSlug !== activeRestaurantSlug) {
+      setActiveRestaurantSlug(currentUser.restaurantSlug as any);
+      setCartItems([]);
+      setSelectedCategory('all');
+      setSearchQuery('');
+    }
+  }, [currentUser?.restaurantSlug, activeRestaurantSlug, setActiveRestaurantSlug]);
+  const restaurantMenuItems = useMemo(
+    () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
+    [menuItems, restaurant?.slug]
+  );
+  const restaurantCategories = useMemo(
+    () => categories.filter((cat) => cat.restaurantSlug === restaurant?.slug),
+    [categories, restaurant?.slug]
+  );
 
   // Auto-generate next pickup counter number (e.g., #B-101, #B-102)
   const nextCounterNumber = useMemo(() => {
-    const balcaoOrders = orders.filter((o) => o.orderType === 'balcao');
+    const balcaoOrders = orders.filter((o) => o.orderType === 'balcao' && o.restaurantSlug === activeRestaurantSlug);
     return 100 + (balcaoOrders.length % 900) + 1;
-  }, [orders]);
+  }, [orders, activeRestaurantSlug]);
 
   // Filter menu items
   const filteredItems = useMemo(() => {
-    return menuItems.filter((item) => {
+    return restaurantMenuItems.filter((item) => {
       if (item.available === false) return false;
       if (selectedCategory !== 'all' && item.categoryId !== selectedCategory) return false;
       if (searchQuery.trim()) {
@@ -67,7 +84,7 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp 
       }
       return true;
     });
-  }, [menuItems, selectedCategory, searchQuery]);
+  }, [restaurantMenuItems, selectedCategory, searchQuery]);
 
   const addToCart = (item: MenuItem) => {
     setCartItems((prev) => {
@@ -163,9 +180,9 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp 
   // Recent Balcão orders
   const recentBalcaoOrders = useMemo(() => {
     return orders
-      .filter((o) => o.orderType === 'balcao')
+      .filter((o) => o.orderType === 'balcao' && o.restaurantSlug === activeRestaurantSlug)
       .slice(0, 5);
-  }, [orders]);
+  }, [orders, activeRestaurantSlug]);
 
   return (
     <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col select-none">
@@ -182,8 +199,12 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp 
             </button>
           )}
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400">
-              <Store className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/40 overflow-hidden flex items-center justify-center text-sky-400">
+              {restaurant?.logo ? (
+                <img src={restaurant.logo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-xl">{restaurant?.emoji || '🍽️'}</span>
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -191,11 +212,11 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp 
                   🚶 BALCÃO — VENDA RÁPIDA
                 </h1>
                 <span className="px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/50 text-sky-300 text-[10px] font-black uppercase">
-                  CANAL DIRETO
+                  CARDÁPIO DA CASA
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                {restaurant?.name} • Próxima Senha de Retirada:{' '}
+                {restaurant?.name} • Cardápio exclusivo desta casa • Próxima Senha de Retirada:{' '}
                 <strong className="text-sky-400 font-mono text-sm">#{nextCounterNumber}</strong>
               </p>
             </div>
@@ -222,9 +243,9 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp 
                     : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                Todos ({menuItems.length})
+                Todos ({restaurantMenuItems.length})
               </button>
-              {categories.map((cat) => (
+              {restaurantCategories.map((cat) => (
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}

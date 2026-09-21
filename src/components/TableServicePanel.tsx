@@ -32,10 +32,9 @@ import {
   Banknote,
   History,
   Smartphone,
-  FileText,
 } from 'lucide-react';
-import { AdminFiscalModal } from './AdminFiscalModal';
 import { BRAND_NAME } from '../config/brand';
+import { getRestaurantPath, getQrCodeImageUrl } from '../utils/urlRouting';
 import { playAlertSound } from '../utils/audioAlert';
 
 interface TableServicePanelProps {
@@ -115,7 +114,8 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [showShiftHistoryModal, setShowShiftHistoryModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro'>('pix');
   const [cashReceived, setCashReceived] = useState('');
-  const [fiscalTableOrder, setFiscalTableOrder] = useState<Order | null>(null);
+  const [tableQrUrl, setTableQrUrl] = useState<string | null>(null);
+  const [isLoadingTableQr, setIsLoadingTableQr] = useState(false);
   
   // Waiter Calls tracking
   const [waiterCalls, setWaiterCalls] = useServerDoc<Record<number, { timestamp: number; table: number }>>('waiterCalls', {}, { enabled: true, onError: (m) => showToast(m, 'error') });
@@ -133,10 +133,62 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     showToast(`Chamado da Mesa ${tableNum} atendido!`, 'info');
   };
 
+  const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
+  const restaurantMenuItems = useMemo(
+    () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
+    [menuItems, restaurant?.slug]
+  );
+  const restaurantCategories = useMemo(
+    () => categories.filter((cat) => cat.restaurantSlug === restaurant?.slug),
+    [categories, restaurant?.slug]
+  );
+
+  useEffect(() => {
+    setCategoryFilter('all');
+    setSearchItemFilter('');
+    setTrayItems([]);
+    setActiveTableId(null);
+    setSelectedQrTable(1);
+  }, [activeRestaurantSlug]);
+
+  useEffect(() => {
+    if (!showQrPlatesModal) return;
+    let cancelled = false;
+    const loadTableQr = async () => {
+      if (!restaurant?.slug || !selectedQrTable || !currentUser?.token) {
+        setTableQrUrl(null);
+        return;
+      }
+      setIsLoadingTableQr(true);
+      try {
+        const res = await fetch(`/api/table/access-token?slug=${encodeURIComponent(restaurant.slug)}&table=${selectedQrTable}`, {
+          headers: { Authorization: `Bearer ${currentUser.token}` },
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success || !data.token) throw new Error(data.error || 'Não foi possível gerar o QR da mesa.');
+        if (!cancelled) {
+          const path = `${getRestaurantPath(restaurant)}/mesa/${selectedQrTable}`;
+          const url = `${window.location.origin}${path}?mesa_token=${encodeURIComponent(data.token)}`;
+          setTableQrUrl(url);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+            setTableQrUrl(null);
+          showToast(err?.message || 'Falha ao gerar QR Code seguro da mesa.', 'error');
+        }
+      } finally {
+        if (!cancelled) setIsLoadingTableQr(false);
+      }
+    };
+    loadTableQr();
+    return () => { cancelled = true; };
+  }, [showQrPlatesModal, selectedQrTable, restaurant?.slug, currentUser?.token, showToast]);
+
   // Orders associated with each table
   const tableOrdersMap = useMemo(() => {
     const map: Record<number, Order[]> = {};
     for (const order of orders) {
+      if (order.restaurantSlug !== activeRestaurantSlug) continue;
       if (order.orderType === 'mesa' && order.tableNumber) {
         if (!map[order.tableNumber]) {
           map[order.tableNumber] = [];
@@ -145,7 +197,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
       }
     }
     return map;
-  }, [orders]);
+  }, [orders, activeRestaurantSlug]);
 
   // Calculate table dynamic status and totals
   const getTableStatus = (tableId: number) => {
@@ -387,8 +439,8 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const handleGenerateTestOrderForTable = async (tableNum: number) => {
     try {
       const activeRest = restaurants[activeRestaurantSlug] || restaurants.japones;
-      const sampleItem = menuItems.find((m) => m.restaurantSlug === activeRestaurantSlug) || menuItems[0];
-      const sampleDrink = menuItems.find((m) => m.categoryId === 'bebidas') || menuItems[1] || menuItems[0];
+      const sampleItem = restaurantMenuItems[0];
+      const sampleDrink = restaurantMenuItems.find((m) => m.categoryId === 'bebidas') || restaurantMenuItems[1] || restaurantMenuItems[0];
       
       const payload = {
         restaurantSlug: activeRestaurantSlug,
@@ -626,20 +678,24 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 text-stone-950 flex items-center justify-center font-black shadow-md">
-              <Utensils className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-stone-800 border border-amber-500/30 flex items-center justify-center overflow-hidden shadow-md">
+              {restaurant?.logo ? (
+                <img src={restaurant.logo} alt={restaurant.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-xl font-black text-amber-400">{restaurant?.emoji || '🍣'}</span>
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-black text-white">
-                  Serviço Físico de Mesas
+                  {restaurant?.name || 'Restaurante'}
                 </h1>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-wider border border-amber-500/30">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30">
                   Salão Ativo
                 </span>
               </div>
               <p className="text-xs text-stone-400">
-                {BRAND_NAME} • Operação Presencial de Garçons
+                Cardápio exclusivo desta casa • Operação Presencial de Garçons
               </p>
             </div>
           </div>
@@ -1165,7 +1221,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                     >
                       Todos os Itens
                     </button>
-                    {categories.map((c) => (
+                    {restaurantCategories.map((c) => (
                       <button
                         key={c.id}
                         onClick={() => setCategoryFilter(c.id)}
@@ -1194,7 +1250,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
                   {/* Items to click */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
-                    {menuItems
+                    {restaurantMenuItems
                       .filter((item) => {
                         if (!item.available) return false;
                         if (categoryFilter !== 'all' && item.categoryId !== categoryFilter) return false;
@@ -1470,21 +1526,6 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => {
-                        if (activeTableOrders.length > 0) {
-                          setFiscalTableOrder(activeTableOrders[0]);
-                        } else {
-                          showToast('Não há pedido ativo com itens para emitir cupom fiscal nesta mesa.', 'warning');
-                        }
-                      }}
-                      className="w-full py-3 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
-                    >
-                      <FileText className="w-4 h-4 text-emerald-400" />
-                      Emitir Cupom Fiscal NFC-e (SEFAZ)
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => handleCloseTable(activeTableId)}
                       className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-600/20"
                     >
@@ -1713,43 +1754,33 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                 </p>
               </div>
 
-              {/* QR Code graphic representation */}
-              <div className="bg-white p-5 rounded-2xl mx-auto w-48 h-48 shadow-inner flex flex-col items-center justify-center border-4 border-stone-800">
-                <div className="grid grid-cols-6 gap-1 w-full h-full p-1">
-                  {/* Visual QR Code Pattern */}
-                  {Array.from({ length: 36 }).map((_, i) => {
-                    const isCorner =
-                      (i < 3 && i % 6 < 3) ||
-                      (i < 3 && i % 6 >= 3) ||
-                      (i >= 18 && i % 6 < 3) ||
-                      (i % 5 === 0) ||
-                      (i % 7 === 1) ||
-                      (i % 3 === 2);
-                    return (
-                      <div
-                        key={i}
-                        className={`rounded-sm ${isCorner ? 'bg-stone-950' : 'bg-stone-200'}`}
-                      />
-                    );
-                  })}
-                </div>
+              {/* QR Code real e assinado da mesa */}
+              <div className="bg-white p-4 rounded-2xl mx-auto w-52 shadow-inner border-4 border-stone-800">
+                {isLoadingTableQr ? (
+                  <div className="w-44 h-44 mx-auto flex items-center justify-center text-stone-600 text-xs font-bold text-center">
+                    Gerando QR seguro da Mesa {selectedQrTable}...
+                  </div>
+                ) : tableQrUrl ? (
+                  <img
+                    src={getQrCodeImageUrl(tableQrUrl, 320)}
+                    alt={`QR Code da Mesa ${selectedQrTable}`}
+                    className="w-44 h-44 mx-auto object-contain"
+                  />
+                ) : (
+                  <div className="w-44 h-44 mx-auto flex items-center justify-center text-rose-700 text-xs font-bold text-center">
+                    Não foi possível gerar o QR desta mesa.
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
-                <p className="text-xs font-black text-amber-300 uppercase tracking-wider">
-                  Como funciona:
-                </p>
-                <p className="text-[11px] text-stone-300 max-w-xs mx-auto">
-                  1. Aponte a câmera do seu celular para o QR Code.
-                  <br />
-                  2. Navegue pelo cardápio e faça pedidos diretos.
-                  <br />
-                  3. Chame o garçom com 1 toque quando precisar!
+                <p className="text-[10px] text-stone-400 max-w-xs mx-auto">
+                  Este QR abre somente o cardápio da <strong className="text-stone-200">{restaurant?.name || 'casa'} • Mesa {selectedQrTable}</strong>. O servidor valida o token antes de aceitar qualquer pedido da mesa.
                 </p>
               </div>
 
-              <div className="pt-2 text-[10px] text-stone-500 font-mono">
-                Link direto: tokio.rest/?mesa={selectedQrTable}
+              <div className="pt-2 text-[10px] text-stone-500 font-mono break-all">
+                {tableQrUrl ? `Link seguro: ${tableQrUrl}` : 'Link seguro indisponível enquanto o QR não for gerado.'}
               </div>
             </div>
 
@@ -1878,15 +1909,6 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
         </div>
       )}
 
-      {/* Modal Fiscal para Emissão de NFC-e na Mesa */}
-      {fiscalTableOrder && (
-        <AdminFiscalModal
-          isOpen={!!fiscalTableOrder}
-          order={fiscalTableOrder}
-          restaurantSlug={fiscalTableOrder.restaurantSlug}
-          onClose={() => setFiscalTableOrder(null)}
-        />
-      )}
     </div>
   );
 };

@@ -4,7 +4,6 @@ import { useStore } from '../context/StoreContext';
 import { Order, PaymentMethod, CashRegisterMovement } from '../types/restaurant';
 import { OrderOriginBadge } from './OrderOriginBadge';
 import { ThermalTicketModal } from './ThermalTicketModal';
-import { AdminFiscalModal } from './AdminFiscalModal';
 import { OfflineStatusIndicator } from './OfflineStatusIndicator';
 import {
   Wallet,
@@ -53,7 +52,6 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [ticketOrder, setTicketOrder] = useState<Order | null>(null);
-  const [fiscalOrder, setFiscalOrder] = useState<Order | null>(null);
 
   // Payment dialog state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cartao_credito');
@@ -491,15 +489,6 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                     </button>
 
                     <button
-                      onClick={() => setFiscalOrder(selectedOrder)}
-                      className="p-2 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 rounded-xl border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                      title="Emitir Cupom Fiscal (NFC-e / SEFAZ) com ou sem CPF na nota"
-                    >
-                      <Receipt className="w-4 h-4 text-emerald-400" />
-                      <span>NFC-e</span>
-                    </button>
-
-                    <button
                       onClick={() => setSelectedOrder(null)}
                       className="text-xs text-slate-400 hover:text-white px-2 py-1"
                     >
@@ -792,13 +781,6 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                           <Printer className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => setFiscalOrder(order)}
-                          className="p-2 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 rounded-xl border border-emerald-500/30"
-                          title="Emitir Cupom Fiscal (NFC-e / SEFAZ)"
-                        >
-                          <Receipt className="w-4 h-4" />
-                        </button>
-                        <button
                           onClick={async () => {
                             await updateOrderStatus(order.id, 'finalizado');
                             showToast(`Pedido #${order.shortCode} quitado e finalizado!`, 'success');
@@ -872,13 +854,6 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                           title="Imprimir comanda"
                         >
                           <Printer className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setFiscalOrder(order)}
-                          className="p-2 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 rounded-xl border border-emerald-500/30"
-                          title="Emitir Cupom Fiscal (NFC-e / SEFAZ)"
-                        >
-                          <Receipt className="w-4 h-4" />
                         </button>
                         <button
                           onClick={async () => {
@@ -1099,15 +1074,6 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
         />
       )}
 
-      {/* Official Fiscal NFC-e Modal */}
-      {fiscalOrder && (
-        <AdminFiscalModal
-          order={fiscalOrder}
-          isOpen={!!fiscalOrder}
-          onClose={() => setFiscalOrder(null)}
-          restaurantSlug={fiscalOrder.restaurantSlug}
-        />
-      )}
     </div>
   );
 };

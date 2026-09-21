@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { RestaurantSlug, OrderSoundType } from '../types/restaurant';
 import { SOUND_PRESETS, playDelayAlertSound, triggerVibrate } from '../utils/audioAlert';
-import { AdminFiscalModule } from './AdminFiscalModule';
 import {
   Save,
   CheckCircle2,
@@ -27,7 +26,6 @@ import {
   Smartphone,
   Globe,
   Copy,
-  FileText,
   Sliders,
 } from 'lucide-react';
 
@@ -89,8 +87,6 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   const [enableSmartAi, setEnableSmartAi] = useState(printerSettings?.enableSmartTicketAI ?? true);
   const [defaultPrinterName, setDefaultPrinterName] = useState(printerSettings?.defaultPrinterName || 'Impressora Cozinha ESC/POS');
 
-  // Sub-aba: Geral vs Fiscal (ADMIN -> CONFIGURAÇÕES -> FISCAL)
-  const [settingsTab, setSettingsTab] = useState<'geral' | 'fiscal'>('geral');
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,42 +137,14 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Selector: Geral vs Fiscal (ADMIN -> CONFIGURAÇÕES -> FISCAL) */}
-      <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 shadow-md">
-        <button
-          type="button"
-          onClick={() => setSettingsTab('geral')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
-            settingsTab === 'geral'
-              ? 'bg-amber-500 text-slate-950 font-black shadow-lg'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
+      <div className="bg-slate-900 p-1.5 rounded-2xl border border-slate-800 shadow-md">
+        <div className="py-2.5 px-4 rounded-xl bg-amber-500 text-slate-950 font-black text-xs flex items-center justify-center gap-2">
           <Sliders className="w-4 h-4" />
           <span>Configurações Gerais &amp; Loja</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSettingsTab('fiscal')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
-            settingsTab === 'fiscal'
-              ? 'bg-emerald-600 text-white font-black shadow-lg'
-              : 'text-emerald-400 hover:text-white hover:bg-emerald-950/40'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>Configurações Fiscais (NFC-e / NF-e / SEFAZ)</span>
-          <span className="bg-emerald-500 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-            NOVO
-          </span>
-        </button>
+        </div>
       </div>
 
-      {settingsTab === 'fiscal' ? (
-        <AdminFiscalModule selectedSlug={currentRestaurantSlug} />
-      ) : (
-        <form onSubmit={handleSave} className="space-y-6">
+      <form onSubmit={handleSave} className="space-y-6">
           {/* Top Banner with Open/Closed switch */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -792,7 +760,6 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
         </button>
       </div>
         </form>
-      )}
     </div>
   );
 };

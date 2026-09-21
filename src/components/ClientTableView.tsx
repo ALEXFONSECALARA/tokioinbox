@@ -21,11 +21,13 @@ import { playAlertSound } from '../utils/audioAlert';
 
 interface ClientTableViewProps {
   tableNumber: number;
+  tableAccessToken?: string;
   onExit?: () => void;
 }
 
 export const ClientTableView: React.FC<ClientTableViewProps> = ({
   tableNumber,
+  tableAccessToken,
   onExit,
 }) => {
   const {
@@ -51,21 +53,30 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
   const [isSending, setIsSending] = useState(false);
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
+  const restaurantMenuItems = useMemo(
+    () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
+    [menuItems, restaurant?.slug]
+  );
+  const restaurantCategories = useMemo(
+    () => categories.filter((cat) => cat.restaurantSlug === restaurant?.slug),
+    [categories, restaurant?.slug]
+  );
 
   // Active table orders for live status
   const currentTableOrder = useMemo(() => {
     return orders.find(
       (o) =>
         o.orderType === 'mesa' &&
+        o.restaurantSlug === activeRestaurantSlug &&
         o.tableNumber === tableNumber &&
         o.status !== 'entregue' &&
         o.status !== 'cancelado'
     );
-  }, [orders, tableNumber]);
+  }, [orders, activeRestaurantSlug, tableNumber]);
 
   // Filter items
   const filteredItems = useMemo(() => {
-    return menuItems.filter((item) => {
+    return restaurantMenuItems.filter((item) => {
       if (item.available === false) return false;
       if (selectedCategory !== 'all' && item.categoryId !== selectedCategory) return false;
       if (searchQuery.trim()) {
@@ -74,7 +85,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
       }
       return true;
     });
-  }, [menuItems, selectedCategory, searchQuery]);
+  }, [restaurantMenuItems, selectedCategory, searchQuery]);
 
   const addToCart = (item: MenuItem) => {
     setClientCart((prev) => {
@@ -127,6 +138,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
       const res = await appendItemsToTableOrder({
         tableNumber,
         restaurantSlug: activeRestaurantSlug,
+        tableAccessToken,
         items: itemsPayload,
         customerName: customerName.trim() || `Cliente Mesa ${tableNumber}`,
         customerPhone: customerPhone.trim(),
@@ -261,7 +273,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
           >
             Todos
           </button>
-          {categories.map((cat) => (
+          {restaurantCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}

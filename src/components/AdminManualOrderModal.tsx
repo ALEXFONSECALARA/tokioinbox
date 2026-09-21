@@ -30,9 +30,11 @@ export const AdminManualOrderModal: React.FC<AdminManualOrderModalProps> = ({
   onClose,
   defaultSlug,
 }) => {
-  const { restaurants, menuItems, showToast, printerSettings } = useStore();
+  const { restaurants, menuItems, showToast, printerSettings, currentUser } = useStore();
 
   const [selectedSlug, setSelectedSlug] = useState<RestaurantSlug>(defaultSlug);
+  const canSwitchRestaurant = currentUser?.restaurantSlug === 'all';
+
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [orderType, setOrderType] = useState<OrderType>('balcao');
@@ -54,6 +56,12 @@ export const AdminManualOrderModal: React.FC<AdminManualOrderModalProps> = ({
 
   // Selected item line entries
   const [selectedItems, setSelectedItems] = useState<{ itemId: string; quantity: number }[]>([]);
+  React.useEffect(() => {
+    if (currentUser?.restaurantSlug && currentUser.restaurantSlug !== 'all') {
+      setSelectedSlug(currentUser.restaurantSlug as RestaurantSlug);
+      setSelectedItems([]);
+    }
+  }, [currentUser?.restaurantSlug]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchItem, setSearchItem] = useState('');
 
@@ -248,13 +256,16 @@ export const AdminManualOrderModal: React.FC<AdminManualOrderModalProps> = ({
               </label>
               <select
                 value={selectedSlug}
+                disabled={!canSwitchRestaurant}
                 onChange={(e) => {
                   setSelectedSlug(e.target.value as any);
                   setSelectedItems([]);
                 }}
                 className="w-full bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-white font-bold text-xs focus:border-amber-500"
               >
-                {Object.values(restaurants).map((r) => (
+                {Object.values(restaurants)
+                  .filter((r) => canSwitchRestaurant || r.slug === currentUser?.restaurantSlug)
+                  .map((r) => (
                   <option key={r.slug} value={r.slug}>
                     {r.name}
                   </option>

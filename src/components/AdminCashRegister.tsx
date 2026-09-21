@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { CashRegisterMovement, Order, OrderType } from '../types/restaurant';
 import { ThermalTicketModal } from './ThermalTicketModal';
-import { AdminFiscalModal } from './AdminFiscalModal';
 import {
   Wallet,
   ArrowUpRight,
@@ -22,7 +21,6 @@ import {
   Bike,
   Receipt,
   Search,
-  FileText,
 } from 'lucide-react';
 
 export const AdminCashRegister: React.FC = () => {
@@ -37,7 +35,6 @@ export const AdminCashRegister: React.FC = () => {
   const [orderCategoryFilter, setOrderCategoryFilter] = useState<'all' | 'mesa' | 'balcao' | 'delivery'>('all');
   const [orderSearchTerm, setOrderSearchTerm] = useState<string>('');
   const [ticketOrder, setTicketOrder] = useState<Order | null>(null);
-  const [fiscalOrder, setFiscalOrder] = useState<Order | null>(null);
 
   // Compute live order revenue since shift opening
   const deliveredOrders = orders.filter((o) => o.status === 'entregue' || o.status === 'pronto');
@@ -529,7 +526,7 @@ export const AdminCashRegister: React.FC = () => {
                         R$ {ord.total.toFixed(2)}
                       </td>
 
-                      {/* Thermal Print & Fiscal NFC-e Actions */}
+                      {/* Impressão térmica da comanda */}
                       <td className="py-2.5 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
@@ -542,15 +539,6 @@ export const AdminCashRegister: React.FC = () => {
                             <span>Comanda</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setFiscalOrder(ord)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 font-bold text-[11px] inline-flex items-center gap-1.5 transition-all shadow-sm"
-                            title="Emitir ou consultar NFC-e na SEFAZ"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>NFC-e</span>
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -572,15 +560,6 @@ export const AdminCashRegister: React.FC = () => {
         />
       )}
 
-      {/* Modal for NFC-e Fiscal Emission / Consultation */}
-      {fiscalOrder && (
-        <AdminFiscalModal
-          isOpen={!!fiscalOrder}
-          order={fiscalOrder}
-          restaurantSlug={fiscalOrder.restaurantSlug}
-          onClose={() => setFiscalOrder(null)}
-        />
-      )}
       {isConfirmingClose && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#151922] border border-slate-700 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
