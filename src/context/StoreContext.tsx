@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
+import { useServerDoc } from '../painel/useServerDoc';
 import {
   RestaurantConfig,
   RestaurantSlug,
@@ -234,6 +235,10 @@ interface StoreContextType {
   addRestaurant: (restaurant: RestaurantConfig) => void;
   deleteRestaurant: (slug: RestaurantSlug) => void;
   resetToDefaultData: () => void;
+  addDeliveryStaff: (data: { name: string; phone: string; vehicle: DeliveryPersonnel['vehicle']; commissionRate: number }) => void;
+  removeDeliveryStaff: (staffId: string) => void;
+  cashShiftHistory: CashRegisterShift[];
+  openCashShift: (initialAmount: number) => void;
   appMode: StoreMode;
 
   // Master Reset & Multi-Restaurant Order Flow
@@ -297,6 +302,14 @@ interface StoreContextType {
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
+
+const EMPTY_CLOSED_SHIFT: CashRegisterShift = {
+  id: '',
+  openedAt: '',
+  initialAmount: 0,
+  movements: [],
+  isClosed: true,
+};
 
 const STORAGE_KEYS = {
   RESTAURANTS: 'tokio_inbox_restaurants_v25',
@@ -389,6 +402,83 @@ const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   headerCustomNote: 'VIA DA COZINHA / EXPEDIÇÃO',
 };
 
+
+// ---------------------------------------------------------------------------
+// CRM derivado dos pedidos: totais, último pedido e endereços são RECALCULADOS a partir dos pedidos
+// do servidor (idempotente: vários aparelhos chegam ao mesmo resultado, sem contar em duplicidade).
+// Campos manuais (e-mail, observações) são preservados.
+// ---------------------------------------------------------------------------
+const PLACEHOLDER_PHONE_DIGITS = '11999990000';
+
+function mergeCrmFromOrders(prev: CustomerRecord[], orders: Order[]): CustomerRecord[] {
+  const groups = new Map<string, Order[]>();
+  for (const o of orders) {
+    if (o.status === 'cancelado') continue;
+    const digits = (o.customerPhone || '').replace(/\D/g, '');
+    if (digits.length < 8 || digits === PLACEHOLDER_PHONE_DIGITS) continue;
+    const list = groups.get(digits) || [];
+    list.push(o);
+    groups.set(digits, list);
+  }
+  if (groups.size === 0) return prev;
+
+  const next = [...prev];
+  let changed = false;
+  groups.forEach((list, digits) => {
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const latest = list[0];
+    const totalSpent = Number(list.reduce((t, o) => t + (o.total || 0), 0).toFixed(2));
+    const addresses: NonNullable<CustomerRecord['addresses']> = [];
+    for (const o of list) {
+      const a = o.deliveryAddress;
+      if (a && !addresses.some((x) => x.street.toLowerCase() === a.street.toLowerCase() && x.number === a.number)) {
+        addresses.push(a);
+      }
+    }
+    const idx = next.findIndex((c) => c.phone.replace(/\D/g, '') === digits);
+    if (idx === -1) {
+      next.push({
+        id: `cust-${digits}`,
+        name: latest.customerName,
+        phone: latest.customerPhone,
+        addresses,
+        totalOrders: list.length,
+        totalSpent,
+        lastOrderAt: latest.createdAt,
+        createdAt: list[list.length - 1].createdAt,
+        preferredRestaurant: latest.restaurantSlug,
+      });
+      changed = true;
+      return;
+    }
+    const cur = next[idx];
+    const knownAddresses = cur.addresses || [];
+    const mergedAddresses = [
+      ...addresses,
+      ...knownAddresses.filter((k) => !addresses.some((x) => x.street.toLowerCase() === k.street.toLowerCase() && x.number === k.number)),
+    ];
+    if (
+      cur.totalOrders === list.length &&
+      cur.totalSpent === totalSpent &&
+      cur.lastOrderAt === latest.createdAt &&
+      mergedAddresses.length === knownAddresses.length
+    ) {
+      return;
+    }
+    next[idx] = {
+      ...cur,
+      name: cur.name || latest.customerName,
+      totalOrders: list.length,
+      totalSpent,
+      lastOrderAt: latest.createdAt,
+      addresses: mergedAddresses,
+      preferredRestaurant: latest.restaurantSlug,
+    };
+    changed = true;
+  });
+  return changed ? next : prev;
+}
+
 export type StoreMode = 'customer' | 'staff';
 
 const PUBLIC_CATALOG_CACHE_KEY = 'nx_public_catalog_v1';
@@ -437,6 +527,27 @@ function readCachedPublicCatalog(): { restaurants: Record<string, RestaurantConf
 export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> = ({ children, mode = 'customer' }) => {
   // 'customer' (padrão, seguro) = cardápio público. 'staff' = painel autenticado da equipe.
   const isStaffMode = mode === 'staff';
+
+  // Ninguém começa autenticado. Somente o painel (mode='staff') restaura a sessão do navegador,
+  // e ela é revalidada no servidor (/api/auth/me) logo após carregar.
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    if (!isStaffMode) return null;
+    try {
+      const saved = sessionStorage.getItem('tokio_current_user_v25');
+      const token = sessionStorage.getItem('tokio_staff_token');
+      if (!saved || saved === 'logged_out' || !token) return null;
+      return { ...JSON.parse(saved), token };
+    } catch {
+      return null;
+    }
+  });
+
+  // Documentos compartilhados só são lidos/gravados com colaborador logado
+  const docsEnabled = isStaffMode && Boolean(currentUser);
+  const docError = (msg: string) => {
+    // showToast é declarado mais abaixo; usa o evento para não depender da ordem dos hooks
+    window.dispatchEvent(new CustomEvent('nx-toast', { detail: { message: msg, type: 'error' } }));
+  };
 
   const [restaurants, setRestaurants] = useState<Record<string, RestaurantConfig>>(() => {
     if (!isStaffMode) {
@@ -510,24 +621,10 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
   // Nada de dados pessoais de pedidos persistidos no navegador.
   const [orders, setOrders] = useState<Order[]>([]);
 
-  const [customers, setCustomers] = useState<CustomerRecord[]>(() => {
-    if (!isStaffMode) return [];
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-      return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
-    } catch {
-      return INITIAL_CUSTOMERS;
-    }
-  });
+  // CRM da equipe: documento compartilhado no servidor (não existe mais lista de clientes de exemplo)
+  const [customers, setCustomers] = useServerDoc<CustomerRecord[]>('customers', [], { enabled: docsEnabled, onError: docError });
 
-  const [printerSettings, setPrinterSettings] = useState<PrinterSettings>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PRINTER_SETTINGS);
-      return saved ? JSON.parse(saved) : DEFAULT_PRINTER_SETTINGS;
-    } catch {
-      return DEFAULT_PRINTER_SETTINGS;
-    }
-  });
+  const [printerSettings, setPrinterSettings] = useServerDoc<PrinterSettings>('printerSettings', DEFAULT_PRINTER_SETTINGS, { enabled: docsEnabled, onError: docError });
 
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
@@ -547,23 +644,9 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     }
   });
 
-  const [delaySettings, setDelaySettings] = useState<DelayAlertSettings>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.DELAY_SETTINGS);
-      return saved ? JSON.parse(saved) : DEFAULT_DELAY_SETTINGS;
-    } catch {
-      return DEFAULT_DELAY_SETTINGS;
-    }
-  });
+  const [delaySettings, setDelaySettings] = useServerDoc<DelayAlertSettings>('delaySettings', DEFAULT_DELAY_SETTINGS, { enabled: docsEnabled, onError: docError });
 
-  const [salesChannels, setSalesChannels] = useState<Record<string, SalesChannelConfig>>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.SALES_CHANNELS);
-      return saved ? { ...INITIAL_SALES_CHANNELS, ...JSON.parse(saved) } : INITIAL_SALES_CHANNELS;
-    } catch {
-      return INITIAL_SALES_CHANNELS;
-    }
-  });
+  const [salesChannels, setSalesChannels] = useServerDoc<Record<string, SalesChannelConfig>>('salesChannels', INITIAL_SALES_CHANNELS, { enabled: docsEnabled, onError: docError });
 
   const updateSalesChannel = (channelId: string, updates: Partial<SalesChannelConfig>) => {
     setSalesChannels((prev) => {
@@ -573,29 +656,10 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         ...prev,
         [channelId]: { ...current, ...updates },
       };
-      try {
-        localStorage.setItem(STORAGE_KEYS.SALES_CHANNELS, JSON.stringify(updated));
-      } catch (e) {
-        console.warn('Falha ao salvar configurações de canais:', e);
-      }
       return updated;
     });
     showToast(`Canal de venda atualizado com sucesso!`, 'success');
   };
-
-  // Ninguém começa autenticado. Somente o painel (mode='staff') restaura a sessão do navegador,
-  // e ela é revalidada no servidor (/api/auth/me) logo após carregar.
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
-    if (!isStaffMode) return null;
-    try {
-      const saved = sessionStorage.getItem('tokio_current_user_v25');
-      const token = sessionStorage.getItem('tokio_staff_token');
-      if (!saved || saved === 'logged_out' || !token) return null;
-      return { ...JSON.parse(saved), token };
-    } catch {
-      return null;
-    }
-  });
 
   const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditActionLog[]>([]);
@@ -627,71 +691,13 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     }
   });
 
-  // Delivery Personnel
-  const [deliveryStaff, setDeliveryStaff] = useState<DeliveryPersonnel[]>([
-    {
-      id: 'mot-1',
-      name: 'Carlos Oliveira (Moto 01)',
-      phone: '(11) 98711-2233',
-      vehicle: 'moto',
-      status: 'disponivel',
-      activeOrders: [],
-      totalDeliveries: 142,
-      commissionRate: 7.5,
-      rating: 4.9,
-    },
-    {
-      id: 'mot-2',
-      name: 'Matheus Santos (Moto 02)',
-      phone: '(11) 97654-3321',
-      vehicle: 'moto',
-      status: 'em_entrega',
-      activeOrders: ['ord-102'],
-      totalDeliveries: 98,
-      commissionRate: 7.5,
-      rating: 4.8,
-    },
-    {
-      id: 'mot-3',
-      name: 'Lucas Ferreira (Bike Flash)',
-      phone: '(11) 99123-4567',
-      vehicle: 'bike',
-      status: 'disponivel',
-      activeOrders: [],
-      totalDeliveries: 65,
-      commissionRate: 6.0,
-      rating: 5.0,
-    },
-    {
-      id: 'mot-4',
-      name: 'Rafael Lima (Moto 03)',
-      phone: '(11) 98234-9988',
-      vehicle: 'moto',
-      status: 'offline',
-      activeOrders: [],
-      totalDeliveries: 210,
-      commissionRate: 7.5,
-      rating: 4.9,
-    },
-  ]);
+  // Entregadores: cadastro real, compartilhado entre os aparelhos (sem entregadores de exemplo)
+  const [deliveryStaff, setDeliveryStaff] = useServerDoc<DeliveryPersonnel[]>('deliveryStaff', [], { enabled: docsEnabled, onError: docError });
 
-  // Cash Register Shift (Caixa)
-  const [cashShift, setCashShift] = useState<CashRegisterShift>({
-    id: `shift-${new Date().toISOString().slice(0, 10)}`,
-    openedAt: 'Hoje às 11:30',
-    initialAmount: 150.0,
-    isClosed: false,
-    movements: [
-      {
-        id: 'mov-1',
-        type: 'suprimento',
-        amount: 150.0,
-        description: 'Fundo de troco inicial de caixa',
-        timestamp: '11:30',
-        operator: 'Caixa Principal',
-      },
-    ],
-  });
+  // Caixa: turno REAL, compartilhado entre os aparelhos. Começa fechado; alguém precisa abrir o caixa
+  // informando o troco inicial (antes existia um turno de exemplo "aberto às 11:30" que não persistia).
+  const [cashShift, setCashShift] = useServerDoc<CashRegisterShift>('cashShift', EMPTY_CLOSED_SHIFT, { enabled: docsEnabled, onError: docError });
+  const [cashShiftHistory, setCashShiftHistory] = useServerDoc<CashRegisterShift[]>('cashShiftHistory', [], { enabled: docsEnabled, onError: docError });
 
   // Modern Toast Notification State
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -743,37 +749,12 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
   }, [menuItems]);
 
   useEffect(() => {
-    if (!isStaffMode) return;
-    try {
-      localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-    } catch (e) {
-      console.warn('Storage error', e);
-    }
-  }, [customers]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.PRINTER_SETTINGS, JSON.stringify(printerSettings));
-    } catch (e) {
-      console.warn('Storage error', e);
-    }
-  }, [printerSettings]);
-
-  useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.SOUND_SETTINGS, JSON.stringify(soundSettings));
     } catch (e) {
       console.warn('Storage error', e);
     }
   }, [soundSettings]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.DELAY_SETTINGS, JSON.stringify(delaySettings));
-    } catch (e) {
-      console.warn('Storage error', e);
-    }
-  }, [delaySettings]);
 
   useEffect(() => {
     try {
@@ -960,6 +941,11 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
             if (parsed.event === 'connected') {
               return;
             }
+            if (parsed.event === 'state_updated') {
+              // Outro aparelho alterou caixa/mesas/CRM/configurações: os documentos se atualizam sozinhos
+              window.dispatchEvent(new CustomEvent('nx-state-updated', { detail: parsed }));
+              return;
+            }
 
             if (parsed.order && parsed.order.id) {
               const incomingOrder: Order = parsed.order;
@@ -1021,6 +1007,16 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       if (eventSource) eventSource.close();
     };
   }, [fetchOrdersFromServer, isStaffMode, currentUser?.id]);
+
+  // Erros vindos de hooks/documentos compartilhados aparecem como aviso na tela
+  useEffect(() => {
+    const onToast = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (d?.message) showToast(d.message, d.type || 'info', 7000);
+    };
+    window.addEventListener('nx-toast', onToast);
+    return () => window.removeEventListener('nx-toast', onToast);
+  }, [showToast]);
 
   // ===========================================================================
   // CATÁLOGO (cardápio/restaurantes/categorias): fonte única no SERVIDOR
@@ -1210,6 +1206,12 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStaffMode]);
 
+  // CRM: mantém a base de clientes da equipe em dia a partir dos pedidos reais
+  useEffect(() => {
+    if (!docsEnabled || orders.length === 0) return;
+    setCustomers((prev) => mergeCrmFromOrders(prev, orders));
+  }, [orders, docsEnabled]);
+
   // Ao sair do painel, nenhum pedido/dado fica em memória
   useEffect(() => {
     if (isStaffMode && !currentUser) setOrders([]);
@@ -1366,6 +1368,9 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         token: data.token,
       };
       setCurrentUser(userWithToken);
+      if (userWithToken.restaurantSlug && userWithToken.restaurantSlug !== 'all') {
+        setActiveRestaurantSlug(userWithToken.restaurantSlug as RestaurantSlug);
+      }
       sessionStorage.setItem('tokio_current_user_v25', JSON.stringify(userWithToken));
       sessionStorage.setItem('tokio_admin_auth', 'true');
       if (data.token) {
@@ -1392,6 +1397,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       }
     }
     setCurrentUser(null);
+    setActiveRestaurantSlug('japones');
     sessionStorage.setItem('tokio_current_user_v25', 'logged_out');
     sessionStorage.removeItem('tokio_admin_auth');
     sessionStorage.removeItem('tokio_staff_token');
@@ -1721,55 +1727,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
 
     // Auto-sync customer to Customers database (CRM local: somente no painel)
     const nowIso = new Date().toISOString();
-    if (isStaffMode) setCustomers((prevCustomers) => {
-      const phoneClean = orderData.customerPhone.replace(/\D/g, '');
-      const existingIdx = prevCustomers.findIndex(
-        (c) => c.phone.replace(/\D/g, '') === phoneClean || (phoneClean && c.phone === orderData.customerPhone)
-      );
 
-      if (existingIdx >= 0) {
-        const existing = prevCustomers[existingIdx];
-        const updatedAddresses = [...(existing.addresses || [])];
-        if (orderData.deliveryAddress) {
-          const addrExists = updatedAddresses.some(
-            (a) =>
-              a.street.toLowerCase() === orderData.deliveryAddress!.street.toLowerCase() &&
-              a.number === orderData.deliveryAddress!.number
-          );
-          if (!addrExists) {
-            updatedAddresses.unshift(orderData.deliveryAddress);
-          }
-        }
-
-        const updated: CustomerRecord = {
-          ...existing,
-          name: orderData.customerName || existing.name,
-          addresses: updatedAddresses,
-          totalOrders: existing.totalOrders + 1,
-          totalSpent: existing.totalSpent + confirmedOrder.total,
-          lastOrderAt: nowIso,
-          preferredRestaurant: activeRestaurantSlug,
-        };
-
-        const list = [...prevCustomers];
-        list[existingIdx] = updated;
-        return list;
-      } else {
-        const newCustomer: CustomerRecord = {
-          id: `cust-${Date.now()}`,
-          name: orderData.customerName,
-          phone: orderData.customerPhone,
-          addresses: orderData.deliveryAddress ? [orderData.deliveryAddress] : [],
-          totalOrders: 1,
-          totalSpent: confirmedOrder.total,
-          lastOrderAt: nowIso,
-          createdAt: nowIso,
-          preferredRestaurant: activeRestaurantSlug,
-          notes: orderData.notes ? `Nota recente: ${orderData.notes}` : undefined,
-        };
-        return [newCustomer, ...prevCustomers];
-      }
-    });
 
     return confirmedOrder;
   };
@@ -1978,6 +1936,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     customerPhone?: string;
     waiterName?: string;
     tableSessionId?: string;
+    tableAccessToken?: string;
   }): Promise<{ success: boolean; order?: Order; isNew?: boolean; error?: string }> => {
     try {
       const restSlug = params.restaurantSlug || activeRestaurantSlug || 'japones';
@@ -2348,38 +2307,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
 
     // Save customer record (CRM local: somente no painel)
     const nowIso = new Date().toISOString();
-    if (isStaffMode) setCustomers((prevCustomers) => {
-      const phoneClean = orderData.customerPhone.replace(/\D/g, '');
-      const existingIdx = prevCustomers.findIndex(
-        (c) => c.phone.replace(/\D/g, '') === phoneClean || (phoneClean && c.phone === orderData.customerPhone)
-      );
-      const totalBatch = created.reduce((s, o) => s + o.total, 0);
-      if (existingIdx >= 0) {
-        const existing = prevCustomers[existingIdx];
-        const updated: CustomerRecord = {
-          ...existing,
-          name: orderData.customerName || existing.name,
-          totalOrders: existing.totalOrders + created.length,
-          totalSpent: existing.totalSpent + totalBatch,
-          lastOrderAt: nowIso,
-        };
-        const list = [...prevCustomers];
-        list[existingIdx] = updated;
-        return list;
-      } else {
-        const newCustomer: CustomerRecord = {
-          id: `cust-${Date.now()}`,
-          name: orderData.customerName,
-          phone: orderData.customerPhone,
-          addresses: orderData.deliveryAddress ? [orderData.deliveryAddress] : [],
-          totalOrders: created.length,
-          totalSpent: totalBatch,
-          lastOrderAt: nowIso,
-          createdAt: nowIso,
-        };
-        return [newCustomer, ...prevCustomers];
-      }
-    });
+
 
     // Clear cart and coupon
     setCart([]);
@@ -2457,6 +2385,28 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     );
   };
 
+  const addDeliveryStaff = (data: { name: string; phone: string; vehicle: DeliveryPersonnel['vehicle']; commissionRate: number }) => {
+    const person: DeliveryPersonnel = {
+      id: `mot-${Date.now()}`,
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      vehicle: data.vehicle,
+      status: 'disponivel',
+      activeOrders: [],
+      totalDeliveries: 0,
+      commissionRate: Math.max(0, Number(data.commissionRate) || 0),
+      rating: 5,
+    };
+    setDeliveryStaff((prev) => [...prev, person]);
+    logAction(`Entregador cadastrado: ${person.name}`, 'user');
+    showToast('Entregador cadastrado!', 'success');
+  };
+
+  const removeDeliveryStaff = (staffId: string) => {
+    setDeliveryStaff((prev) => prev.filter((s) => s.id !== staffId));
+    logAction('Entregador removido', 'user');
+  };
+
   const assignOrderToDelivery = (orderId: string, staffId: string) => {
     setDeliveryStaff((prev) =>
       prev.map((s) => {
@@ -2474,68 +2424,97 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
   };
 
   // Cash Register
+  const nowLabel = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const openCashShift = (initialAmount: number) => {
+    if (!cashShift.isClosed) {
+      showToast('Já existe um caixa aberto.', 'error');
+      return;
+    }
+    const amount = Math.max(0, Number(initialAmount) || 0);
+    const operator = currentUser?.name || 'Caixa';
+    const shift: CashRegisterShift = {
+      id: `shift-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`,
+      openedAt: new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
+      initialAmount: amount,
+      isClosed: false,
+      movements: [
+        {
+          id: `mov-${Date.now()}`,
+          type: 'suprimento',
+          amount,
+          description: 'Fundo de troco inicial de caixa',
+          timestamp: nowLabel(),
+          operator,
+        },
+      ],
+    };
+    setCashShift(() => shift);
+    logAction(`Caixa aberto com troco inicial de R$ ${amount.toFixed(2)}`, 'system');
+    showToast('Caixa aberto com sucesso!', 'success');
+  };
+
   const addCashMovement = (type: CashRegisterMovement['type'], amount: number, description: string) => {
     const newMovement: CashRegisterMovement = {
-      id: `mov-${Date.now()}`,
+      id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type,
       amount,
       description,
-      timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: nowLabel(),
       operator: currentUser?.name || 'Caixa',
     };
-    setCashShift((prev) => ({
-      ...prev,
-      movements: [newMovement, ...prev.movements],
-    }));
+    // Reaplicado sobre o valor mais novo do servidor se outro aparelho lançou ao mesmo tempo
+    setCashShift((prev) => {
+      if (prev.isClosed) return prev; // não lança em caixa fechado
+      return { ...prev, movements: [newMovement, ...prev.movements] };
+    });
   };
 
   const closeCashShift = () => {
-    const dinheiro = cashShift.movements
-      .filter((m) => m.type === 'venda_dinheiro' || m.type === 'suprimento')
-      .reduce((s, m) => s + m.amount, 0);
-    const sangria = cashShift.movements
-      .filter((m) => m.type === 'sangria')
-      .reduce((s, m) => s + m.amount, 0);
-    const pix = cashShift.movements
-      .filter((m) => m.type === 'venda_pix')
-      .reduce((s, m) => s + m.amount, 0);
-    const cartao = cashShift.movements
-      .filter((m) => m.type === 'venda_cartao')
-      .reduce((s, m) => s + m.amount, 0);
-
-    setCashShift((prev) => ({
-      ...prev,
-      isClosed: true,
-      closedAt: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      closedBy: currentUser?.name || 'Operador de Caixa',
-      finalTotals: {
-        dinheiro,
-        pix,
-        cartao,
-        sangriaTotal: sangria,
-        suprimentoTotal: cashShift.initialAmount,
-        faturamentoTotal: dinheiro + pix + cartao - cashShift.initialAmount,
-        saldoGaveta: dinheiro - sangria,
-      },
-    }));
+    const closer = currentUser?.name || 'Operador de Caixa';
+    const closedAt = nowLabel();
+    let closedSnapshot: CashRegisterShift | null = null;
+    setCashShift((prev) => {
+      if (prev.isClosed) return prev;
+      const sum = (types: CashRegisterMovement['type'][]) =>
+        prev.movements.filter((m) => types.includes(m.type)).reduce((t, m) => t + m.amount, 0);
+      const dinheiro = sum(['venda_dinheiro', 'suprimento']);
+      const sangria = sum(['sangria']);
+      const pix = sum(['venda_pix']);
+      const cartao = sum(['venda_cartao']);
+      closedSnapshot = {
+        ...prev,
+        isClosed: true,
+        closedAt,
+        closedBy: closer,
+        finalTotals: {
+          dinheiro,
+          pix,
+          cartao,
+          sangriaTotal: sangria,
+          suprimentoTotal: prev.initialAmount,
+          faturamentoTotal: dinheiro + pix + cartao - prev.initialAmount,
+          saldoGaveta: dinheiro - sangria,
+        },
+      };
+      return closedSnapshot;
+    });
+    if (closedSnapshot) {
+      const snap = closedSnapshot as CashRegisterShift;
+      setCashShiftHistory((prev) => [snap, ...prev.filter((h) => h.id !== snap.id)].slice(0, 200));
+      logAction('Caixa fechado', 'system');
+    }
   };
 
+  // Restaura o CARDÁPIO/RESTAURANTES de demonstração (substitui o catálogo do servidor).
+  // Pedidos, clientes e caixa NÃO são tocados.
   const resetToDefaultData = () => {
     setRestaurants(INITIAL_RESTAURANTS);
     setCategories(INITIAL_CATEGORIES);
     setMenuItems(INITIAL_MENU_ITEMS);
-    setOrders(INITIAL_SAMPLE_ORDERS);
-    setCustomers(INITIAL_CUSTOMERS);
     setPrinterSettings(DEFAULT_PRINTER_SETTINGS);
     setCart([]);
     setAppliedCoupon(null);
-    localStorage.removeItem(STORAGE_KEYS.RESTAURANTS);
-    localStorage.removeItem(STORAGE_KEYS.CATEGORIES);
-    localStorage.removeItem(STORAGE_KEYS.MENU_ITEMS);
-    localStorage.removeItem(STORAGE_KEYS.ORDERS);
-    localStorage.removeItem(STORAGE_KEYS.CUSTOMERS);
-    localStorage.removeItem(STORAGE_KEYS.PRINTER_SETTINGS);
-    localStorage.removeItem(STORAGE_KEYS.CART);
   };
 
   const currentRestaurant = restaurants[activeRestaurantSlug] || restaurants.japones;
@@ -2562,6 +2541,10 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     <StoreContext.Provider
       value={{
         appMode: mode,
+        cashShiftHistory,
+        openCashShift,
+        addDeliveryStaff,
+        removeDeliveryStaff,
         restaurants: safeRestaurants,
         categories,
         menuItems,
