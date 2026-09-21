@@ -1,3 +1,4 @@
+import { getGeminiModel } from './aiModel';
 import fs from 'fs';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
@@ -232,7 +233,7 @@ loadConfigs();
 // Helpers to get Gemini Client with environment configuration
 export function getAIEngineClient(): { client: GoogleGenAI | null; model: string; provider: string } {
   const apiKey = process.env.AI_API_KEY || process.env.GEMINI_API_KEY;
-  const model = process.env.AI_MODEL || 'gemini-3.8-flash';
+  const model = getGeminiModel();
   const provider = process.env.AI_PROVIDER || 'gemini';
 
   if (!apiKey) {

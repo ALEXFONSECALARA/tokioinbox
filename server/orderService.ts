@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { normalizePhone } from './phoneUtils';
+import { getRestaurant, getCoupon, priceLine, restaurantExists } from './catalogService';
+import { secureToken } from './security';
 
 export interface OrderItemOption {
   groupId: string;
@@ -52,6 +55,19 @@ export interface StatusHistoryEntry {
   note?: string;
 }
 
+export type ServerOrderType = 'mesa' | 'balcao' | 'delivery' | 'retirada' | 'online';
+
+export function normalizeOrderOrigin(raw: string | undefined | null): ServerOrderType {
+  if (!raw) return 'mesa';
+  const clean = raw.toLowerCase().trim().replace(/ã/g, 'a').replace(/ç/g, 'c');
+  if (clean === 'dine_in' || clean === 'mesa' || clean.includes('mesa')) return 'mesa';
+  if (clean === 'counter' || clean === 'balcao' || clean.includes('balcao')) return 'balcao';
+  if (clean === 'delivery' || clean.includes('entrega')) return 'delivery';
+  if (clean === 'retirada' || clean === 'takeaway' || clean.includes('retirada')) return 'retirada';
+  if (clean === 'online' || clean.includes('web')) return 'online';
+  return 'mesa';
+}
+
 export interface Order {
   id: string;
   shortCode: string;
@@ -61,7 +77,7 @@ export interface Order {
   customerName: string;
   customerPhone: string;
   customerPhoneNormalized?: string;
-  orderType: 'delivery' | 'retirada' | 'mesa' | 'balcao';
+  orderType: ServerOrderType;
   tableNumber?: number;
   tableSessionId?: string;
   waiterName?: string;
@@ -92,6 +108,8 @@ export interface Order {
   statusHistory: StatusHistoryEntry[];
   printStatus: 'pendente' | 'imprimindo' | 'impresso';
   idempotencyKey?: string;
+  /** Token secreto entregue só a quem criou o pedido; permite acompanhar sem login. */
+  trackingToken?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -337,18 +355,22 @@ export function initializeOrders() {
   ensureDataDirectory();
 
   try {
-    if (fs.existsSync(ORDERS_FILE)) {
-      const raw = fs.readFileSync(ORDERS_FILE, 'utf-8');
+    const raw = fs.existsSync(ORDERS_FILE) ? fs.readFileSync(ORDERS_FILE, 'utf-8').trim() : '';
+    if (raw) {
       ordersCache = JSON.parse(raw);
       console.log(`[ORDER STORAGE] Carregados ${ordersCache.length} pedidos persistidos do arquivo.`);
     } else {
-      ordersCache = getInitialSampleOrders();
+      // Arquivo ausente/vazio: começa limpo. Pedidos de demonstração só com SEED_DEMO_ORDERS=true.
+      ordersCache = process.env.SEED_DEMO_ORDERS === 'true' ? getInitialSampleOrders() : [];
       persistOrdersSync();
-      console.log(`[ORDER STORAGE] Inicializado banco de pedidos com dados padrão.`);
+      console.log(`[ORDER STORAGE] Banco de pedidos iniciado (${ordersCache.length} pedidos).`);
     }
   } catch (err) {
-    console.error('[ORDER STORAGE ERROR] Erro ao carregar arquivo de pedidos, usando fallback:', err);
-    ordersCache = getInitialSampleOrders();
+    // NUNCA substituir pedidos reais por dados de exemplo: preserva o arquivo e interrompe.
+    const backup = `${ORDERS_FILE}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(ORDERS_FILE, backup); } catch {}
+    console.error(`[ORDER STORAGE FATAL] orders.json ilegível: ${(err as Error).message}. Cópia preservada em ${backup}.`);
+    throw new Error('Base de pedidos corrompida. Restaure o backup antes de iniciar o servidor.');
   }
   isInitialized = true;
 }
@@ -398,7 +420,7 @@ export interface CreateOrderPayload {
   customerPhone: string;
   restaurantSlug: string;
   restaurantName: string;
-  orderType: 'delivery' | 'retirada' | 'mesa' | 'balcao';
+  orderType: ServerOrderType | string;
   tableNumber?: number;
   tableSessionId?: string;
   waiterName?: string;
@@ -423,81 +445,89 @@ export interface CreateOrderPayload {
   idempotencyKey?: string;
 }
 
-const RESTAURANT_DELIVERY_FEES: Record<string, number> = {
-  japones: 7.5,
-  italiano: 6.9,
-  pizza: 5.9,
-  hamburgueria: 6.0,
-};
+export interface OrderActor {
+  /** true quando a requisição veio de colaborador autenticado (PDV, garçom, caixa...). */
+  isStaff?: boolean;
+}
 
-const RESTAURANT_NAMES: Record<string, string> = {
-  japones: 'Sakura Sushi House',
-  italiano: 'Cantina Bella Vista',
-  pizza: "Forno D'Oro Pizzeria",
-  hamburgueria: 'Burger Craft & Beer',
-};
+const MAX_ITEMS_PER_ORDER = 80;
+const MAX_QTY_PER_ITEM = 50;
 
-const VALID_COUPONS: Record<string, { type: 'percent' | 'fixed'; value: number; minSubtotal?: number }> = {
-  BEMVINDO10: { type: 'percent', value: 10, minSubtotal: 30 },
-  TOKIO5: { type: 'fixed', value: 5, minSubtotal: 25 },
-  PRIMEIRACOMPRA: { type: 'percent', value: 15, minSubtotal: 40 },
-};
+function cleanText(v: unknown, max: number): string {
+  return String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
+}
 
-export function createOrderTransactional(payload: CreateOrderPayload): { order: Order; deduplicated: boolean } {
+/** Precifica e valida todas as linhas contra o catálogo do servidor. */
+export function priceOrderItems(
+  slug: string,
+  items: any[],
+  actor: OrderActor
+): { items: OrderItem[]; subtotal: number } {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('O pedido deve conter pelo menos 1 item.');
+  }
+  if (items.length > MAX_ITEMS_PER_ORDER) {
+    throw new Error(`Um pedido pode ter no máximo ${MAX_ITEMS_PER_ORDER} itens.`);
+  }
+  let subtotal = 0;
+  const priced: OrderItem[] = items.map((it, idx) => {
+    const qty = Math.min(MAX_QTY_PER_ITEM, Math.max(1, Math.floor(Number(it.quantity) || 1)));
+    const line = priceLine(slug, it, Boolean(actor.isStaff));
+    const itemTotal = Number((line.unitPrice * qty).toFixed(2));
+    subtotal += itemTotal;
+    return {
+      id: cleanText(it.id, 80) || `item-${Date.now()}-${idx}`,
+      name: line.name,
+      quantity: qty,
+      unitPrice: line.unitPrice,
+      totalPrice: itemTotal,
+      selectedOptions: line.selectedOptions,
+      notes: cleanText(it.notes, 300) || undefined,
+      station: resolveItemStation(line.name, line.station || it.station),
+      stationStatus: 'recebido' as StationItemStatus,
+    };
+  });
+  return { items: priced, subtotal: Number(subtotal.toFixed(2)) };
+}
+
+export function createOrderTransactional(
+  payload: CreateOrderPayload,
+  actor: OrderActor = {}
+): { order: Order; deduplicated: boolean } {
   initializeOrders();
-
-  console.log(`[ORDER] Recebendo pedido de ${payload.customerName} (${payload.customerPhone})`);
-  console.log(`[ORDER] Idempotency Key: ${payload.idempotencyKey || 'N/A'}`);
-  console.log(`[ORDER] Restaurante: ${payload.restaurantSlug}`);
 
   // 1. Idempotency Check: Prevent duplicate orders
   if (payload.idempotencyKey) {
     const existing = findOrderByDeliveryKey(payload.idempotencyKey);
     if (existing) {
-      console.log(`[ORDER DEDUPLICATED] Pedido já existente encontrado com chave ${payload.idempotencyKey}. ID: ${existing.id}`);
       return { order: existing, deduplicated: true };
     }
   }
 
   // 2. Validate payload
-  if (!payload.customerName || !payload.customerPhone) {
+  const customerName = cleanText(payload.customerName, 80);
+  if (!customerName || !payload.customerPhone) {
     throw new Error('Nome e telefone do cliente são obrigatórios.');
   }
 
-  if (!payload.items || payload.items.length === 0) {
-    throw new Error('O pedido deve conter pelo menos 1 item.');
+  // 3. Restaurante precisa existir no catálogo (sem "cair" silenciosamente em outro)
+  const slug = String(payload.restaurantSlug || '');
+  if (!restaurantExists(slug)) {
+    throw new Error('Restaurante não encontrado.');
   }
+  const restaurant = getRestaurant(slug);
+  if (restaurant.isActive === false) {
+    throw new Error('Este restaurante não está recebendo pedidos.');
+  }
+  if (!actor.isStaff && restaurant.isOpen === false) {
+    throw new Error(`${restaurant.name} está fechado no momento e não está recebendo pedidos.`);
+  }
+  const restaurantName = restaurant.name;
 
-  const validSlugs = ['japones', 'italiano', 'pizza', 'hamburgueria'];
-  const slug = validSlugs.includes(payload.restaurantSlug) ? payload.restaurantSlug : 'japones';
-  const restaurantName = RESTAURANT_NAMES[slug] || payload.restaurantName;
-
-  // 3. Server-side Recalculation & Validation of Items and Totals
-  let calculatedSubtotal = 0;
-  const sanitizedItems: OrderItem[] = payload.items.map((it, idx) => {
-    const qty = Math.max(1, Math.floor(it.quantity || 1));
-    const baseUnit = Math.max(0, Number(it.unitPrice) || 0);
-    const optionsTotal = (it.selectedOptions || []).reduce((acc, opt) => acc + (Number(opt.price) || 0), 0);
-    const unitPrice = Number((baseUnit + optionsTotal).toFixed(2));
-    const itemTotal = Number((unitPrice * qty).toFixed(2));
-    const assignedStation = it.station || resolveItemStation(it.name);
-
-    calculatedSubtotal += itemTotal;
-
-    return {
-      id: it.id || `item-${Date.now()}-${idx}`,
-      name: it.name || 'Item do Cardápio',
-      quantity: qty,
-      unitPrice,
-      totalPrice: itemTotal,
-      selectedOptions: it.selectedOptions || [],
-      notes: it.notes?.trim() || undefined,
-      station: assignedStation,
-      stationStatus: 'recebido',
-    };
-  });
-
-  calculatedSubtotal = Number(calculatedSubtotal.toFixed(2));
+  // 4. Preços SEMPRE vindos do catálogo do servidor
+  const priced = priceOrderItems(slug, payload.items, actor);
+  const sanitizedItems = priced.items;
+  let calculatedSubtotal = priced.subtotal;
 
   // Build stations map for this order
   const stationsMap: Partial<Record<ProductionStation, StationProductionRecord>> = {};
@@ -513,31 +543,45 @@ export function createOrderTransactional(payload: CreateOrderPayload): { order: 
     stationsMap[st]!.itemsCount += item.quantity;
   }
 
-  // Validate coupon discount
+  // Cupom validado no servidor (catálogo)
   let calculatedDiscount = 0;
+  let appliedCouponCode: string | undefined;
   if (payload.couponCode) {
-    const cleanCoupon = payload.couponCode.trim().toUpperCase();
-    const couponDef = VALID_COUPONS[cleanCoupon];
-    if (couponDef) {
-      if (!couponDef.minSubtotal || calculatedSubtotal >= couponDef.minSubtotal) {
-        if (couponDef.type === 'percent') {
-          calculatedDiscount = Number(((calculatedSubtotal * couponDef.value) / 100).toFixed(2));
-        } else {
-          calculatedDiscount = couponDef.value;
-        }
-      }
+    const couponDef = getCoupon(String(payload.couponCode));
+    if (couponDef && (!couponDef.minSubtotal || calculatedSubtotal >= couponDef.minSubtotal)) {
+      appliedCouponCode = couponDef.code;
+      calculatedDiscount =
+        couponDef.type === 'percent'
+          ? Number(((calculatedSubtotal * couponDef.value) / 100).toFixed(2))
+          : couponDef.value;
     }
   }
   calculatedDiscount = Math.min(calculatedDiscount, calculatedSubtotal);
 
-  // Delivery fee calculation
-  const deliveryFee = payload.orderType === 'delivery' ? (RESTAURANT_DELIVERY_FEES[slug] ?? 7.0) : 0;
+  // Taxa de entrega e pedido mínimo vêm do cadastro do restaurante
+  const canonicalOrderType = normalizeOrderOrigin(payload.orderType);
+  if (
+    canonicalOrderType === 'delivery' &&
+    !actor.isStaff &&
+    restaurant.minOrderValue &&
+    calculatedSubtotal < restaurant.minOrderValue
+  ) {
+    throw new Error(`Pedido mínimo para entrega em ${restaurant.name}: R$ ${Number(restaurant.minOrderValue).toFixed(2)}.`);
+  }
+  if (canonicalOrderType === 'delivery') {
+    const a = payload.deliveryAddress;
+    if (!a || !cleanText(a.street, 120) || !cleanText(a.number, 20) || !cleanText(a.neighborhood, 80)) {
+      throw new Error('Endereço de entrega incompleto (rua, número e bairro).');
+    }
+  }
+  const deliveryFee =
+    canonicalOrderType === 'delivery' ? Number(Number(restaurant.deliveryFee ?? 0).toFixed(2)) : 0;
   const calculatedTotal = Number(Math.max(0, calculatedSubtotal - calculatedDiscount + deliveryFee).toFixed(2));
 
-  // 4. Generate Unique IDs & Codes
-  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+// 4. Generate Unique IDs & Codes
+  const randomSuffix = crypto.randomInt(1000, 10000);
   const shortCode = `#TK-${randomSuffix}`;
-  const orderId = `ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const orderId = `ord-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const nowIso = new Date().toISOString();
 
   // 5. Build strict order object (ALWAYS 'recebido' - NEVER auto 'pronto')
@@ -548,25 +592,25 @@ export function createOrderTransactional(payload: CreateOrderPayload): { order: 
     restaurantSlug: slug,
     restaurantName,
     customerId: payload.customerId,
-    customerName: payload.customerName.trim(),
+    customerName,
     customerPhone: phoneNorm.isValid ? phoneNorm.displayFormatted : payload.customerPhone.trim(),
     customerPhoneNormalized: phoneNorm.isValid ? phoneNorm.canonical : undefined,
-    orderType: payload.orderType,
-    tableNumber: payload.orderType === 'mesa' ? payload.tableNumber : undefined,
+    orderType: canonicalOrderType,
+    tableNumber: canonicalOrderType === 'mesa' ? payload.tableNumber : undefined,
     tableSessionId: payload.tableSessionId,
     waiterName: payload.waiterName,
     pickupNumber:
-      payload.orderType === 'balcao' || payload.orderType === 'retirada'
+      canonicalOrderType === 'balcao' || canonicalOrderType === 'retirada'
         ? payload.pickupNumber
         : undefined,
     deliveryAddress:
-      payload.orderType === 'delivery' && payload.deliveryAddress
+      canonicalOrderType === 'delivery' && payload.deliveryAddress
         ? {
-            street: payload.deliveryAddress.street.trim(),
-            number: payload.deliveryAddress.number.trim(),
-            neighborhood: payload.deliveryAddress.neighborhood.trim(),
-            city: payload.deliveryAddress.city.trim(),
-            complement: payload.deliveryAddress.complement?.trim() || undefined,
+            street: cleanText(payload.deliveryAddress.street, 120),
+            number: cleanText(payload.deliveryAddress.number, 20),
+            neighborhood: cleanText(payload.deliveryAddress.neighborhood, 80),
+            city: cleanText(payload.deliveryAddress.city, 80),
+            complement: cleanText(payload.deliveryAddress.complement, 80) || undefined,
           }
         : undefined,
     items: sanitizedItems,
@@ -574,11 +618,11 @@ export function createOrderTransactional(payload: CreateOrderPayload): { order: 
     subtotal: calculatedSubtotal,
     deliveryFee,
     discount: calculatedDiscount,
-    couponCode: payload.couponCode?.trim().toUpperCase() || undefined,
+    couponCode: appliedCouponCode,
     total: calculatedTotal,
     paymentMethod: payload.paymentMethod,
     paymentDetails: payload.paymentDetails,
-    notes: payload.notes?.trim() || undefined,
+    notes: cleanText(payload.notes, 500) || undefined,
     status: 'recebido', // CRITICAL: NEVER AUTO PRONTO
     statusHistory: [
       {
@@ -589,20 +633,16 @@ export function createOrderTransactional(payload: CreateOrderPayload): { order: 
     ],
     printStatus: 'pendente',
     idempotencyKey: payload.idempotencyKey,
+    trackingToken: secureToken('trk-', 12),
     createdAt: nowIso,
     updatedAt: nowIso,
   };
 
-  console.log(`[ORDER] ID gerado: ${newOrder.id} (${newOrder.shortCode})`);
-  console.log(`[ORDER] Status inicial: NOVO (recebido)`);
-  console.log(`[ORDER] Salvando pedido...`);
+  console.log(`[ORDER] Criado ${newOrder.shortCode} (${slug}, ${canonicalOrderType}, R$ ${calculatedTotal.toFixed(2)})`);
 
   // 6. Prepend to in-memory cache and commit to disk
   ordersCache.unshift(newOrder);
   persistOrdersSync();
-
-  console.log(`[ORDER] Pedido salvo com sucesso`);
-  console.log(`[ORDER] Notificando painel: Pedido ${newOrder.shortCode} disponível`);
 
   return { order: newOrder, deduplicated: false };
 }
@@ -919,8 +959,15 @@ export function appendItemsToTableOrderTransactional(params: {
   waiterName?: string;
   tableSessionId?: string;
   idempotencyKey?: string;
-}): { order: Order; isNew: boolean } {
+}, actor: OrderActor = {}): { order: Order; isNew: boolean } {
   initializeOrders();
+
+  if (!restaurantExists(params.restaurantSlug)) {
+    throw new Error('Restaurante não encontrado.');
+  }
+  if (!Number.isInteger(params.tableNumber) || params.tableNumber < 1 || params.tableNumber > 999) {
+    throw new Error('Número de mesa inválido.');
+  }
 
   // Look for active open order on this table
   const activeStatuses: OrderStatus[] = [
@@ -944,26 +991,7 @@ export function appendItemsToTableOrderTransactional(params: {
     const existingOrder = ordersCache[existingIdx];
     const nowIso = new Date().toISOString();
 
-    const sanitizedNewItems: OrderItem[] = params.items.map((it, idx) => {
-      const qty = Math.max(1, Math.floor(it.quantity || 1));
-      const baseUnit = Math.max(0, Number(it.unitPrice) || 0);
-      const optionsTotal = (it.selectedOptions || []).reduce((acc, opt) => acc + (Number(opt.price) || 0), 0);
-      const unitPrice = Number((baseUnit + optionsTotal).toFixed(2));
-      const itemTotal = Number((unitPrice * qty).toFixed(2));
-      const assignedStation = it.station || resolveItemStation(it.name);
-
-      return {
-        id: it.id || `item-${Date.now()}-${idx}`,
-        name: it.name || 'Item do Cardápio',
-        quantity: qty,
-        unitPrice,
-        totalPrice: itemTotal,
-        selectedOptions: it.selectedOptions || [],
-        notes: it.notes?.trim() || undefined,
-        station: assignedStation,
-        stationStatus: 'recebido' as StationItemStatus,
-      };
-    });
+    const sanitizedNewItems: OrderItem[] = priceOrderItems(params.restaurantSlug, params.items, actor).items;
 
     const combinedItems = [...existingOrder.items, ...sanitizedNewItems];
     const newSubtotal = Number(combinedItems.reduce((sum, it) => sum + it.totalPrice, 0).toFixed(2));
@@ -1018,32 +1046,23 @@ export function appendItemsToTableOrderTransactional(params: {
     return { order: updatedOrder, isNew: false };
   }
 
-  // Otherwise, create new order for table
-  const formattedItems: OrderItem[] = params.items.map((it) => ({
-    id: it.id || `item-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-    name: it.name,
-    quantity: it.quantity,
-    unitPrice: it.unitPrice,
-    totalPrice: it.quantity * it.unitPrice,
-    selectedOptions: it.selectedOptions,
-    notes: it.notes,
-    station: it.station || resolveItemStation(it.name),
-    stationStatus: 'recebido',
-  }));
-
-  const newOrderResult = createOrderTransactional({
-    orderType: 'mesa',
-    tableNumber: params.tableNumber,
-    tableSessionId: params.tableSessionId,
-    waiterName: params.waiterName,
-    restaurantSlug: params.restaurantSlug,
-    restaurantName: params.restaurantName || 'Restaurante',
-    customerName: params.customerName || `Mesa ${String(params.tableNumber).padStart(2, '0')}`,
-    customerPhone: params.customerPhone || '(11) 99999-0000',
-    paymentMethod: 'pix',
-    items: formattedItems,
-    idempotencyKey: params.idempotencyKey,
-  });
+  // Otherwise, create new order for table (preços recalculados dentro de createOrderTransactional)
+  const newOrderResult = createOrderTransactional(
+    {
+      orderType: 'mesa',
+      tableNumber: params.tableNumber,
+      tableSessionId: params.tableSessionId,
+      waiterName: params.waiterName,
+      restaurantSlug: params.restaurantSlug,
+      restaurantName: params.restaurantName || 'Restaurante',
+      customerName: params.customerName || `Mesa ${String(params.tableNumber).padStart(2, '0')}`,
+      customerPhone: params.customerPhone || '(11) 99999-0000',
+      paymentMethod: 'pix',
+      items: params.items as any,
+      idempotencyKey: params.idempotencyKey,
+    },
+    actor
+  );
 
   return { order: newOrderResult.order, isNew: true };
 }
@@ -1115,3 +1134,34 @@ export function closeTableOrderTransactional(params: {
   return updatedOrder;
 }
 
+
+// ---------------------------------------------------------------------------
+// VISÕES DE PEDIDO (o que cada perfil pode enxergar)
+// ---------------------------------------------------------------------------
+
+/** Remove segredos internos antes de enviar para colaboradores. */
+export function toStaffView(order: Order): Omit<Order, 'trackingToken'> {
+  const { trackingToken, ...rest } = order;
+  return rest;
+}
+
+/** Visão do cliente dono do pedido (sem chaves internas). */
+export function toCustomerView(order: Order) {
+  const { idempotencyKey, printStatus, ...rest } = order;
+  return rest;
+}
+
+/**
+ * Rastreio público: exige id/código do pedido + token secreto recebido na
+ * criação. Sem o token não há como consultar nada.
+ */
+export function getOrderForTracking(idOrCode: string, token: string): Order | undefined {
+  initializeOrders();
+  if (!token || token.length < 10) return undefined;
+  const order = ordersCache.find((o) => o.id === idOrCode || o.shortCode.toLowerCase() === idOrCode.toLowerCase());
+  if (!order || !order.trackingToken) return undefined;
+  const a = Buffer.from(order.trackingToken);
+  const b = Buffer.from(token);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return undefined;
+  return order;
+}

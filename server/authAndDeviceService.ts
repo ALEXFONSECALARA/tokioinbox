@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { secureNumericCode, IS_PRODUCTION } from './security';
 
 export type UserRole =
   | 'super_admin'
@@ -231,20 +232,74 @@ function ensureDataDirectory() {
   }
 }
 
-// Secure PBKDF2 Password Hashing
+// Secure PBKDF2 Password Hashing (formato versionado: pbkdf2$<iterações>$<hex>)
+// Hashes legados (sem prefixo) usam 10.000 iterações e continuam válidos; são
+// atualizados automaticamente para o formato novo no próximo login bem-sucedido.
+const PBKDF2_ITERATIONS = 150000;
+const LEGACY_ITERATIONS = 10000;
+
 export function hashPassword(password: string, salt?: string): { hash: string; salt: string } {
   const finalSalt = salt || crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, finalSalt, 10000, 64, 'sha512').toString('hex');
-  return { hash, salt: finalSalt };
+  const derived = crypto.pbkdf2Sync(password, finalSalt, PBKDF2_ITERATIONS, 64, 'sha512').toString('hex');
+  return { hash: `pbkdf2$${PBKDF2_ITERATIONS}$${derived}`, salt: finalSalt };
 }
 
-export function verifyPassword(password: string, hash: string, salt: string, username?: string): boolean {
-  if (username === 'admin' && process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) {
-    return true;
+export function verifyPassword(password: string, hash: string, salt: string): boolean {
+  let iterations = LEGACY_ITERATIONS;
+  let expected = hash;
+  if (hash.startsWith('pbkdf2$')) {
+    const [, iterRaw, hex] = hash.split('$');
+    iterations = Number(iterRaw) || PBKDF2_ITERATIONS;
+    expected = hex;
   }
-  const result = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
-  return result === hash;
+  const derived = crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex');
+  const a = Buffer.from(derived, 'hex');
+  const b = Buffer.from(expected, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+
+export function needsPasswordRehash(hash: string): boolean {
+  return !hash.startsWith('pbkdf2$');
+}
+
+export function upgradeUserPasswordHash(userId: string, password: string) {
+  initializeUsers();
+  const idx = usersCache.findIndex((u) => u.id === userId);
+  if (idx === -1) return;
+  const { hash, salt } = hashPassword(password);
+  usersCache[idx] = { ...usersCache[idx], passwordHash: hash, passwordSalt: salt };
+  persistUsersSync();
+}
+
+/**
+ * Verifica se a conta usa uma senha padrão conhecida, sem custo excessivo:
+ * - hashes legados (10 mil iterações, criados por versões antigas): testa toda a lista;
+ * - hashes novos (150 mil iterações): a política de senha já impede senhas comuns, então só o
+ *   "admin123" do bootstrap de desenvolvimento precisa ser testado.
+ */
+function usesKnownDefaultPassword(u: { passwordHash: string; passwordSalt: string }): boolean {
+  const candidates = u.passwordHash.startsWith('pbkdf2$') ? ['admin123'] : KNOWN_DEFAULT_PASSWORDS;
+  return candidates.some((p) => {
+    try {
+      return verifyPassword(p, u.passwordHash, u.passwordSalt);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Política mínima de senha para colaboradores. */
+export function validateStaffPassword(password: string): string | null {
+  if (!password || password.length < 8) return 'A senha deve ter pelo menos 8 caracteres.';
+  if (/^(.)\1+$/.test(password)) return 'A senha não pode ser formada por um único caractere repetido.';
+  if (KNOWN_DEFAULT_PASSWORDS.includes(password.toLowerCase())) return 'Esta senha é muito comum. Escolha outra.';
+  return null;
+}
+
+const KNOWN_DEFAULT_PASSWORDS = [
+  'admin123', 'cozinha123', 'caixa123', 'entrega123', 'gerente123', 'salao123',
+  '12345678', 'password', 'senha123', '1234', 'admin', 'nexoro123', 'tokio123',
+];
 
 // ----------------------------------------------------
 // USERS REPOSITORY
@@ -252,23 +307,37 @@ export function verifyPassword(password: string, hash: string, salt: string, use
 let usersCache: UserAccount[] = [];
 let usersInitialized = false;
 
+function resolveBootstrapAdminPassword(): { password: string; generated: boolean } {
+  const envPass = process.env.ADMIN_PASSWORD;
+  if (envPass && validateStaffPassword(envPass) === null) {
+    return { password: envPass, generated: false };
+  }
+  if (!IS_PRODUCTION) {
+    console.warn('[AUTH] ADMIN_PASSWORD ausente/fraca: usando senha de DESENVOLVIMENTO. Nunca use isso em produção.');
+    return { password: envPass && envPass.length >= 4 ? envPass : 'admin123', generated: false };
+  }
+  const generated = crypto.randomBytes(9).toString('base64url');
+  return { password: generated, generated: true };
+}
+
 function getInitialUsers(): UserAccount[] {
   const now = new Date().toISOString();
-  // Default master superadmin: admin / process.env.ADMIN_PASSWORD or admin123
-  const masterCreds = hashPassword(process.env.ADMIN_PASSWORD || 'admin123');
-  // Default kitchen staff: cozinha / cozinha123 or cozinha01
-  const kitchenCreds = hashPassword('cozinha123');
-  // Default cashier: caixa / caixa123 or caixa01
-  const cashierCreds = hashPassword('caixa123');
-  // Default courier / delivery: entregador / entrega123
-  const courierCreds = hashPassword('entrega123');
-  // Default manager / admin: gerente / gerente123
-  const managerCreds = hashPassword('gerente123');
-
+  // Apenas o super administrador é criado automaticamente. Demais colaboradores
+  // (cozinha, caixa, garçom, gerente, entregador) são criados pelo próprio
+  // administrador em Equipe > Usuários, cada um com sua senha.
+  const boot = resolveBootstrapAdminPassword();
+  if (boot.generated) {
+    console.warn('==========================================================');
+    console.warn('[AUTH] ADMIN_PASSWORD não definida. Senha inicial GERADA para o usuário "admin":');
+    console.warn(`[AUTH]   ${boot.password}`);
+    console.warn('[AUTH] Anote agora e troque no painel. Ela não será exibida novamente.');
+    console.warn('==========================================================');
+  }
+  const masterCreds = hashPassword(boot.password);
   return [
     {
       id: 'usr-superadmin',
-      name: 'Super Administrador Mestre',
+      name: 'Super Administrador',
       username: 'admin',
       passwordHash: masterCreds.hash,
       passwordSalt: masterCreds.salt,
@@ -278,108 +347,59 @@ function getInitialUsers(): UserAccount[] {
       permissions: { ...ROLE_DEFAULT_PERMISSIONS.super_admin },
       createdAt: now,
     },
-    {
-      id: 'usr-gerente',
-      name: 'Gerente Geral de Operações',
-      username: 'gerente',
-      passwordHash: managerCreds.hash,
-      passwordSalt: managerCreds.salt,
-      role: 'administrador',
-      restaurantSlug: 'all',
-      isActive: true,
-      permissions: { ...ROLE_DEFAULT_PERMISSIONS.administrador },
-      createdAt: now,
-    },
-    {
-      id: 'usr-cozinha',
-      name: 'Equipe Cozinha Central',
-      username: 'cozinha',
-      passwordHash: kitchenCreds.hash,
-      passwordSalt: kitchenCreds.salt,
-      role: 'cozinha',
-      restaurantSlug: 'japones',
-      isActive: true,
-      permissions: { ...ROLE_DEFAULT_PERMISSIONS.cozinha },
-      createdAt: now,
-    },
-    {
-      id: 'usr-cozinha01',
-      name: 'Equipe Cozinha 01',
-      username: 'cozinha01',
-      passwordHash: kitchenCreds.hash,
-      passwordSalt: kitchenCreds.salt,
-      role: 'cozinha',
-      restaurantSlug: 'all',
-      isActive: true,
-      permissions: { ...ROLE_DEFAULT_PERMISSIONS.cozinha },
-      createdAt: now,
-    },
-    {
-      id: 'usr-caixa',
-      name: 'Operador de Caixa Balcão',
-      username: 'caixa',
-      passwordHash: cashierCreds.hash,
-      passwordSalt: cashierCreds.salt,
-      role: 'caixa',
-      restaurantSlug: 'all',
-      isActive: true,
-      permissions: { ...ROLE_DEFAULT_PERMISSIONS.caixa },
-      createdAt: now,
-    },
-    {
-      id: 'usr-caixa01',
-      name: 'Operador de Caixa 01',
-      username: 'caixa01',
-      passwordHash: cashierCreds.hash,
-      passwordSalt: cashierCreds.salt,
-      role: 'caixa',
-      restaurantSlug: 'all',
-      isActive: true,
-      permissions: { ...ROLE_DEFAULT_PERMISSIONS.caixa },
-      createdAt: now,
-    },
-    {
-      id: 'usr-entregador',
-      name: 'Expedição & Entregador',
-      username: 'entregador',
-      passwordHash: courierCreds.hash,
-      passwordSalt: courierCreds.salt,
-      role: 'entrega',
-      restaurantSlug: 'all',
-      isActive: true,
-      permissions: { ...ROLE_DEFAULT_PERMISSIONS.entrega },
-      createdAt: now,
-    },
-    {
-      id: 'usr-garcom',
-      name: 'Atendimento & Garçom Salão',
-      username: 'garcom',
-      passwordHash: hashPassword('salao123').hash,
-      passwordSalt: hashPassword('salao123').salt,
-      role: 'garcom',
-      restaurantSlug: 'all',
-      isActive: true,
-      permissions: { ...ROLE_DEFAULT_PERMISSIONS.garcom },
-      createdAt: now,
-    },
   ];
+}
+
+/**
+ * Migração de segurança: contas herdadas com senhas padrão conhecidas
+ * (admin123, cozinha123...) são desativadas em produção.
+ */
+function neutralizeDefaultCredentials() {
+  let changed = false;
+  for (let i = 0; i < usersCache.length; i++) {
+    const u = usersCache[i];
+    if (!usesKnownDefaultPassword(u)) continue;
+
+    if (!IS_PRODUCTION) {
+      console.warn(`[AUTH] (dev) Usuário "${u.username}" usa senha padrão conhecida.`);
+      continue;
+    }
+    if (u.role === 'super_admin') {
+      const boot = resolveBootstrapAdminPassword();
+      const creds = hashPassword(boot.password);
+      usersCache[i] = { ...u, passwordHash: creds.hash, passwordSalt: creds.salt };
+      console.warn(`[AUTH] Senha padrão do super admin "${u.username}" foi substituída.`);
+      if (boot.generated) console.warn(`[AUTH] Nova senha gerada para "${u.username}": ${boot.password}`);
+    } else {
+      usersCache[i] = { ...u, isActive: false };
+      console.warn(`[AUTH] Usuário "${u.username}" DESATIVADO por usar senha padrão. Redefina a senha no painel para reativar.`);
+    }
+    changed = true;
+  }
+  if (changed) persistUsersSync();
 }
 
 export function initializeUsers() {
   if (usersInitialized) return;
   ensureDataDirectory();
   try {
-    if (fs.existsSync(USERS_FILE)) {
-      const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+    const raw = fs.existsSync(USERS_FILE) ? fs.readFileSync(USERS_FILE, 'utf-8').trim() : '';
+    if (raw) {
       usersCache = JSON.parse(raw);
     } else {
       usersCache = getInitialUsers();
       persistUsersSync();
     }
-  } catch {
+  } catch (err) {
+    // Arquivo corrompido: preserva uma cópia para análise e NÃO regenera silenciosamente.
+    const backup = `${USERS_FILE}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(USERS_FILE, backup); } catch {}
+    console.error(`[AUTH] users.json ilegível (${(err as Error).message}). Cópia salva em ${backup}. Recriando apenas o admin.`);
     usersCache = getInitialUsers();
+    persistUsersSync();
   }
   usersInitialized = true;
+  neutralizeDefaultCredentials();
 }
 
 function persistUsersSync() {
@@ -425,8 +445,9 @@ export function createUser(data: {
     throw new Error(`O login "${cleanUsername}" já está em uso por outro usuário.`);
   }
 
-  if (data.password.length < 4) {
-    throw new Error('A senha deve ter pelo menos 4 caracteres.');
+  const pwdError = validateStaffPassword(data.password);
+  if (pwdError) {
+    throw new Error(pwdError);
   }
 
   const { hash, salt } = hashPassword(data.password);
@@ -437,7 +458,7 @@ export function createUser(data: {
   };
 
   const newUser: UserAccount = {
-    id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: `usr-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
     name: data.name.trim(),
     username: cleanUsername,
     passwordHash: hash,
@@ -485,7 +506,9 @@ export function updateUser(
   let newHash = user.passwordHash;
   let newSalt = user.passwordSalt;
 
-  if (updates.newPassword && updates.newPassword.trim().length >= 4) {
+  if (updates.newPassword) {
+    const pwdError = validateStaffPassword(updates.newPassword.trim());
+    if (pwdError) throw new Error(pwdError);
     const { hash, salt } = hashPassword(updates.newPassword.trim());
     newHash = hash;
     newSalt = salt;
@@ -598,7 +621,7 @@ export function getAllDevices(): ConnectedDevice[] {
 
 export function generatePairingCode(): string {
   initializeDevices();
-  const code = `TK-${Math.floor(1000 + Math.random() * 9000)}`;
+  const code = `NX-${secureNumericCode(6)}`;
   return code;
 }
 
@@ -617,7 +640,7 @@ export function registerOrPairDevice(data: {
 
   if (!dev) {
     dev = {
-      id: `dev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: `dev-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
       pairingCode: data.pairingCode.toUpperCase().trim(),
       deviceName: data.deviceName.trim() || 'Celular Cozinha / Balcão',
       platform: data.platform || 'android',
@@ -746,7 +769,7 @@ function persistAuditLogsSync() {
 export function logAuditAction(entry: Omit<AuditActionLog, 'id' | 'timestamp'>): void {
   initializeAuditLogs();
   const newLog: AuditActionLog = {
-    id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: `log-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
     timestamp: new Date().toISOString(),
     ...entry,
   };
@@ -768,14 +791,20 @@ export function getAuditLogs(limit = 100): AuditActionLog[] {
 // ==========================================
 
 interface PasswordResetToken {
-  token: string;
+  codeHash: string;
   userId: string;
   targetType: 'email' | 'whatsapp';
   destination: string;
   expiresAt: number;
+  attempts: number;
 }
 
+// Um código ativo por usuário; o código só vale para o identificador informado.
 const passwordResetTokens: Map<string, PasswordResetToken> = new Map();
+
+function hashResetCode(code: string): string {
+  return crypto.createHash('sha256').update(code).digest('hex');
+}
 
 export function requestPasswordReset(
   channel: 'email' | 'whatsapp',
@@ -783,73 +812,67 @@ export function requestPasswordReset(
 ): { success: boolean; message: string; previewToken?: string } {
   initializeUsers();
   const cleanId = identifier.trim().toLowerCase();
+  const user = usersCache.find((u) => u.username.toLowerCase() === cleanId);
 
-  // Find user by username, email or phone (if present in custom note or username)
-  const user = usersCache.find(
-    (u) =>
-      u.username.toLowerCase() === cleanId ||
-      u.name.toLowerCase() === cleanId
-  );
-
-  // Generate 6-digit cryptographic random token
-  const token = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 mins
-
-  if (user) {
-    passwordResetTokens.set(token, {
-      token,
+  const code = secureNumericCode(6);
+  if (user && user.isActive) {
+    passwordResetTokens.set(user.id, {
+      codeHash: hashResetCode(code),
       userId: user.id,
       targetType: channel,
       destination: identifier,
-      expiresAt,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+      attempts: 0,
     });
-
     logAuditAction({
       userName: user.name,
       userRole: user.role,
       action: `Código de recuperação de senha solicitado via ${channel.toUpperCase()}`,
+      details: 'Sem canal de envio automático para colaboradores: um administrador deve redefinir a senha em Equipe > Usuários.',
       category: 'user',
     });
   }
 
-  // Consistent message: NEVER reveal whether user exists
+  // Mensagem sempre igual: nunca revela se o usuário existe.
   return {
     success: true,
-    message: `Se o ${channel === 'whatsapp' ? 'WhatsApp' : 'e-mail'} estiver cadastrado, o código de 6 dígitos foi enviado com sucesso.`,
-    // For local/dev testing, return previewToken so administrator can test immediately
-    previewToken: process.env.NODE_ENV !== 'production' ? token : undefined,
+    message:
+      'Se o usuário existir, a solicitação foi registrada. Peça ao administrador para redefinir sua senha no painel.',
+    // Somente em desenvolvimento, para testes locais.
+    previewToken: !IS_PRODUCTION && user ? code : undefined,
   };
 }
 
 export function confirmPasswordReset(
   token: string,
-  newPassword: string
+  newPassword: string,
+  identifier?: string
 ): { success: boolean; error?: string } {
   initializeUsers();
-  const cleanToken = token.trim();
-  const record = passwordResetTokens.get(cleanToken);
+  const generic = { success: false, error: 'Código de recuperação inválido ou expirado.' };
+  if (!identifier) return generic;
 
-  if (!record || record.expiresAt < Date.now()) {
-    return { success: false, error: 'Código de recuperação inválido ou expirado.' };
+  const user = usersCache.find((u) => u.username.toLowerCase() === identifier.trim().toLowerCase());
+  if (!user) return generic;
+
+  const record = passwordResetTokens.get(user.id);
+  if (!record || record.expiresAt < Date.now()) return generic;
+
+  record.attempts += 1;
+  if (record.attempts > 5) {
+    passwordResetTokens.delete(user.id);
+    return generic;
   }
+  if (record.codeHash !== hashResetCode(String(token).trim())) return generic;
 
-  const userIdx = usersCache.findIndex((u) => u.id === record.userId);
-  if (userIdx === -1) {
-    return { success: false, error: 'Usuário não encontrado.' };
-  }
+  const pwdError = validateStaffPassword(newPassword.trim());
+  if (pwdError) return { success: false, error: pwdError };
 
-  if (newPassword.trim().length < 4) {
-    return { success: false, error: 'A nova senha deve possuir pelo menos 4 caracteres.' };
-  }
-
+  const userIdx = usersCache.findIndex((u) => u.id === user.id);
   const { hash, salt } = hashPassword(newPassword.trim());
-  usersCache[userIdx] = {
-    ...usersCache[userIdx],
-    passwordHash: hash,
-    passwordSalt: salt,
-  };
+  usersCache[userIdx] = { ...usersCache[userIdx], passwordHash: hash, passwordSalt: salt };
   persistUsersSync();
-  passwordResetTokens.delete(cleanToken);
+  passwordResetTokens.delete(user.id);
 
   logAuditAction({
     userName: usersCache[userIdx].name,
@@ -859,4 +882,18 @@ export function confirmPasswordReset(
   });
 
   return { success: true };
+}
+
+/** Usuários ativos que ainda usam senha padrão conhecida (para o diagnóstico de segurança). */
+export function listUsersWithDefaultPassword(): string[] {
+  initializeUsers();
+  return usersCache
+    .filter((u) => u.isActive)
+    .filter((u) => usesKnownDefaultPassword(u))
+    .map((u) => u.username);
+}
+
+export function countActiveUsers(): number {
+  initializeUsers();
+  return usersCache.filter((u) => u.isActive).length;
 }

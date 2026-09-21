@@ -1,3 +1,4 @@
+import { getGeminiModel } from './aiModel';
 import { GoogleGenAI } from '@google/genai';
 
 export interface CmvItemInput {
@@ -178,7 +179,7 @@ ${itemAdvices
 Forneça um parágrafo executivo e direto (máximo 3 frases em português) com uma orientação tática e pragmática para o proprietário blindar o caixa e a margem de lucro.`;
 
       const response = await geminiClient.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: getGeminiModel(),
         contents: prompt,
       });
 

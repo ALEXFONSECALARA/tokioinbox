@@ -1,3 +1,4 @@
+import { getGeminiModel } from './aiModel';
 import { GoogleGenAI } from '@google/genai';
 
 export interface AISettingsState {
@@ -13,7 +14,7 @@ export interface AISettingsState {
 
 let aiSettings: AISettingsState = {
   provider: 'gemini',
-  model: 'gemini-3.8-flash',
+  model: getGeminiModel(),
   apiKey: process.env.GEMINI_API_KEY || '',
   isActive: true,
   temperature: 0.4,
@@ -119,7 +120,7 @@ Responda em formato JSON com esta estrutura exata:
 }`;
 
       const response = await genAI.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: getGeminiModel(),
         contents: prompt,
         config: {
           responseMimeType: 'application/json',

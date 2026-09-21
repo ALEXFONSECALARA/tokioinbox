@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { secureNumericCode, IS_PRODUCTION } from './security';
 import fs from 'fs';
 import path from 'path';
 import { normalizePhone } from './phoneUtils';
@@ -43,6 +44,7 @@ export interface PasswordResetRecord {
   codeHash: string;
   expiresAt: number; // timestamp
   used: boolean;
+  attempts?: number;
   createdAt: string;
 }
 
@@ -290,7 +292,9 @@ export function loginCustomer(params: {
 
   // Verify password hash
   const computedHash = hashPassword(params.password, customer.passwordSalt);
-  if (computedHash !== customer.passwordHash) {
+  const hashA = Buffer.from(computedHash);
+  const hashB = Buffer.from(customer.passwordHash);
+  if (hashA.length !== hashB.length || !crypto.timingSafeEqual(hashA, hashB)) {
     return {
       success: false,
       error: 'Senha incorreta. Verifique os dados ou utilize a opção de recuperação de senha.',
@@ -372,28 +376,44 @@ export async function requestCustomerPasswordReset(rawPhone: string): Promise<{
   }
 
   const customer = customersCache.find((c) => c.phoneNormalized === norm.canonical);
-  if (!customer) {
+  const genericOk = {
+    success: true,
+    message: `Se houver uma conta para ${norm.displayFormatted}, enviaremos um código de verificação por WhatsApp.`,
+    phoneNormalized: norm.canonical,
+  };
+
+  const providerConfigured = Boolean(process.env.WHATSAPP_SMS_PROVIDER_API_KEY && process.env.WHATSAPP_SMS_ENDPOINT_URL);
+  if (IS_PRODUCTION && !providerConfigured) {
+    // Sem canal de envio não há como entregar o código com segurança.
     return {
       success: false,
       message: '',
-      error: 'Não encontramos nenhuma conta cadastrada para este número de WhatsApp.',
+      error: 'A recuperação de senha por WhatsApp não está disponível no momento. Entre em contato com o restaurante.',
     };
+  }
+  if (!customer) {
+    return genericOk; // não revela se o número tem conta
   }
 
   // Generate 6-digit numeric verification code
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const code = secureNumericCode(6);
   const codeHash = crypto.createHash('sha256').update(code).digest('hex');
   const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
 
   const resetRecord: PasswordResetRecord = {
-    id: `reset-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    id: `reset-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
     phoneNormalized: norm.canonical,
     codeHash,
     expiresAt,
     used: false,
+    attempts: 0,
     createdAt: new Date().toISOString(),
   };
 
+  // Invalida códigos anteriores ainda pendentes deste telefone
+  resetsCache.forEach((r) => {
+    if (r.phoneNormalized === norm.canonical && !r.used) r.used = true;
+  });
   resetsCache.push(resetRecord);
   persistResetsSync();
 
@@ -424,15 +444,12 @@ export async function requestCustomerPasswordReset(rawPhone: string): Promise<{
     }
   }
 
-  console.log(`[RECUPERAÇÃO DE SENHA] Código gerado para ${norm.canonical} (${norm.displayFormatted}): ${code}`);
+  if (!IS_PRODUCTION) console.log(`[RECUPERAÇÃO DE SENHA][DEV] Código para ${norm.canonical}: ${code}`);
 
   return {
-    success: true,
-    message: dispatchedExternally
-      ? `Código de verificação enviado via WhatsApp para ${norm.displayFormatted}.`
-      : `Código de verificação gerado com sucesso para ${norm.displayFormatted}.`,
-    phoneNormalized: norm.canonical,
-    debugCode: dispatchedExternally ? undefined : code,
+    ...genericOk,
+    // Somente em desenvolvimento e sem provedor externo — jamais em produção.
+    debugCode: !IS_PRODUCTION && !dispatchedExternally ? code : undefined,
   };
 }
 
@@ -467,6 +484,16 @@ export function confirmCustomerPasswordReset(params: {
   const resetRecord = resetsCache
     .filter((r) => r.phoneNormalized === norm.canonical && !r.used && r.expiresAt > now)
     .sort((a, b) => b.expiresAt - a.expiresAt)[0];
+
+  if (resetRecord) {
+    resetRecord.attempts = (resetRecord.attempts || 0) + 1;
+    if (resetRecord.attempts > 5) {
+      resetRecord.used = true; // esgotou tentativas: exige novo código
+      persistResetsSync();
+      return { success: false, message: '', error: 'Muitas tentativas incorretas. Solicite um novo código.' };
+    }
+    persistResetsSync();
+  }
 
   if (!resetRecord || resetRecord.codeHash !== codeHash) {
     return {
