@@ -1,3 +1,4 @@
+import { OpenCashShiftCard } from './OpenCashShiftCard';
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, PaymentMethod, CashRegisterMovement } from '../types/restaurant';
@@ -300,6 +301,10 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
               </button>
             )}
           </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto mt-3 empty:hidden">
+          <OpenCashShiftCard />
         </div>
 
         {/* Categories / Modes Tabs */}

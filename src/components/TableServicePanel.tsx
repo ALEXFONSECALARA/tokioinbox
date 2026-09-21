@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useServerDoc } from '../painel/useServerDoc';
 import { useStore } from '../context/StoreContext';
 import { Order, MenuItem, RestaurantSlug } from '../types/restaurant';
 import {
@@ -88,18 +89,8 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [passwordInput, setPasswordInput] = useState('');
 
   // Table Management State
-  const [tables, setTables] = useState<TableState[]>(() => {
-    try {
-      const saved = localStorage.getItem('tokio_salon_tables_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= 50) return parsed;
-      }
-      return INITIAL_TABLES;
-    } catch {
-      return INITIAL_TABLES;
-    }
-  });
+  // Mesas, chamados e histórico do turno: documentos compartilhados no servidor (todos os aparelhos do salão veem o mesmo)
+  const [tables, setTables] = useServerDoc<TableState[]>('salonTables', INITIAL_TABLES, { enabled: true, onError: (m) => showToast(m, 'error') });
 
   const [activeTableId, setActiveTableId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'livre' | 'ocupada' | 'preparando' | 'conta'>('all');
@@ -127,64 +118,20 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [fiscalTableOrder, setFiscalTableOrder] = useState<Order | null>(null);
   
   // Waiter Calls tracking
-  const [waiterCalls, setWaiterCalls] = useState<Record<number, { timestamp: number; table: number }>>(() => {
-    try {
-      const saved = localStorage.getItem('tokio_waiter_calls');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [waiterCalls, setWaiterCalls] = useServerDoc<Record<number, { timestamp: number; table: number }>>('waiterCalls', {}, { enabled: true, onError: (m) => showToast(m, 'error') });
 
   // Shift History of closed tables
-  const [shiftHistory, setShiftHistory] = useState<{ id: string; tableId: number; total: number; closedAt: string; paymentMethod: string; waiter: string }[]>(() => {
-    try {
-      const saved = localStorage.getItem('tokio_salon_shift_history');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Poll waiter calls from localStorage every 2.5s
-  useEffect(() => {
-    const checkCalls = () => {
-      try {
-        const saved = localStorage.getItem('tokio_waiter_calls');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setWaiterCalls(parsed);
-        }
-      } catch (e) {
-        // ignore
-      }
-    };
-    const timer = setInterval(checkCalls, 2500);
-    return () => clearInterval(timer);
-  }, []);
+  type ShiftHistoryItem = { id: string; tableId: number; total: number; closedAt: string; paymentMethod: string; waiter: string };
+  const [shiftHistory, setShiftHistory] = useServerDoc<ShiftHistoryItem[]>('salonShiftHistory', [], { enabled: true, onError: (m) => showToast(m, 'error') });
 
   const handleAcknowledgeCall = (tableNum: number) => {
     setWaiterCalls((prev) => {
       const copy = { ...prev };
       delete copy[tableNum];
-      try {
-        localStorage.setItem('tokio_waiter_calls', JSON.stringify(copy));
-      } catch (e) {
-        // ignore
-      }
       return copy;
     });
     showToast(`Chamado da Mesa ${tableNum} atendido!`, 'info');
   };
-
-  // Persist table metadata
-  useEffect(() => {
-    try {
-      localStorage.setItem('tokio_salon_tables_v1', JSON.stringify(tables));
-    } catch (e) {
-      console.warn('Storage error on tables', e);
-    }
-  }, [tables]);
 
   // Orders associated with each table
   const tableOrdersMap = useMemo(() => {
@@ -400,13 +347,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
         paymentMethod: selectedPaymentMethod,
         waiter: currentUser?.name || 'Garçom Salão',
       };
-      const updatedHistory = [historyItem, ...shiftHistory];
-      setShiftHistory(updatedHistory);
-      try {
-        localStorage.setItem('tokio_salon_shift_history', JSON.stringify(updatedHistory));
-      } catch (e) {
-        // ignore
-      }
+      setShiftHistory((prev) => [historyItem, ...prev]);
 
       setActiveTableId(null);
       showToast(`Mesa ${tableId} fechada e liberada com sucesso!`, 'success');
@@ -1917,7 +1858,6 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                   onClick={() => {
                     if (confirm('Zerar histórico do turno?')) {
                       setShiftHistory([]);
-                      localStorage.removeItem('tokio_salon_shift_history');
                       showToast('Histórico do turno limpo com sucesso.', 'info');
                     }
                   }}

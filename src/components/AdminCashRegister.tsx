@@ -1,3 +1,4 @@
+import { OpenCashShiftCard } from './OpenCashShiftCard';
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { CashRegisterMovement, Order, OrderType } from '../types/restaurant';
@@ -147,6 +148,8 @@ export const AdminCashRegister: React.FC = () => {
           </button>
         )}
       </div>
+
+      <OpenCashShiftCard />
 
       {/* Financial Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

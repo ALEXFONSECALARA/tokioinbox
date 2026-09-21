@@ -30,11 +30,27 @@ export const AdminDispatch: React.FC<AdminDispatchProps> = ({ selectedFilterSlug
     orders,
     restaurants,
     deliveryStaff,
+    addDeliveryStaff,
+    removeDeliveryStaff,
     updateDeliveryStaffStatus,
     assignOrderToDelivery,
     updateOrderStatus,
     checkPermission,
   } = useStore();
+
+  // Cadastro de entregadores (compartilhado entre os aparelhos)
+  const [newCourier, setNewCourier] = React.useState({ name: '', phone: '', vehicle: 'moto' as 'moto' | 'bike' | 'carro', commissionRate: '7.5' });
+  const submitCourier = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCourier.name.trim()) return;
+    addDeliveryStaff({
+      name: newCourier.name,
+      phone: newCourier.phone,
+      vehicle: newCourier.vehicle,
+      commissionRate: parseFloat(newCourier.commissionRate.replace(',', '.')) || 0,
+    });
+    setNewCourier({ name: '', phone: '', vehicle: 'moto', commissionRate: '7.5' });
+  };
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('mot-1');
@@ -144,6 +160,48 @@ export const AdminDispatch: React.FC<AdminDispatchProps> = ({ selectedFilterSlug
               <span>Equipe de Entregadores</span>
             </h3>
 
+            <form onSubmit={submitCourier} className="mb-3 grid grid-cols-2 gap-2 p-3 rounded-xl bg-[#1A1F2B] border border-slate-800">
+              <input
+                value={newCourier.name}
+                onChange={(e) => setNewCourier({ ...newCourier, name: e.target.value })}
+                placeholder="Nome do entregador"
+                data-testid="courier-name"
+                className="col-span-2 px-2.5 py-1.5 rounded-lg bg-[#0B0F19] border border-slate-700 text-xs text-white focus:outline-none focus:border-indigo-400"
+              />
+              <input
+                value={newCourier.phone}
+                onChange={(e) => setNewCourier({ ...newCourier, phone: e.target.value })}
+                placeholder="Telefone"
+                className="px-2.5 py-1.5 rounded-lg bg-[#0B0F19] border border-slate-700 text-xs text-white focus:outline-none focus:border-indigo-400"
+              />
+              <select
+                value={newCourier.vehicle}
+                onChange={(e) => setNewCourier({ ...newCourier, vehicle: e.target.value as any })}
+                className="px-2.5 py-1.5 rounded-lg bg-[#0B0F19] border border-slate-700 text-xs text-white"
+              >
+                <option value="moto">Moto</option>
+                <option value="bike">Bike</option>
+                <option value="carro">Carro</option>
+              </select>
+              <input
+                value={newCourier.commissionRate}
+                onChange={(e) => setNewCourier({ ...newCourier, commissionRate: e.target.value })}
+                placeholder="Comissão %"
+                className="px-2.5 py-1.5 rounded-lg bg-[#0B0F19] border border-slate-700 text-xs text-white focus:outline-none focus:border-indigo-400"
+              />
+              <button
+                type="submit"
+                data-testid="courier-add"
+                className="px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-black"
+              >
+                Cadastrar entregador
+              </button>
+            </form>
+
+            {deliveryStaff.length === 0 && (
+              <p className="text-xs text-slate-500 text-center py-4">Nenhum entregador cadastrado ainda.</p>
+            )}
+
             <div className="space-y-2.5">
               {deliveryStaff.map((staff) => (
                 <div
@@ -189,6 +247,16 @@ export const AdminDispatch: React.FC<AdminDispatchProps> = ({ selectedFilterSlug
                         Offline
                       </option>
                     </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`Remover ${staff.name} da equipe de entregadores?`)) removeDeliveryStaff(staff.id);
+                      }}
+                      className="text-[10px] text-rose-400 hover:underline"
+                      title="Remover entregador"
+                    >
+                      Remover
+                    </button>
                   </div>
 
                   <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">

@@ -18,41 +18,26 @@ import {
 } from 'lucide-react';
 
 interface CourierPortalProps {
-  isOpen: boolean;
-  onClose: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
+  /** uso como tela do painel (rota /entregador) */
+  onBackToHome?: () => void;
 }
 
-export const CourierPortal: React.FC<CourierPortalProps> = ({ isOpen, onClose }) => {
-  const { orders, updateOrderStatus } = useStore();
+export const CourierPortal: React.FC<CourierPortalProps> = ({ isOpen, onClose, onBackToHome }) => {
+  const { orders, updateOrderStatus, currentUser } = useStore();
+  const closePortal = () => (onBackToHome || onClose)?.();
 
-  const [courierName, setCourierName] = useState(() => {
-    return localStorage.getItem('aura_courier_name') || 'Marcio Silva (Moto 04)';
-  });
-  const [courierPin, setCourierPin] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('aura_courier_auth') === 'true';
-  });
+  // A identidade do entregador é o usuário logado no painel (login validado no servidor).
+  // Não existe mais PIN local nem nome de exemplo.
+  const courierName = currentUser?.name || 'Entregador';
   const [isOnline, setIsOnline] = useState(true);
   const [problemOrderId, setProblemOrderId] = useState<string | null>(null);
   const [problemDescription, setProblemDescription] = useState('');
 
-  if (!isOpen) return null;
+  if (isOpen === false) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (courierPin.trim() === '1234' || courierPin.trim() === '8888' || courierPin.length >= 4) {
-      setIsAuthenticated(true);
-      localStorage.setItem('aura_courier_auth', 'true');
-      localStorage.setItem('aura_courier_name', courierName);
-    } else {
-      alert('Código PIN inválido. Digite 1234 para testes.');
-    }
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('aura_courier_auth');
-  };
+  const handleLogout = closePortal;
 
   // Orders available for delivery or currently assigned:
   // Statuses: 'pronto' (ready for pickup) or 'saiu_para_entrega' (in route)
@@ -93,7 +78,7 @@ export const CourierPortal: React.FC<CourierPortalProps> = ({ isOpen, onClose })
             </div>
             <div>
               <h2 className="text-base font-black text-white tracking-tight flex items-center gap-2">
-                Aura Delivery • Portal do Entregador
+                Portal do Entregador
               </h2>
               <p className="text-[11px] text-slate-400">
                 Área restrita e exclusiva para motociclistas credenciados
@@ -101,7 +86,7 @@ export const CourierPortal: React.FC<CourierPortalProps> = ({ isOpen, onClose })
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={closePortal}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -110,47 +95,7 @@ export const CourierPortal: React.FC<CourierPortalProps> = ({ isOpen, onClose })
 
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
-          {!isAuthenticated ? (
-            <form onSubmit={handleLogin} className="max-w-md mx-auto space-y-4 py-4">
-              <div className="text-center space-y-1 mb-4">
-                <ShieldCheck className="w-10 h-10 text-cyan-400 mx-auto" />
-                <h3 className="text-base font-bold text-white">Login do Entregador</h3>
-                <p className="text-xs text-slate-400">Digite seu nome e PIN de segurança de 4 dígitos</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Nome do Entregador:</label>
-                <input
-                  type="text"
-                  required
-                  value={courierName}
-                  onChange={(e) => setCourierName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:border-cyan-400 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">PIN de Acesso (4 Dígitos):</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="1234"
-                  maxLength={6}
-                  value={courierPin}
-                  onChange={(e) => setCourierPin(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm tracking-widest text-center focus:border-cyan-400 focus:outline-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-sm shadow-md transition-colors"
-              >
-                Acessar Minhas Entregas
-              </button>
-              <p className="text-[11px] text-center text-slate-500">Dica: Use o PIN 1234 para acessar</p>
-            </form>
-          ) : (
+          {(
             <div className="space-y-6">
               {/* Courier Status Bar */}
               <div className="p-4 rounded-xl bg-[#121622] border border-slate-800 flex items-center justify-between">

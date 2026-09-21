@@ -147,13 +147,13 @@ export const AdminHealthCheck: React.FC = () => {
   };
 
   const handleResetSeed = () => {
-    if (
-      window.confirm(
-        'ATENÇÃO: Deseja restaurar os dados originais de demonstração de todos os 4 restaurantes? Suas edições recentes de itens e pedidos serão reiniciadas.'
-      )
-    ) {
+    const typed = window.prompt(
+      'ATENÇÃO: isto SUBSTITUI o cardápio e os restaurantes atuais (em todos os aparelhos) pelos dados de demonstração.\n' +
+        'Pedidos, clientes e caixa não são afetados.\n\nPara confirmar, digite: RESTAURAR'
+    );
+    if (typed === 'RESTAURAR') {
       resetToDefaultData();
-      alert('Sistema restaurado para a versão de semente inicial.');
+      alert('Cardápio e restaurantes restaurados para a versão de demonstração.');
     }
   };
 
