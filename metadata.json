@@ -1,8 +1,0 @@
-{
-  "name": "NEXORO FOOD SYSTEM",
-  "description": "NEXORO FOOD SYSTEM - Mais que pedidos, uma experiência completa. Plataforma Multi-Restaurante com IA, KDS, Entregadores, CMV e Gestão 360°",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
-
-
