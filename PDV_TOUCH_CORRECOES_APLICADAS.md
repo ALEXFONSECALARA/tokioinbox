@@ -36,3 +36,20 @@ Depois validar os fluxos reais de impressão com o Print Agent e as impressoras 
 ## Observação
 
 As correções foram feitas preservando os contratos e componentes existentes sempre que possível. Não foram inseridos registros de negócio fictícios no catálogo ou nos pedidos.
+
+
+## Correção emergencial 2026-09-22 — rotas /pdv e /balcao
+- Corrigido `CounterTouchView`: import ausente de `Store`, que podia causar tela preta ao renderizar o estado inicial vazio.
+- Corrigido contrato de `CounterTouchViewProps` para aceitar `onOpenAdmin`, já utilizado pelo `BalcaoModule`.
+- Adicionada barreira de erro no `PainelApp` para impedir tela preta silenciosa caso um módulo lazy falhe no carregamento.
+- As URLs `/pdv` e `/balcao` continuam sendo rotas internas do painel; não são links externos.
+
+
+## Correção adicional — navegação sem links internos
+
+A navegação entre PDV, Balcão, Caixa, Delivery e demais ferramentas agora é feita exclusivamente pelo estado interno do React.
+- Não usa `history.pushState` ou `history.replaceState` para trocar de ferramenta.
+- Não cria URLs `/pdv`, `/balcao`, `/caixa` etc. ao clicar nos botões.
+- Não usa `window.location.assign()` para a navegação interna do painel.
+- A URL permanece estável enquanto o usuário troca de módulo.
+- As rotas continuam reconhecidas apenas para compatibilidade caso o sistema seja aberto diretamente em uma URL existente.
