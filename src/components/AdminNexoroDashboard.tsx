@@ -160,61 +160,6 @@ export const AdminNexoroDashboard: React.FC<AdminNexoroDashboardProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* CLOUD & RENDER ENVIRONMENT STATUS BAR */}
-      <div className="bg-[#0C0E12] border border-[#222] rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-black text-white uppercase tracking-wider text-[11px]">
-            Render Cloud Integration (TOKIOINBOX)
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Cloudinary */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
-            <Cloud className="w-3.5 h-3.5 text-sky-400" />
-            <span className="text-slate-400">Cloudinary:</span>
-            <span className={`font-mono font-bold ${cloudConfig?.cloudinary?.configured ? 'text-emerald-400' : 'text-slate-300'}`}>
-              {cloudConfig?.cloudinary?.configured ? cloudConfig.cloudinary.cloudName : 'Não configurado'}
-            </span>
-          </div>
-
-          {/* Supabase */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
-            <Database className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-400">Supabase:</span>
-            <span className={`font-mono font-bold ${cloudConfig?.supabase?.configured ? 'text-emerald-400' : 'text-slate-300'}`}>
-              {cloudConfig?.supabase?.configured ? 'Conectado' : 'Não configurado'}
-            </span>
-          </div>
-
-          {/* CORS */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
-            <Globe className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-slate-400">CORS:</span>
-            <span className="font-mono font-bold text-slate-200">
-              {Array.isArray(cloudConfig?.corsOrigins) && cloudConfig.corsOrigins.length > 0 ? cloudConfig.corsOrigins.join(', ') : 'mesma origem'}
-            </span>
-          </div>
-
-          {/* Timezone */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
-            <Clock className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-slate-400">TZ:</span>
-            <span className="font-mono font-bold text-slate-200">
-              {cloudConfig?.timezone || 'America/Sao_Paulo'}
-            </span>
-          </div>
-
-          {/* Master Admin Security */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-emerald-300">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="font-bold">ADMIN_PASSWORD:</span>
-            <span className="font-mono">Ativo</span>
-          </div>
-        </div>
-      </div>
-
       {/* 1. TOP 6 METRICS ROW (Exact styling from food nexoro.png) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         {/* Pedidos Recebidos */}

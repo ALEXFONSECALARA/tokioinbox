@@ -210,7 +210,7 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
             subtitle: 'Ingredientes frescos e preparo autêntico com entrega rápida.',
           },
         ],
-        activeTables: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
       };
 
       addRestaurant(newConfig);

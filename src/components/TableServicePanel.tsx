@@ -69,6 +69,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     updateOrderStatus,
     showToast,
     soundSettings,
+    updateRestaurantConfig,
   } = useStore();
 
   // Authentication State
@@ -88,7 +89,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
   const [activeTableId, setActiveTableId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'livre' | 'ocupada' | 'preparando' | 'conta'>('all');
-  const [tableRangeFilter, setTableRangeFilter] = useState<'all' | '1-15' | '16-30' | '31-50'>('all');
+  const [tableRangeFilter, setTableRangeFilter] = useState<'all' | '1-15' | '16-30'>('all');
   const [activeTab, setActiveTab] = useState<'pedidos' | 'lancar' | 'conta'>('pedidos');
 
   // New Item Tray State for active table
@@ -107,6 +108,8 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferTargetTable, setTransferTargetTable] = useState<number>(1);
   const [showShiftHistoryModal, setShowShiftHistoryModal] = useState(false);
+  const [showTableManager, setShowTableManager] = useState(false);
+  const [tableDraft, setTableDraft] = useState<number[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro'>('pix');
   const [cashReceived, setCashReceived] = useState('');
   const [tableQrUrl, setTableQrUrl] = useState<string | null>(null);
@@ -129,6 +132,22 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   };
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
+
+  // Sincroniza o cadastro de mesas do restaurante com o estado operacional do salão.
+  // Não cria mesas fictícias fora do cadastro: usa exatamente as mesas configuradas.
+  useEffect(() => {
+    const configured = Array.isArray(restaurant?.activeTables)
+      ? Array.from(new Set(restaurant.activeTables.filter((n) => Number.isInteger(n) && n > 0))).sort((a, b) => a - b)
+      : [];
+    if (!configured.length) return;
+    setTables((prev) => {
+      const byId = new Map(prev.map((t) => [t.id, t]));
+      const next = configured.map((id) => byId.get(id) || ({ id, capacity: 4, label: `Mesa ${id}` } as TableState));
+      const same = prev.length === next.length && prev.every((t, i) => t.id === next[i].id);
+      return same ? prev : next;
+    });
+  }, [restaurant?.activeTables, setTables]);
+
   const restaurantMenuItems = useMemo(
     () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
     [menuItems, restaurant?.slug]
@@ -656,9 +675,27 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     if (statusFilter !== 'all' && status !== statusFilter) return false;
     if (tableRangeFilter === '1-15' && (table.id < 1 || table.id > 15)) return false;
     if (tableRangeFilter === '16-30' && (table.id < 16 || table.id > 30)) return false;
-    if (tableRangeFilter === '31-50' && (table.id < 31 || table.id > 50)) return false;
     return true;
   });
+
+  const openTableManager = () => {
+    const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : [];
+    const normalized = Array.from(new Set(configured.filter((n) => Number.isInteger(n) && n > 0))).sort((a, b) => a - b);
+    setTableDraft(normalized.length ? normalized : Array.from({ length: 30 }, (_, i) => i + 1));
+    setShowTableManager(true);
+  };
+
+  const saveTableManager = () => {
+    if (!restaurant?.slug) return;
+    const next = Array.from(new Set(tableDraft.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))).sort((a, b) => a - b);
+    if (!next.length) {
+      showToast('Cadastre pelo menos uma mesa.', 'warning');
+      return;
+    }
+    updateRestaurantConfig(restaurant.slug, { activeTables: next });
+    setShowTableManager(false);
+    showToast(`${next.length} mesas cadastradas com sucesso.`, 'success');
+  };
 
   return (
     <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black">
@@ -672,6 +709,14 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
               title="Voltar ao Cardápio"
             >
               <ArrowLeft className="w-5 h-5" />
+            </button>
+            <button
+              onClick={openTableManager}
+              className="px-3 py-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-xs font-black hover:bg-amber-500/25 transition-colors"
+              title="Cadastrar e configurar mesas"
+            >
+              <span className="hidden sm:inline">Cadastro de Mesas</span>
+              <span className="sm:hidden">Mesas</span>
             </button>
             <div className="w-10 h-10 rounded-xl bg-stone-800 border border-amber-500/30 flex items-center justify-center overflow-hidden shadow-md">
               {restaurant?.logo ? (
@@ -860,7 +905,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                 tableRangeFilter === 'all' ? 'bg-amber-400 text-black font-bold' : 'text-stone-400 hover:text-stone-200'
               }`}
             >
-              Todas (1-50)
+              Todas (1-30)
             </button>
             <button
               onClick={() => setTableRangeFilter('1-15')}
@@ -878,18 +923,10 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
             >
               16 a 30
             </button>
-            <button
-              onClick={() => setTableRangeFilter('31-50')}
-              className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors ${
-                tableRangeFilter === '31-50' ? 'bg-amber-400 text-black font-bold' : 'text-stone-400 hover:text-stone-200'
-              }`}
-            >
-              31 a 50
-            </button>
           </div>
         </div>
 
-        {/* Tables Grid (01 to 50) */}
+        {/* Tables Grid (01 to 30+) */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {filteredTables.map((table) => {
             const status = getTableStatus(table.id);
@@ -1134,7 +1171,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                         <div className="flex items-center justify-between text-xs pb-2 border-b border-stone-800">
                           <div>
                             <span className="font-black text-amber-400">
-                              {order.shortCode || `#${order.id.slice(-4)}`}
+                              {order.shortCode || order.id.slice(-4)}
                             </span>
                             <span className="text-stone-500 ml-2">
                               {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Agora'}
@@ -1899,6 +1936,32 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
               >
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTableManager && (
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#111624] border border-amber-500/30 rounded-3xl shadow-2xl p-5">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-lg font-black text-white">Cadastro de Mesas</h3>
+                <p className="text-xs text-slate-400 mt-1">Cadastre, remova ou restaure as 30 mesas do salão.</p>
+              </div>
+              <button onClick={() => setShowTableManager(false)} className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {tableDraft.map((num) => (
+                <button key={num} type="button" onClick={() => setTableDraft((prev) => prev.filter((n) => n !== num))} className="min-w-12 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-black text-sm hover:bg-rose-900/40 hover:border-rose-500/40">
+                  Mesa {num} ×
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-4">
+              <button type="button" onClick={() => setTableDraft(Array.from({ length: 30 }, (_, i) => i + 1))} className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs">Restaurar 30 Mesas</button>
+              <button type="button" onClick={() => { const max = tableDraft.length ? Math.max(...tableDraft) : 0; setTableDraft([...tableDraft, max + 1]); }} className="px-4 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs border border-slate-700">+ Adicionar Mesa</button>
+              <button type="button" onClick={saveTableManager} className="ml-auto px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs">Salvar Cadastro</button>
             </div>
           </div>
         </div>

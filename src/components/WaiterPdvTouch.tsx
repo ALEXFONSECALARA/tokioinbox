@@ -787,7 +787,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
             <span>1. Mesas</span>
             {selectedTable && (
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/20 font-mono">
-                #{selectedTable}
+                {selectedTable}
               </span>
             )}
           </button>
@@ -812,7 +812,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
             <span>2. Cardápio PDV</span>
             {selectedTable && (
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/20 font-mono">
-                M#{selectedTable}
+                M{selectedTable}
               </span>
             )}
           </button>
@@ -879,7 +879,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                 <h2 className="text-lg font-black text-white uppercase tracking-wider flex items-center gap-2">
                   <span>SALÃO DE MESAS</span>
                   <span className="text-xs bg-slate-800 text-amber-400 px-2.5 py-0.5 rounded-full font-mono">
-                    24 Mesas
+                    {tableNumbers.length} Mesas
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -1008,7 +1008,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
                 <div className="flex items-center gap-2">
                   <span className="text-sm sm:text-base font-black text-white font-mono bg-black/40 px-3 py-1 rounded-xl border border-slate-700">
-                    MESA #{selectedTable}
+                    MESA {selectedTable}
                   </span>
                   <button
                     type="button"
@@ -1293,7 +1293,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                       </div>
                       <div>
                         <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                          CARRINHO • MESA #{selectedTable}
+                          CARRINHO • MESA {selectedTable}
                         </h3>
                         <span className="text-[10px] text-slate-400">
                           {draftItemsCount} {draftItemsCount === 1 ? 'item' : 'itens'} nesta rodada
@@ -1417,7 +1417,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
                     {currentTableOrder && (
                       <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span>Acumulado Mesa #{currentTableOrder.shortCode}:</span>
+                        <span>Acumulado Mesa {currentTableOrder.shortCode}:</span>
                         <span className="font-mono font-bold text-amber-300">
                           R$ {currentTableOrder.total.toFixed(2)}
                         </span>
@@ -1511,7 +1511,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                   </div>
                   <div>
                     <span className="text-xs font-black text-white uppercase block">
-                      Mesa #{selectedTable}
+                      Mesa {selectedTable}
                     </span>
                     <span className="text-sm font-black text-amber-400 font-mono">
                       R$ {(draftTotal + (currentTableOrder?.total || 0)).toFixed(2)}
@@ -1553,7 +1553,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-lg font-black text-white font-mono">
-                    MESA #{selectedTable}
+                    MESA {selectedTable}
                   </span>
                   <span className="text-[10px] bg-amber-500/20 text-amber-300 font-black px-2 py-0.5 rounded-full border border-amber-500/30">
                     CONFERÊNCIA & ACOMPANHAMENTO
@@ -1843,7 +1843,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-black text-white uppercase tracking-wider font-mono">
-                      FECHAMENTO • MESA #{selectedTable}
+                      FECHAMENTO • MESA {selectedTable}
                     </h2>
                     {currentTableOrder && (
                       <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono font-bold">
@@ -2294,7 +2294,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-amber-400" />
                 <h3 className="text-base font-black text-white uppercase">
-                  CARRINHO • MESA #{selectedTable}
+                  CARRINHO • MESA {selectedTable}
                 </h3>
               </div>
               <button
@@ -2555,7 +2555,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                   onClick={() => {
                     setSelectedTable(num);
                     setShowSwitchTableModal(false);
-                    showToast(`Mesa trocada para #${num}`, 'info');
+                    showToast(`Mesa trocada para ${num}`, 'info');
                   }}
                   className={`py-2.5 rounded-xl font-bold font-mono text-xs border transition-all ${
                     selectedTable === num
@@ -2563,7 +2563,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                       : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
                   }`}
                 >
-                  #{num}
+                  {num}
                 </button>
               ))}
             </div>
