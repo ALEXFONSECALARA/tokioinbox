@@ -2188,9 +2188,10 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* 5. PAINEL RÁPIDO TOUCH AO TOCAR NO PRODUTO (QUANTIDADE, MODIFICADORES, REMOVER INGREDIENTES, OBS) */}
       {/* ========================================================================= */}
       {editingItem && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-5 animate-fadeIn my-auto">
-            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          {/* Modal compacto: HEADER FIXO / CONTEÚDO COM SCROLL INTERNO / AÇÃO FIXA — nunca ultrapassa o viewport */}
+          <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-lg w-full max-h-[92vh] shadow-2xl animate-fadeIn flex flex-col overflow-hidden">
+            <div className="flex items-start justify-between border-b border-slate-800 p-5 sm:p-6 pb-3 shrink-0">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                   Praça: {determineStation(editingItem).toUpperCase()}
@@ -2207,6 +2208,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               </button>
             </div>
 
+            <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-5">
             {/* Quantidade (+ / - com botões touch grandes) */}
             <div className="bg-[#181E2E] p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between">
               <span className="text-sm font-bold text-slate-300">Quantidade:</span>
@@ -2341,8 +2343,10 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               />
             </div>
 
-            {/* Preço e Confirmação Touch */}
-            <div className="pt-2 border-t border-slate-800 space-y-2">
+            </div>
+
+            {/* Preço e Confirmação Touch — ação fixa, sempre visível mesmo com conteúdo rolando acima */}
+            <div className="shrink-0 border-t border-slate-800 p-5 sm:p-6 pt-3 space-y-2 bg-[#121622]">
               <div className="flex items-center justify-between text-xs text-slate-400">
                 <span>Preço Unitário: R$ {currentEditingUnitPrice.toFixed(2)}</span>
                 <span className="font-mono font-black text-amber-400 text-base">
@@ -2508,8 +2512,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* 7. MODAL DE AÇÃO DA MESA OCUPADA (TELA 1) */}
       {/* ========================================================================= */}
       {tableModalOption !== null && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 animate-fadeIn my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-lg font-black text-white font-mono">
@@ -2609,8 +2613,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* 8. MODAL DE TROCAR MESA RÁPIDO */}
       {/* ========================================================================= */}
       {showSwitchTableModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-4 animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-sm w-full max-h-[92vh] overflow-y-auto p-5 shadow-2xl space-y-4 animate-fadeIn my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-black text-white">Trocar Mesa de Atendimento</h3>
               <button

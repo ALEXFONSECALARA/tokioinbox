@@ -1578,8 +1578,8 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
       {/* Thermal Pre-Bill Print Simulation Modal */}
       {showPrintModal && activeTableId && (
-        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="bg-white text-black font-mono w-full max-w-sm rounded-2xl p-6 space-y-4 text-xs shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white text-black font-mono w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-2xl p-6 space-y-4 text-xs shadow-2xl my-auto">
             {/* Destaque Máximo no Topo da Comanda / Pré-Conta */}
             <div className="bg-neutral-950 text-white p-3 rounded-xl text-center space-y-0.5">
               <div className="text-[10px] font-black tracking-widest text-amber-400 uppercase">
@@ -1663,8 +1663,8 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
       {/* Transfer Orders to Another Table Modal */}
       {showTransferModal && activeTableId && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 w-full max-w-md max-h-[92vh] overflow-y-auto space-y-5 shadow-2xl my-auto">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold">

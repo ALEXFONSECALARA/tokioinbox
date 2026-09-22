@@ -40,8 +40,8 @@ export const AdminMasterResetModal: React.FC<AdminMasterResetModalProps> = ({ is
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn text-slate-100">
-      <div className="bg-[#141720] border-2 border-red-500/60 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn text-slate-100 overflow-y-auto">
+      <div className="bg-[#141720] border-2 border-red-500/60 rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto overflow-x-hidden my-auto p-6 sm:p-8 shadow-2xl space-y-6 relative">
         {/* Top Danger Accent Ribbon */}
         <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-600 via-rose-500 to-red-600 animate-pulse" />
 

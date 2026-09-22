@@ -205,10 +205,10 @@ export const AdminAiPromotions: React.FC<AdminAiPromotionsProps> = ({ selectedSl
 
       {/* New Promotion Modal */}
       {showNewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
           <form
             onSubmit={handleCreatePromo}
-            className="w-full max-w-md bg-[#0E121B] border border-[#E3BD6A]/30 rounded-2xl p-6 shadow-2xl space-y-4"
+            className="w-full max-w-md max-h-[92vh] overflow-y-auto my-auto bg-[#0E121B] border border-[#E3BD6A]/30 rounded-2xl p-6 shadow-2xl space-y-4"
           >
             <h3 className="text-base font-bold text-white">Criar Nova Promoção</h3>
 

@@ -56,6 +56,7 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
   const canAccessCaixa = canAccessArea(role, 'caixa');
   const canAccessProducao = canAccessArea(role, 'cozinha') || canAccessArea(role, 'sushibar') || canAccessArea(role, 'bar');
   const canAccessAdmin = canAccessArea(role, 'admin');
+  const canAccessKanban = canAccessArea(role, 'kanban');
 
   // Check if current view is a production station
   const isProducaoActive =
@@ -113,45 +114,13 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
             </button>
           )}
 
-          {/* 2. 👤 CLIENTE (QR da mesa → Cardápio → Pedido) */}
-          {canAccessCliente && (
-            <button
-              id="env-btn-cliente"
-              type="button"
-              onClick={() => onSelectEnvironment('cliente')}
-              className={`min-h-[42px] px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap text-left ${
-                currentEnvironment === 'cliente'
-                  ? 'bg-emerald-500 text-slate-950 font-black border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-                  : 'bg-[#121724] border-slate-800 text-slate-300 hover:text-white hover:bg-[#181F30] hover:border-slate-700'
-              }`}
-              title="👤 CLIENTE: QR da mesa → Cardápio → Pedido"
-            >
-              <Utensils
-                className={`w-4 h-4 shrink-0 ${
-                  currentEnvironment === 'cliente' ? 'text-slate-950' : 'text-emerald-400'
-                }`}
-              />
-              <div className="flex flex-col">
-                <span className="text-xs font-black tracking-wider leading-tight">
-                  👤 CLIENTE
-                </span>
-                {!condensed && (
-                  <span
-                    className={`text-[9px] font-medium hidden sm:inline leading-tight ${
-                      currentEnvironment === 'cliente' ? 'text-slate-900 font-bold' : 'text-slate-400'
-                    }`}
-                  >
-                    QR Mesa → Cardápio → Pedido
-                  </span>
-                )}
-              </div>
-              {currentEnvironment === 'cliente' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping ml-0.5 shrink-0" />
-              )}
-            </button>
-          )}
+          {/* CLIENTE: função preservada, movida para o grupo secundário
+              (Administração) no fim da barra — não é um fluxo operacional
+              diário do garçom/caixa, então não compete mais com Salão/
+              Balcão/Pedidos/Delivery/Caixa/Produção nesta posição de
+              destaque. Ver o grupo "border-l" mais abaixo. */}
 
-          {/* 3. 🚶 BALCÃO (PDV Touch → Senha → Pedido) */}
+          {/* 2. 🚶 BALCÃO (PDV Touch → Senha → Pedido) */}
           {canAccessBalcao && (
             <button
               id="env-btn-balcao"
@@ -185,6 +154,53 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
               </div>
               {currentEnvironment === 'balcao' && (
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping ml-0.5 shrink-0" />
+              )}
+            </button>
+          )}
+
+          {/*
+            4. 📦 PEDIDOS / KANBAN
+            REORGANIZAÇÃO DE NAVEGAÇÃO: antes só existia um botão pequeno de
+            Kanban, sem checagem de permissão, escondido em telas menores que
+            xl ("hidden xl:flex" — nem aparecia em tablet/notebook) e fora de
+            ordem (depois do Admin). Pedidos/Kanban é fluxo diário (acompanhar
+            pedidos em preparo) — promovido para a mesma posição e peso visual
+            das demais ferramentas operacionais, na ordem pedida: Salão →
+            Balcão → Pedidos/Kanban → Delivery → Caixa → Produção.
+          */}
+          {canAccessKanban && (
+            <button
+              id="env-btn-kanban"
+              type="button"
+              onClick={() => onSelectEnvironment('kanban')}
+              className={`min-h-[42px] px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap text-left ${
+                currentEnvironment === 'kanban'
+                  ? 'bg-indigo-500 text-white font-black border-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.5)]'
+                  : 'bg-[#121724] border-slate-800 text-slate-300 hover:text-white hover:bg-[#181F30] hover:border-slate-700'
+              }`}
+              title="📦 PEDIDOS / KANBAN: Recebidos → Em preparo → Prontos → Entregues"
+            >
+              <Kanban
+                className={`w-4 h-4 shrink-0 ${
+                  currentEnvironment === 'kanban' ? 'text-white' : 'text-indigo-400'
+                }`}
+              />
+              <div className="flex flex-col">
+                <span className="text-xs font-black tracking-wider leading-tight">
+                  📦 PEDIDOS
+                </span>
+                {!condensed && (
+                  <span
+                    className={`text-[9px] font-medium hidden sm:inline leading-tight ${
+                      currentEnvironment === 'kanban' ? 'text-indigo-100 font-bold' : 'text-slate-400'
+                    }`}
+                  >
+                    Kanban de Pedidos
+                  </span>
+                )}
+              </div>
+              {currentEnvironment === 'kanban' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping ml-0.5 shrink-0" />
               )}
             </button>
           )}
@@ -333,74 +349,71 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
           </div>
           )}
 
-          {/* 7. ⚙️ ADMIN (Configurações → Cardápio → Usuários → Relatórios → IA) */}
-          {canAccessAdmin && (
-            <button
-              id="env-btn-admin"
-              type="button"
-              onClick={() => onSelectEnvironment('admin')}
-              className={`min-h-[42px] px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap text-left ${
-                currentEnvironment === 'admin'
-                  ? 'bg-indigo-600 text-white font-black border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.4)]'
-                  : 'bg-[#121724] border-slate-800 text-slate-300 hover:text-white hover:bg-[#181F30] hover:border-slate-700'
-              }`}
-              title="⚙️ ADMIN: Configurações → Cardápio → Usuários → Relatórios → IA"
-            >
-              <ShieldCheck
-                className={`w-4 h-4 shrink-0 ${
-                  currentEnvironment === 'admin' ? 'text-white' : 'text-indigo-400'
-                }`}
-              />
-              <div className="flex flex-col">
-                <span className="text-xs font-black tracking-wider leading-tight">
-                  ⚙️ ADMIN
-                </span>
-                {!condensed && (
-                  <span
-                    className={`text-[9px] font-medium hidden sm:inline leading-tight ${
-                      currentEnvironment === 'admin' ? 'text-indigo-100 font-bold' : 'text-slate-400'
-                    }`}
-                  >
-                    Config → Menu → Equipe → IA
-                  </span>
-                )}
-              </div>
-              {currentEnvironment === 'admin' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping ml-0.5 shrink-0" />
-              )}
-            </button>
-          )}
-
-          {/* KANBAN VISÃO CENTRAL (Opcional) */}
-          <button
-            id="env-btn-kanban"
-            type="button"
-            onClick={() => onSelectEnvironment('kanban')}
-            className={`min-h-[42px] px-2.5 py-1.5 rounded-xl border hidden xl:flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer whitespace-nowrap text-left ${
-              currentEnvironment === 'kanban'
-                ? 'bg-indigo-600 text-white font-black border-indigo-400 shadow'
-                : 'bg-[#121724] border-slate-800 text-slate-400 hover:text-white hover:bg-[#181F30]'
-            }`}
-            title="Kanban Central Integrado"
-          >
-            <Kanban className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-xs font-bold">KANBAN</span>
-          </button>
-
-          {/* BOTÃO ESPECIAL: MAPA OPERACIONAL (7 PILARES) */}
-          <button
-            id="env-btn-open-workflow-modal"
-            type="button"
-            onClick={() => setIsWorkflowModalOpen(true)}
-            className="min-h-[42px] px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-indigo-500/20 hover:from-amber-500/30 hover:to-indigo-500/30 border border-amber-500/40 text-amber-300 hover:text-white text-xs font-black transition-all flex items-center gap-1.5 shadow-lg active:scale-95 ml-1"
-            title="Abrir Mapa e Arquitetura Operacional dos 7 Pilares"
-          >
-            <Activity className="w-4 h-4 text-amber-400" />
-            <span className="hidden md:inline uppercase tracking-wider">
-              7 Pilares
-            </span>
-          </button>
         </div>
+
+        {/*
+          REORGANIZAÇÃO DE NAVEGAÇÃO (Administração / Sistema):
+          Antes, o botão "ADMIN" tinha o MESMO peso visual (tamanho, borda,
+          destaque) que Salão/Balcão/Caixa/Produção — ferramentas de uso
+          diário — competindo por atenção com elas. Também havia um botão de
+          Kanban duplicado (agora removido; Kanban virou "PEDIDOS" acima) e um
+          botão "7 Pilares" solto sem relação clara com o restante.
+          Agora ADMIN e o atalho do mapa operacional ficam num grupo visualmente
+          separado (divisor vertical + estilo neutro/menor), à direita, fora do
+          fluxo operacional — mesma função de antes (nada foi removido), só
+          reorganizada. Dentro do painel Admin, a categoria "SISTEMA" (já
+          existente em AdminLayout.tsx) reúne Usuários/Permissões, Impressoras,
+          Integrações, Backup, Diagnóstico e Configurações Avançadas,
+          separada das demais categorias administrativas (Cardápio, Equipe,
+          Gestão, Inteligência) por um filtro de categoria dedicado.
+        */}
+        {(canAccessAdmin || canAccessCliente) && (
+          <div className="flex items-center gap-1.5 min-w-max pl-2 ml-1 border-l border-slate-800/80">
+            {canAccessCliente && (
+              <button
+                id="env-btn-cliente"
+                type="button"
+                onClick={() => onSelectEnvironment('cliente')}
+                className={`min-h-[38px] px-2.5 py-1 rounded-lg border flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer whitespace-nowrap text-left ${
+                  currentEnvironment === 'cliente'
+                    ? 'bg-emerald-500 text-slate-950 font-black border-emerald-400'
+                    : 'bg-transparent border-slate-800 text-slate-500 hover:text-slate-200 hover:border-slate-700'
+                }`}
+                title="👤 CLIENTE: pré-visualizar QR da mesa → Cardápio → Pedido"
+              >
+                <Utensils className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[11px] font-bold">Cliente</span>
+              </button>
+            )}
+
+            {canAccessAdmin && (
+              <button
+                id="env-btn-admin"
+                type="button"
+                onClick={() => onSelectEnvironment('admin')}
+                className={`min-h-[38px] px-2.5 py-1 rounded-lg border flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer whitespace-nowrap text-left ${
+                  currentEnvironment === 'admin'
+                    ? 'bg-indigo-600 text-white font-black border-indigo-400'
+                    : 'bg-transparent border-slate-800 text-slate-500 hover:text-slate-200 hover:border-slate-700'
+                }`}
+                title="⚙️ ADMINISTRAÇÃO / SISTEMA: Cardápio, Equipe, Clientes, Relatórios, Usuários, Impressoras, Integrações..."
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[11px] font-bold">Administração</span>
+              </button>
+            )}
+
+            <button
+              id="env-btn-open-workflow-modal"
+              type="button"
+              onClick={() => setIsWorkflowModalOpen(true)}
+              className="min-h-[38px] w-[34px] rounded-lg border border-slate-800 text-slate-500 hover:text-amber-300 hover:border-amber-500/40 flex items-center justify-center transition-all active:scale-95"
+              title="Mapa e Arquitetura Operacional (7 Pilares)"
+            >
+              <Activity className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Operational Workflow Modal */}
