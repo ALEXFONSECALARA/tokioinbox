@@ -146,21 +146,9 @@ export function CustomerApp() {
     setIsTrackerOpen(true);
   };
 
-  // Guarda o pedido recém-criado, mas só abre a tela de acompanhamento quando o
-  // cliente sai da tela de confirmação (fechando-a ou clicando em "Acompanhar Status"),
-  // assim ele vê a confirmação (confete/PIX) sem o rastreador cobrindo por cima.
   const handleOrderCreated = (order: Order) => {
     setTrackedOrderId(order.id);
-  };
-
-  const handleCheckoutClose = () => {
-    setIsCheckoutOpen(false);
-    // Se um pedido acabou de ser criado nesta sessão de checkout, garante que o status
-    // continue acessível ao cliente (não "some" ao fechar/voltar) até ser entregue.
-    setTrackedOrderId((current) => {
-      if (current) setIsTrackerOpen(true);
-      return current;
-    });
+    setIsTrackerOpen(true);
   };
 
   // Pedido feito pelo QR Code da mesa
@@ -288,17 +276,7 @@ export function CustomerApp() {
         }}
       />
 
-      {isCheckoutOpen && (
-        <CheckoutModal
-          onClose={handleCheckoutClose}
-          onOrderPlaced={handleOrderCreated}
-          onOrderSuccess={(order) => {
-            handleOrderCreated(order);
-            setIsCheckoutOpen(false);
-            setIsTrackerOpen(true);
-          }}
-        />
-      )}
+      {isCheckoutOpen && <CheckoutModal onClose={() => setIsCheckoutOpen(false)} onOrderPlaced={handleOrderCreated} />}
 
       {isTrackerOpen && (
         <OrderTrackerModal
