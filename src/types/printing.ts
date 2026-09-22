@@ -41,6 +41,8 @@ export interface PrintJob {
   updatedAt: string;
   printedAt?: string;
   idempotencyHash: string;
+  contentHash?: string;
+  orderVersion?: string;
 }
 
 export interface PrintAgentStatus {

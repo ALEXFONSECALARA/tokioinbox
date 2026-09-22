@@ -208,16 +208,6 @@ export interface RestaurantConfig {
   openingHours: string;
   isOpen: boolean;
   isActive?: boolean;
-  /**
-   * Status operacional manual, controlado pelo super admin no Painel (botão "Desativar Loja").
-   * Quando definido, prevalece sobre `isOpen` na exibição ao cliente e bloqueia novos pedidos:
-   *  - 'aberto': operação normal (padrão)
-   *  - 'abrimos_em_breve': loja ainda não abriu (pré-lançamento)
-   *  - 'fechado_temporariamente': loja pausada manualmente (manutenção, férias, etc.)
-   */
-  operationalStatus?: 'aberto' | 'abrimos_em_breve' | 'fechado_temporariamente';
-  /** Mensagem opcional exibida ao cliente quando operationalStatus !== 'aberto'. */
-  operationalStatusMessage?: string;
   pixKey: string;
   pixReceiverName: string;
   splashEnabled: boolean;
@@ -234,6 +224,7 @@ export interface RestaurantConfig {
   themeStyle?: RestaurantThemeStyle;
   // Vitrine Principal Controls
   isActiveInVitrine?: boolean;
+  vitrineStatus?: 'ATIVO' | 'OCULTO' | 'FECHADO_TEMPORARIAMENTE';
   vitrineOrder?: number;
   vitrineBadge?: string;
   vitrineCoverImage?: string;
@@ -289,12 +280,10 @@ export interface Order {
   waiterName?: string;
   pickupNumber?: number;
   deliveryAddress?: {
-    zipCode?: string;
     street: string;
     number: string;
     neighborhood: string;
     city: string;
-    state?: string;
     complement?: string;
   };
   items: OrderItemRecord[];

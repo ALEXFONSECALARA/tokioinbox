@@ -5,12 +5,10 @@ export type CustomerLoginMode = 'GLOBAL' | 'PER_RESTAURANT';
 export interface CustomerAddress {
   id: string;
   title: string;
-  zipCode?: string;
   street: string;
   number: string;
   neighborhood: string;
   city: string;
-  state?: string;
   complement?: string;
   isDefault?: boolean;
 }
