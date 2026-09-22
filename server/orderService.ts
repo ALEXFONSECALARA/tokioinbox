@@ -201,7 +201,7 @@ export function resolveItemStation(name: string, explicitStation?: string): Prod
   return 'cozinha';
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+import { DATA_DIR } from './dataDir'; // Caminho configurável via env DATA_DIR (ver server/dataDir.ts)
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const CUSTOMERS_FILE = path.join(DATA_DIR, 'customers.json');
 

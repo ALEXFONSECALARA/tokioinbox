@@ -43,7 +43,7 @@ interface StoredDoc {
   updatedBy: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+import { DATA_DIR } from './dataDir'; // Caminho configurável via env DATA_DIR (ver server/dataDir.ts)
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const MAX_DOC_BYTES = 1_500_000;
 

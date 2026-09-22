@@ -36,7 +36,7 @@ export interface Catalog {
   coupons: CatalogCoupon[];
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+import { DATA_DIR } from './dataDir'; // Caminho configurável via env DATA_DIR (ver server/dataDir.ts)
 const CATALOG_FILE = path.join(DATA_DIR, 'catalog.json');
 
 const DEFAULT_COUPONS: CatalogCoupon[] = [

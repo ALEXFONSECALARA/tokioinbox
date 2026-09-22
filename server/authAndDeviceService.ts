@@ -221,7 +221,7 @@ export interface AuditActionLog {
   category: 'order' | 'user' | 'alert' | 'device' | 'system';
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+import { DATA_DIR } from './dataDir'; // Caminho configurável via env DATA_DIR (ver server/dataDir.ts)
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
 const AUDIT_LOGS_FILE = path.join(DATA_DIR, 'audit_logs.json');
@@ -354,8 +354,32 @@ function getInitialUsers(): UserAccount[] {
  * Migração de segurança: contas herdadas com senhas padrão conhecidas
  * (admin123, cozinha123...) são desativadas em produção.
  */
+function synchronizeConfiguredAdminPassword() {
+  const configured = process.env.ADMIN_PASSWORD?.trim();
+  if (!configured || validateStaffPassword(configured) !== null) return false;
+
+  const idx = usersCache.findIndex((u) => u.username.toLowerCase() === 'admin');
+  if (idx === -1) return false;
+
+  const admin = usersCache[idx];
+  // ADMIN_PASSWORD is an explicit recovery/initialization override.
+  // Only rewrite the hash when the configured password differs, avoiding
+  // unnecessary writes on every restart.
+  if (verifyPassword(configured, admin.passwordHash, admin.passwordSalt)) return false;
+
+  const { hash, salt } = hashPassword(configured);
+  usersCache[idx] = {
+    ...admin,
+    passwordHash: hash,
+    passwordSalt: salt,
+    isActive: true,
+  };
+  console.warn('[AUTH] Senha do usuário "admin" sincronizada a partir de ADMIN_PASSWORD.');
+  return true;
+}
+
 function neutralizeDefaultCredentials() {
-  let changed = false;
+  let changed = synchronizeConfiguredAdminPassword();
   for (let i = 0; i < usersCache.length; i++) {
     const u = usersCache[i];
     if (!usesKnownDefaultPassword(u)) continue;

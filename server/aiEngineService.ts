@@ -93,7 +93,7 @@ export interface PriceSuggestionItem {
   reviewedAt?: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+import { DATA_DIR } from './dataDir'; // Caminho configurável via env DATA_DIR (ver server/dataDir.ts)
 const CONFIG_FILE = path.join(DATA_DIR, 'ai_engine_config.json');
 const LOGS_FILE = path.join(DATA_DIR, 'ai_audit_logs.json');
 const SUGGESTIONS_FILE = path.join(DATA_DIR, 'ai_price_suggestions.json');

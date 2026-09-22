@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { PrintJob, PrintJobStatus, PrintStation, ThermalPrinterDevice } from '../src/types/printing';
 
 // In-memory persistent queue for print jobs
-const DATA_DIR = path.join(process.cwd(), 'data');
+import { DATA_DIR } from './dataDir'; // Caminho configurável via env DATA_DIR (ver server/dataDir.ts)
 const PRINT_JOBS_FILE = path.join(DATA_DIR, 'print_jobs.json');
 const PRINTERS_FILE = path.join(DATA_DIR, 'printers.json');
 let printJobsQueue: PrintJob[] = [];

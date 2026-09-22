@@ -61,7 +61,7 @@ export interface SanitizedCustomer {
   lastLoginAt?: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+import { DATA_DIR } from './dataDir'; // Caminho configurável via env DATA_DIR (ver server/dataDir.ts)
 const CUSTOMERS_FILE = path.join(DATA_DIR, 'customers.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'customer_sessions.json');
 const RESETS_FILE = path.join(DATA_DIR, 'password_resets.json');
