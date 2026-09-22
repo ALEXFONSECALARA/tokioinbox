@@ -90,7 +90,30 @@ export function initializeCatalog(): Catalog {
         throw new Error('estrutura inválida');
       }
       if (!Array.isArray(parsed.coupons)) parsed.coupons = DEFAULT_COUPONS;
+      // Migração de mesas: o salão padrão possui 30 mesas. Mantém mesas existentes e adiciona as faltantes.
+      let tablesMigrated = false;
+      for (const [slug, restaurant] of Object.entries(parsed.restaurants || {})) {
+        const existing = Array.isArray((restaurant as any).activeTables) ? (restaurant as any).activeTables : [];
+        // Migração segura: todo restaurante começa com as mesas 1 a 30.
+        // Mesas adicionais já existentes também são preservadas.
+        const normalized = Array.from(
+          new Set(
+            existing
+              .filter((n: any) => Number.isInteger(n) && n > 0)
+              .concat(Array.from({ length: 30 }, (_, i) => i + 1))
+          )
+        ).sort((a: number, b: number) => a - b);
+        if (JSON.stringify(existing) !== JSON.stringify(normalized)) {
+          (parsed.restaurants as any)[slug] = { ...(restaurant as any), activeTables: normalized };
+          tablesMigrated = true;
+        }
+      }
+      if (tablesMigrated) {
+        parsed.version = Number(parsed.version || 1) + 1;
+        parsed.updatedAt = new Date().toISOString();
+      }
       catalogCache = parsed;
+      if (tablesMigrated) persist(catalogCache);
     } else {
       catalogCache = seedCatalog();
       persist(catalogCache);
