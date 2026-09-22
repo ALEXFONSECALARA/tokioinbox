@@ -130,16 +130,18 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [isClosingTable, setIsClosingTable] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
+  const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
+
   // Fonte única: mesas cadastradas/configuradas no restaurante. Nunca limitar por quantidade fixa.
   const tableNumbers = useMemo(() => {
     const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : [];
     const activeFromOrders = orders
       .filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber))
       .map((o) => Number(o.tableNumber));
-    return Array.from(new Set([...configured, ...activeFromOrders])).filter((n) => Number.isInteger(n) && n > 0).sort((a,b) => a-b);
+    return Array.from(new Set([...configured, ...activeFromOrders]))
+      .filter((n) => Number.isInteger(n) && n > 0)
+      .sort((a, b) => a - b);
   }, [restaurant?.activeTables, orders, activeRestaurantSlug]);
-
-  const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
   const restaurantMenuItems = useMemo(
     () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
     [menuItems, restaurant?.slug]
