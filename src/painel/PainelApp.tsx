@@ -2,6 +2,7 @@ import React, { Component, ErrorInfo, Suspense, lazy, useCallback, useEffect, us
 import { LogOut, Loader2, ShieldAlert } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { EnvironmentBar, OperationalEnvironment } from '../components/EnvironmentBar';
+import { ClientMenuPreviewModal } from '../components/ClientMenuPreviewModal';
 import { StaffLogin } from './StaffLogin';
 import {
   AREA_LABELS,
@@ -101,6 +102,12 @@ export function PainelApp() {
   // Não altera a URL nem cria links /pdv, /balcao, /caixa etc.
   const [area, setArea] = useState<StaffArea | null>(() => areaFromPathname(window.location.pathname));
   const [adminInitialTab, setAdminInitialTab] = useState<any>('dashboard');
+  // BUG CORRIGIDO: o botão "Cliente" (QR Code/Mesa) fazia a aba inteira
+  // navegar para fora do painel (window.location.assign('/')), derrubando a
+  // sessão da equipe. Agora ele só abre este modal de pré-visualização —
+  // ninguém sai do painel, o cardápio de pedido pré-determinado da mesa
+  // aparece dentro da própria tela.
+  const [showClientPreview, setShowClientPreview] = useState(false);
 
   const goArea = useCallback((next: StaffArea) => {
     // Troca somente o módulo montado; a URL permanece na página atual.
@@ -127,8 +134,10 @@ export function PainelApp() {
 
   const handleNavigateEnvironment = (env: OperationalEnvironment, subOption?: string) => {
     if (env === 'cliente') {
-      // Cardápio público: outra tela (aplicativo separado)
-      window.location.assign('/');
+      // Pré-visualização do cardápio de pedido da mesa, sem sair do painel
+      // (ver ClientMenuPreviewModal — antes isto navegava para "/" e
+      // derrubava a sessão da equipe).
+      setShowClientPreview(true);
       return;
     }
     const target = ENV_TO_AREA[env];
@@ -258,6 +267,10 @@ export function PainelApp() {
     <>
       <ModuleErrorBoundary><Suspense fallback={<Loading />}>{screen}</Suspense></ModuleErrorBoundary>
       {logoutChip}
+      <ClientMenuPreviewModal
+        isOpen={showClientPreview}
+        onClose={() => setShowClientPreview(false)}
+      />
     </>
   );
 }
