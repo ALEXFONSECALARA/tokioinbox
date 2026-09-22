@@ -170,6 +170,7 @@ interface StoreContextType {
   showToast: (message: string, type?: ToastType, duration?: number) => void;
 
   updateOrderStatus: (orderId: string, status: OrderStatus, note?: string) => Promise<void>;
+  updateOrderItem: (params: { orderId: string; itemId: string; quantity: number; selectedOptions?: any[]; notes?: string; }) => Promise<{ success: boolean; order?: Order; error?: string }>;
   updateStationStatus: (
     orderId: string,
     station: ProductionStation,
@@ -193,6 +194,7 @@ interface StoreContextType {
     customerPhone?: string;
     waiterName?: string;
     tableSessionId?: string;
+    idempotencyKey?: string;
   }) => Promise<{ success: boolean; order?: Order; isNew?: boolean; error?: string }>;
   closeTableOrder: (params: {
     orderId: string;
@@ -285,8 +287,6 @@ interface StoreContextType {
 
   // Vitrine Manager
   updateVitrineConfig: (slug: string, updates: Partial<RestaurantConfig>) => void;
-  /** Aplica um status operacional (aberto / abrimos em breve / fechado temporariamente) a TODOS os restaurantes do sistema de uma vez. */
-  setAllRestaurantsOperationalStatus: (status: 'aberto' | 'abrimos_em_breve' | 'fechado_temporariamente', message?: string) => void;
 
   // Real-time Delivery Personnel
   deliveryStaff: DeliveryPersonnel[];
@@ -1808,6 +1808,24 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     }
   };
 
+  const updateOrderItem = async (params: { orderId: string; itemId: string; quantity: number; selectedOptions?: any[]; notes?: string }) => {
+    try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
+      const res = await fetch(`/api/orders/${params.orderId}/items/${params.itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ ...params, idempotencyKey: `edit-${params.orderId}-${params.itemId}-${params.quantity}-${JSON.stringify(params.selectedOptions || [])}-${params.notes || ''}` }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Erro ao editar item do pedido');
+      if (data.order) setOrders((prev) => prev.map((o) => (o.id === data.order.id ? data.order : o)));
+      return data;
+    } catch (error: any) {
+      showToast(error.message || 'Erro ao editar item', 'error');
+      return { success: false, error: error.message };
+    }
+  };
+
   const updateOrderStatus = async (orderId: string, status: OrderStatus, note?: string): Promise<void> => {
     // 1. Optimistic update
     setOrders((prev) =>
@@ -1939,6 +1957,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     waiterName?: string;
     tableSessionId?: string;
     tableAccessToken?: string;
+    idempotencyKey?: string;
   }): Promise<{ success: boolean; order?: Order; isNew?: boolean; error?: string }> => {
     try {
       const restSlug = params.restaurantSlug || activeRestaurantSlug || 'japones';
@@ -2170,30 +2189,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       delete next[slug];
       return next;
     });
-  };
-
-  // Botão global do Super Admin: desativa/reativa TODOS os restaurantes do sistema de uma vez
-  // (ex.: "Abrimos em Breve" antes do lançamento, ou "Temporariamente Fechado" em manutenção).
-  const setAllRestaurantsOperationalStatus = (
-    status: 'aberto' | 'abrimos_em_breve' | 'fechado_temporariamente',
-    message?: string
-  ) => {
-    setRestaurants((prev) => {
-      const next: Record<string, RestaurantConfig> = {};
-      for (const [slug, rest] of Object.entries(prev)) {
-        next[slug] = {
-          ...rest,
-          operationalStatus: status,
-          operationalStatusMessage: message ?? rest.operationalStatusMessage,
-          isOpen: status === 'aberto' ? rest.isOpen : false,
-        };
-      }
-      return next;
-    });
-    logAction(
-      `Status global do sistema alterado para "${status}" em TODOS os restaurantes${message ? ` — mensagem: "${message}"` : ''}`,
-      'system'
-    );
   };
 
   // Vitrine Manager
@@ -2616,6 +2611,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         createOrder,
         createQuickTestOrder,
         updateOrderStatus,
+        updateOrderItem,
         updateStationStatus,
         appendItemsToTableOrder,
         closeTableOrder,
@@ -2642,7 +2638,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         deleteRestaurant,
         resetToDefaultData,
         updateVitrineConfig,
-        setAllRestaurantsOperationalStatus,
         masterResetOrders,
         createBatchOrders,
         currentCustomer,
