@@ -8,6 +8,54 @@
   }
 }
 
+/* ===================================================================
+   VIEWPORT TRAVADO — PAINEL DA EQUIPE (PDV Touch)
+   ===================================================================
+   Antes, `body` não tinha altura travada (só `min-h-screen`, que define
+   uma altura MÍNIMA, não máxima), então qualquer tela com muito conteúdo
+   (mesas, itens do balcão, kanban) empurrava a página inteira para baixo
+   e criava uma barra de rolagem do NAVEGADOR na página toda — o app
+   parecia um site, não um PDV.
+   Esta regra é aplicada SOMENTE ao painel da equipe (painel.html, classe
+   `painel-app-shell` no <body>). O site do cliente (index.html, onde o
+   cliente navega o cardápio) continua com rolagem normal de página, que é
+   o comportamento correto para um site de pedidos.
+   Cada tela do painel agora deve ter APENAS UM elemento com scroll
+   interno (normalmente a lista/grid principal); o restante (header,
+   abas, filtros, rodapé de ações) fica fixo, sem rolar. */
+html:has(body.painel-app-shell),
+body.painel-app-shell {
+  height: 100%;
+  overflow: hidden;
+}
+
+body.painel-app-shell #root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* O React monta sempre UM único elemento raiz de tela dentro de #root
+   (ErrorBoundary/Suspense não geram nó no DOM). Sem isto, esse elemento não
+   herdaria a altura real do #root dentro do flex column (o eixo principal,
+   vertical, não é esticado por padrão) e um `h-full`/`min-h-screen` interno
+   ficaria com altura indefinida. `min-height: 0` é o que permite às telas
+   internas realmente terem uma área de scroll própria em vez de estourar. */
+body.painel-app-shell #root > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Fallback para navegadores sem suporte a :has() (raro em telas touch de
+   PDV modernas, mas evita quebra silenciosa): trava via min-height 100vh +
+   overflow hidden diretamente no body, que cobre a maioria dos casos. */
+@supports not selector(:has(a)) {
+  body.painel-app-shell {
+    min-height: 100vh;
+    max-height: 100vh;
+  }
+}
+
 /* PALETA PRINCIPAL RÚSTICO PREMIUM & PRIME LUXURY:
    Fundo carvão e madeira defumada: #070605
    Preto grafite nobre:             #121110
