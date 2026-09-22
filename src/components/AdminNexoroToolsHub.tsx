@@ -481,10 +481,91 @@ export const NEXORO_TOOLS: NexoroToolDefinition[] = [
   },
 ];
 
+// Reordenação por PRIORIDADE DE USO no dia a dia operacional (mapeado por id da ferramenta
+// acima). Ferramentas usadas o tempo todo em turno (produção, entregas, cardápio, caixa)
+// aparecem primeiro; ferramentas de configuração/avançadas/auditoria ficam por último.
+const TOOL_PRIORITY_BY_ID: Record<number, number> = {
+  1: 1, // Painel Multirrestaurante — visão geral, usada o tempo todo
+  11: 2, // Produção (KDS) — cozinha, uso contínuo em turno
+  12: 3, // Entregadores — logística de entrega em tempo real
+  3: 4, // Impressão automática — operação de cada pedido
+  9: 5, // Gestão de Cardápio — atualização frequente
+  10: 6, // CMV e Precificação — acompanhamento de margem
+  16: 7, // Alertas e Notificações — monitoramento contínuo
+  8: 8, // Vitrine Principal — visibilidade da loja
+  13: 9, // CRM — relacionamento com clientes
+  14: 10, // Marketing e Promoções
+  15: 11, // Analytics e Relatórios
+  19: 12, // Modo Offline e Reconexão
+  4: 13, // PWA / App do Cliente
+  6: 14, // Login do Cliente
+  5: 15, // Bônus de Instalação
+  2: 16, // Central de IA (uso avançado)
+  22: 17, // IA e Futuro
+  7: 18, // Super Admin / Admin Master (configuração)
+  20: 19, // Ferramentas Administrativas
+  21: 20, // Preview Responsivo
+  17: 21, // Backup e Exportação
+  18: 22, // Auditoria e Segurança
+  23: 23, // Auditor Sênior
+};
+
+NEXORO_TOOLS.sort(
+  (a, b) => (TOOL_PRIORITY_BY_ID[a.id] ?? a.id) - (TOOL_PRIORITY_BY_ID[b.id] ?? b.id)
+);
+
 interface AdminNexoroToolsHubProps {
   onSelectTab: (tab: any) => void;
   onOpenDevicePreview?: () => void;
 }
+
+// Paleta por categoria — cada grupo de ferramentas ganha uma cor fixa e reconhecível,
+// para que o usuário identifique de relance a que área do sistema a ferramenta pertence.
+const CATEGORY_STYLES: Record<
+  NexoroToolDefinition['category'],
+  { label: string; border: string; chip: string; iconBg: string; iconBorder: string; iconText: string }
+> = {
+  operacao: {
+    label: 'Operação',
+    border: 'border-l-emerald-500/70',
+    chip: 'text-emerald-300 bg-emerald-950/50 border-emerald-500/30',
+    iconBg: 'bg-emerald-950/40',
+    iconBorder: 'border-emerald-500/30',
+    iconText: 'text-emerald-400',
+  },
+  inteligencia: {
+    label: 'Inteligência IA',
+    border: 'border-l-purple-500/70',
+    chip: 'text-purple-300 bg-purple-950/50 border-purple-500/30',
+    iconBg: 'bg-purple-950/40',
+    iconBorder: 'border-purple-500/30',
+    iconText: 'text-purple-400',
+  },
+  vendas: {
+    label: 'Vendas & CRM',
+    border: 'border-l-sky-500/70',
+    chip: 'text-sky-300 bg-sky-950/50 border-sky-500/30',
+    iconBg: 'bg-sky-950/40',
+    iconBorder: 'border-sky-500/30',
+    iconText: 'text-sky-400',
+  },
+  gestao: {
+    label: 'Gestão',
+    border: 'border-l-amber-500/70',
+    chip: 'text-amber-300 bg-amber-950/50 border-amber-500/30',
+    iconBg: 'bg-amber-950/40',
+    iconBorder: 'border-amber-500/30',
+    iconText: 'text-amber-400',
+  },
+  seguranca: {
+    label: 'Segurança',
+    border: 'border-l-rose-500/70',
+    chip: 'text-rose-300 bg-rose-950/50 border-rose-500/30',
+    iconBg: 'bg-rose-950/40',
+    iconBorder: 'border-rose-500/30',
+    iconText: 'text-rose-400',
+  },
+};
 
 export const AdminNexoroToolsHub: React.FC<AdminNexoroToolsHubProps> = ({
   onSelectTab,
@@ -603,27 +684,32 @@ export const AdminNexoroToolsHub: React.FC<AdminNexoroToolsHubProps> = ({
         </div>
       </div>
 
-      {/* Grid of 23 Tools matching image 2 */}
+      {/* Grid de Ferramentas — ordenadas por prioridade de uso, com cor por categoria
+          para facilitar a leitura rápida (operação, IA, vendas, gestão, segurança) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredTools.map((tool) => {
           const Icon = tool.icon;
+          const cat = CATEGORY_STYLES[tool.category] || CATEGORY_STYLES.operacao;
           return (
             <div
               key={tool.id}
-              className="group relative rounded-2xl bg-[#0E0E0E] border border-[#222222] hover:border-[#D4AF37]/60 p-5 transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)] flex flex-col justify-between"
+              className={`group relative rounded-2xl bg-[#0E0E0E] border-l-4 ${cat.border} border-t border-r border-b border-[#222222] hover:border-t-[#D4AF37]/60 hover:border-r-[#D4AF37]/60 hover:border-b-[#D4AF37]/60 p-5 transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)] flex flex-col justify-between`}
             >
               <div>
-                {/* Top: Code & Badge */}
+                {/* Top: Code, Categoria & Badge */}
                 <div className="flex items-center justify-between gap-2 mb-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-black text-[#D4AF37] font-mono tracking-widest bg-[#D4AF37]/10 px-2 py-0.5 rounded-md border border-[#D4AF37]/20">
                       {tool.code}
+                    </span>
+                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${cat.chip}`}>
+                      {cat.label}
                     </span>
                     <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${tool.badgeColor}`}>
                       {tool.status.replace('_', ' ')}
                     </span>
                   </div>
-                  <div className="w-9 h-9 rounded-xl bg-[#171717] border border-[#2A2A2A] flex items-center justify-center text-[#D4AF37] group-hover:border-[#D4AF37]/40 group-hover:scale-105 transition-all">
+                  <div className={`w-9 h-9 rounded-xl ${cat.iconBg} border ${cat.iconBorder} flex items-center justify-center ${cat.iconText} group-hover:scale-105 transition-all shrink-0`}>
                     <Icon className="w-5 h-5" />
                   </div>
                 </div>

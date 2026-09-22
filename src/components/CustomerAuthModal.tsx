@@ -84,11 +84,16 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
 
   // Address sub-form
   const [showAddAddress, setShowAddAddress] = useState(false);
+  const [addrZipCode, setAddrZipCode] = useState('');
   const [addrStreet, setAddrStreet] = useState('');
   const [addrNumber, setAddrNumber] = useState('');
   const [addrNeighborhood, setAddrNeighborhood] = useState('');
+  const [addrCity, setAddrCity] = useState('São Paulo');
+  const [addrState, setAddrState] = useState('');
   const [addrComplement, setAddrComplement] = useState('');
   const [addrTitle, setAddrTitle] = useState('Casa');
+  const [isLookingUpAddrCep, setIsLookingUpAddrCep] = useState(false);
+  const [addrCepError, setAddrCepError] = useState<string | null>(null);
 
   // Edit profile state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -230,6 +235,42 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   };
 
   // 5. Add Address Submit
+  const formatAddrCep = (raw: string) => {
+    const digits = raw.replace(/\D/g, '').slice(0, 8);
+    return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+  };
+
+  const handleAddrCepChange = (raw: string) => {
+    const formatted = formatAddrCep(raw);
+    setAddrZipCode(formatted);
+    setAddrCepError(null);
+    const digits = formatted.replace(/\D/g, '');
+    if (digits.length === 8) {
+      lookupAddrCep(digits);
+    }
+  };
+
+  const lookupAddrCep = async (digitsOnly: string) => {
+    setIsLookingUpAddrCep(true);
+    setAddrCepError(null);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digitsOnly}/json/`);
+      const data = await res.json();
+      if (data.erro) {
+        setAddrCepError('CEP não encontrado. Confira o número ou preencha manualmente.');
+        return;
+      }
+      setAddrStreet(data.logradouro || '');
+      setAddrNeighborhood(data.bairro || '');
+      setAddrCity(data.localidade || addrCity);
+      setAddrState(data.uf || '');
+    } catch {
+      setAddrCepError('Não foi possível buscar o CEP agora. Preencha o endereço manualmente.');
+    } finally {
+      setIsLookingUpAddrCep(false);
+    }
+  };
+
   const handleAddAddressSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addrStreet.trim() || !addrNumber.trim() || !addrNeighborhood.trim()) {
@@ -238,18 +279,23 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
     setIsLoading(true);
     await addAddress({
       title: addrTitle,
+      zipCode: addrZipCode || undefined,
       street: addrStreet,
       number: addrNumber,
       neighborhood: addrNeighborhood,
-      city: 'São Paulo',
+      city: addrCity || 'São Paulo',
+      state: addrState || undefined,
       complement: addrComplement || undefined,
       isDefault: false,
     });
     setIsLoading(false);
     setShowAddAddress(false);
+    setAddrZipCode('');
     setAddrStreet('');
     setAddrNumber('');
     setAddrNeighborhood('');
+    setAddrCity('São Paulo');
+    setAddrState('');
     setAddrComplement('');
   };
 
@@ -404,11 +450,30 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                       />
                       <input
                         type="text"
+                        inputMode="numeric"
+                        placeholder={isLookingUpAddrCep ? 'Buscando CEP...' : 'CEP (preenche o resto sozinho)'}
+                        value={addrZipCode}
+                        onChange={(e) => handleAddrCepChange(e.target.value)}
+                        maxLength={9}
+                        className="p-2 rounded bg-black/60 border border-stone-700 text-white"
+                      />
+                    </div>
+                    {addrCepError && <p className="text-rose-400 text-[11px]">{addrCepError}</p>}
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
                         placeholder="Bairro *"
                         value={addrNeighborhood}
                         onChange={(e) => setAddrNeighborhood(e.target.value)}
                         className="p-2 rounded bg-black/60 border border-stone-700 text-white"
                         required
+                      />
+                      <input
+                        type="text"
+                        placeholder="Cidade"
+                        value={addrCity}
+                        onChange={(e) => setAddrCity(e.target.value)}
+                        className="p-2 rounded bg-black/60 border border-stone-700 text-white"
                       />
                     </div>
                     <div className="grid grid-cols-3 gap-2">

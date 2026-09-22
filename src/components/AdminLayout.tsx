@@ -246,6 +246,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
   const handleLogout = () => {
     logoutUser();
     setPasswordInput('');
+    // Garante que o Painel realmente SAI da tela ao clicar em "Sair":
+    // reseta a URL e força a navegação para a tela de login, em vez de
+    // confiar apenas na re-renderização do estado do React (que podia
+    // deixar o usuário "preso" na mesma tela em alguns navegadores/PWA).
+    window.history.replaceState({}, '', '/painel');
+    window.location.reload();
   };
 
   // Filtered orders for operational stats
@@ -758,39 +764,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             </button>
           )}
 
-          {/* Central de IA (AI Engine) Tab */}
-          {isTabInCategory('ai_engine') && (
-            <button
-              onClick={() => setActiveTab('ai_engine')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-                activeTab === 'ai_engine'
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black shadow-[0_0_15px_rgba(147,51,234,0.5)]'
-                  : 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30'
-              }`}
-            >
-              <Bot className="w-3.5 h-3.5" />
-              <span>Central de IA</span>
-              <span className="bg-purple-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
-                AI
-              </span>
-            </button>
-          )}
-
-          {/* 20. Suite Admin Tab */}
-          {isTabInCategory('admin_suite') && (
-            <button
-              onClick={() => setActiveTab('admin_suite')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-                activeTab === 'admin_suite'
-                  ? 'bg-[#D4AF37] text-slate-950 font-black shadow-[0_0_15px_rgba(212,175,55,0.4)]'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5 text-[#D4AF37]" />
-              <span>20. Suite Admin</span>
-            </button>
-          )}
-
           {/* Kanban Tab */}
           {isTabInCategory('kanban') && (
             <button
@@ -878,6 +851,40 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             >
               <Wallet className="w-3.5 h-3.5" />
               <span>Caixa &amp; Turnos</span>
+            </button>
+          )}
+
+          {/* Central de IA (AI Engine) Tab — ferramenta avançada, reposicionada após as
+              abas operacionais de uso constante (Kanban/KDS/Salão/Despacho/Caixa) */}
+          {isTabInCategory('ai_engine') && (
+            <button
+              onClick={() => setActiveTab('ai_engine')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'ai_engine'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black shadow-[0_0_15px_rgba(147,51,234,0.5)]'
+                  : 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30'
+              }`}
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>Central de IA</span>
+              <span className="bg-purple-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                AI
+              </span>
+            </button>
+          )}
+
+          {/* Suite Admin Tab — ferramentas administrativas avançadas, uso pontual */}
+          {isTabInCategory('admin_suite') && (
+            <button
+              onClick={() => setActiveTab('admin_suite')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'admin_suite'
+                  ? 'bg-[#D4AF37] text-slate-950 font-black shadow-[0_0_15px_rgba(212,175,55,0.4)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Suite Admin</span>
             </button>
           )}
 

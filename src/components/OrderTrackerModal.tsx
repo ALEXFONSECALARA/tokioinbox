@@ -68,6 +68,24 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   const { orders, restaurants } = useStore();
   const [searchCode, setSearchCode] = useState('');
 
+  // Prioriza o pedido recém-criado (defaultOrderId); permite buscar por código também.
+  const currentOrder: Order | undefined = React.useMemo(() => {
+    const normalizedSearch = searchCode.trim().toUpperCase();
+    if (normalizedSearch) {
+      return orders.find((o) => o.shortCode?.toUpperCase() === normalizedSearch);
+    }
+    if (defaultOrderId) {
+      return orders.find((o) => o.id === defaultOrderId);
+    }
+    return undefined;
+  }, [orders, searchCode, defaultOrderId]);
+
+  const restaurant = currentOrder ? restaurants[currentOrder.restaurantSlug] : undefined;
+
+  // Enquanto o pedido não chega em "entregue" (ou "cancelado"), a tela de acompanhamento
+  // permanece a referência ativa do cliente — ela não deve ser fechada/perdida sozinha.
+  const isOrderFinished = currentOrder?.status === 'entregue' || currentOrder?.status === 'cancelado';
+
   const getStepIndex = (status: OrderStatus) => {
     switch (status) {
       case 'recebido':
@@ -302,6 +320,15 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Aviso de pedido finalizado - o cliente pode fechar com tranquilidade */}
+              {isOrderFinished && currentOrder.status === 'entregue' && (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-center space-y-1">
+                  <CheckCircle2 className="w-7 h-7 text-emerald-400 mx-auto" />
+                  <h4 className="text-sm font-bold text-emerald-300">Pedido entregue! Bom apetite 🎉</h4>
+                  <p className="text-[11px] text-slate-400">Você já pode fechar esta tela com tranquilidade.</p>
+                </div>
+              )}
 
               {/* Contact Restaurant */}
               {restaurant && (

@@ -27,6 +27,16 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showTableSelector, setShowTableSelector] = useState(false);
 
+  const opStatus = restaurant.operationalStatus || 'aberto';
+  const statusBadge =
+    opStatus === 'abrimos_em_breve'
+      ? { label: 'Abrimos em Breve', className: 'bg-amber-950/70 text-amber-300 border-amber-500/40', dot: 'bg-amber-400' }
+      : opStatus === 'fechado_temporariamente'
+      ? { label: 'Temporariamente Fechado', className: 'bg-rose-950/70 text-rose-300 border-rose-500/40', dot: 'bg-rose-400' }
+      : restaurant.isOpen
+      ? { label: 'Aberto Agora', className: 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40', dot: 'bg-emerald-400 animate-pulse' }
+      : { label: 'Fechado no Momento', className: 'bg-rose-950/70 text-rose-300 border-rose-500/40', dot: 'bg-rose-400' };
+
   return (
     <div className="relative mb-6">
       {/* Banner Background */}
@@ -41,21 +51,33 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
         {/* Status badge in corner */}
         <div className="absolute top-4 right-4 z-10">
           <div
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold border backdrop-blur-md flex items-center gap-1.5 shadow-lg ${
-              restaurant.isOpen
-                ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
-                : 'bg-rose-950/70 text-rose-300 border-rose-500/40'
-            }`}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold border backdrop-blur-md flex items-center gap-1.5 shadow-lg ${statusBadge.className}`}
           >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                restaurant.isOpen ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
-              }`}
-            />
-            {restaurant.isOpen ? 'Aberto Agora' : 'Fechado no Momento'}
+            <span className={`w-2 h-2 rounded-full ${statusBadge.dot}`} />
+            {statusBadge.label}
           </div>
         </div>
       </div>
+
+      {opStatus !== 'aberto' && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+          <div
+            className={`rounded-2xl border p-4 text-sm font-semibold flex items-center gap-3 ${
+              opStatus === 'abrimos_em_breve'
+                ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+            }`}
+          >
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span>
+              {restaurant.operationalStatusMessage ||
+                (opStatus === 'abrimos_em_breve'
+                  ? 'Estamos preparando tudo com carinho. Abrimos em breve — volte mais tarde!'
+                  : 'Loja temporariamente fechada. Não é possível fazer pedidos no momento.')}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Main Info Card */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-16 sm:-mt-20 relative z-20">

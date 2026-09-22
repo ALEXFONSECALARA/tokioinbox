@@ -313,15 +313,36 @@ export const VitrineRestaurantCard: React.FC<VitrineRestaurantCardProps> = ({
         )}
 
         <div className="flex items-center gap-3 text-xs text-slate-300 pt-2 border-t border-slate-800">
-          {/* Status badge Aberto / Fechado matching food nexoro.png */}
-          <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black border ${
-            restaurant.isOpen
-              ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30'
-              : 'bg-rose-950/60 text-rose-400 border-rose-500/30'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${restaurant.isOpen ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
-            <span>{restaurant.isOpen ? `Aberto • ${restaurant.estimatedTimeMin} min` : 'Fechado'}</span>
-          </span>
+          {/* Status badge Aberto / Fechado / Abrimos em Breve / Temporariamente Fechado */}
+          {(() => {
+            const opStatus = restaurant.operationalStatus || 'aberto';
+            if (opStatus === 'abrimos_em_breve') {
+              return (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black border bg-amber-950/60 text-amber-400 border-amber-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span>Abrimos em Breve</span>
+                </span>
+              );
+            }
+            if (opStatus === 'fechado_temporariamente') {
+              return (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black border bg-rose-950/60 text-rose-400 border-rose-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                  <span>Temporariamente Fechado</span>
+                </span>
+              );
+            }
+            return (
+              <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                restaurant.isOpen
+                  ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30'
+                  : 'bg-rose-950/60 text-rose-400 border-rose-500/30'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${restaurant.isOpen ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                <span>{restaurant.isOpen ? `Aberto • ${restaurant.estimatedTimeMin} min` : 'Fechado'}</span>
+              </span>
+            );
+          })()}
 
           <span className="flex items-center gap-1 text-slate-400 text-[11px]">
             <Bike className="w-3.5 h-3.5 text-[#D4AF37]" />
