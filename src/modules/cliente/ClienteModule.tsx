@@ -111,30 +111,45 @@ export const ClienteModule: React.FC<ClienteModuleProps> = ({
         />
       )}
 
+      {/*
+        BUGS CORRIGIDOS neste bloco (módulo Cliente / QR Mesa):
+        1) CartDrawer recebia `onCheckout`, prop que não existe no componente
+           (o correto é `onProceedToCheckout`) — o botão de finalizar pedido
+           dentro do carrinho não fazia nada.
+        2) CheckoutModal era montado incondicionalmente (sem `{isCheckoutOpen && ...}`)
+           e não possui prop `isOpen` — o componente sempre renderiza sua tela
+           cheia ao ser montado, então o checkout ficava sempre visível por
+           cima do cardápio/mesa, mesmo com `isCheckoutOpen` falso. Também
+           recebia `onOrderCreated`, prop inexistente (o correto é
+           `onOrderPlaced`) — o pedido concluído nunca disparava o
+           rastreamento automático.
+        3) OrderTrackerModal recebia `orderId`, prop inexistente (o correto é
+           `defaultOrderId`) — o pedido recém-criado nunca era pré-carregado.
+      */}
       <CartDrawer
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
-        onCheckout={() => {
+        onProceedToCheckout={() => {
           setIsCartOpen(false);
           setIsCheckoutOpen(true);
         }}
       />
 
-      <CheckoutModal
-        isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        onOrderCreated={(order: Order) => {
-          setIsCheckoutOpen(false);
-          setTrackedOrderId(order.id);
-          setIsTrackerOpen(true);
-        }}
-      />
+      {isCheckoutOpen && (
+        <CheckoutModal
+          onClose={() => setIsCheckoutOpen(false)}
+          onOrderPlaced={(order: Order) => {
+            setIsCheckoutOpen(false);
+            setTrackedOrderId(order.id);
+            setIsTrackerOpen(true);
+          }}
+        />
+      )}
 
       {isTrackerOpen && (
         <OrderTrackerModal
-          isOpen={isTrackerOpen}
           onClose={() => setIsTrackerOpen(false)}
-          orderId={trackedOrderId}
+          defaultOrderId={trackedOrderId}
         />
       )}
     </div>
