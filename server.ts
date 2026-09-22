@@ -16,6 +16,7 @@ import {
   closeTableOrderTransactional,
   updateOrderPrintStatusTransactional,
   updateOrderTableTransactional,
+  updateOrderItemTransactional,
   deleteOrderTransactional,
   clearOrdersTransactional,
   masterResetOrdersTransactional,
@@ -84,6 +85,7 @@ import {
   retryPrintJob,
   getPrinters,
   upsertPrinter,
+  deletePrinter,
 } from './server/printAgentService';
 import {
   registerCustomer,
@@ -738,6 +740,41 @@ app.post('/api/ai-engine/simulate', ...adminOnly, async (req, res) => {
   }
 });
 
+function routeOrderToPrint(order: any, sourceItems?: any[], operationKey?: string) {
+  const jobs: any[] = [];
+  const source = Array.isArray(sourceItems) && sourceItems.length ? sourceItems : (order.items || []);
+  const byStation: Record<string, any[]> = {};
+  for (const item of source) {
+    const station = item.station || (String(item.name || '').toLowerCase().includes('sushi') ? 'sushibar' : 'cozinha');
+    if (!byStation[station]) byStation[station] = [];
+    byStation[station].push(item);
+  }
+  const stationMap: Record<string, any> = { cozinha: 'COZINHA', sushibar: 'SUSHI_BAR', bar: 'BAR' };
+  for (const [stationKey, items] of Object.entries(byStation)) {
+    const station = stationMap[stationKey];
+    if (!station) continue;
+    const body = items.map((i: any) => `${i.quantity}x ${i.name}${i.notes ? ` | ${i.notes}` : ''}`).join('\n');
+    jobs.push(enqueuePrintJob({
+      orderId: order.id,
+      orderShortCode: order.shortCode,
+      restaurantSlug: order.restaurantSlug,
+      station,
+      rawEscPos: `PEDIDO ${order.shortCode}\nOP ${operationKey || 'initial'}\nMESA ${order.tableNumber || '-'}\n${body}\n------------------------------\n`,
+    }));
+  }
+  if (['delivery', 'balcao', 'retirada', 'online'].includes(order.orderType)) {
+    const body = source.map((i: any) => `${i.quantity}x ${i.name}${i.notes ? ` | ${i.notes}` : ''}`).join('\n');
+    jobs.push(enqueuePrintJob({
+      orderId: order.id,
+      orderShortCode: order.shortCode,
+      restaurantSlug: order.restaurantSlug,
+      station: 'CAIXA',
+      rawEscPos: `CAIXA ${order.shortCode}\nOP ${operationKey || 'initial'}\n${body}\nTOTAL R$ ${Number(order.total || 0).toFixed(2)}\n------------------------------\n`,
+    }));
+  }
+  return jobs;
+}
+
 // ==========================================
 // AURA PRINT AGENT API (INDEPENDENT SYSTEM)
 // ==========================================
@@ -825,6 +862,16 @@ app.post('/api/print-agent/printers', authenticateStaffOrAgent, (req, res) => {
   try {
     const printer = upsertPrinter(req.body);
     res.json({ success: true, printer });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/print-agent/printers/:printerId', authenticateStaff, requirePermission('can_manage_settings'), (req, res) => {
+  try {
+    const removed = deletePrinter(req.params.printerId, req.query.slug as string | undefined);
+    if (!removed) return res.status(404).json({ success: false, error: 'Impressora não encontrada.' });
+    res.json({ success: true });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
   }
@@ -1181,6 +1228,7 @@ app.post('/api/orders', publicWriteLimiter, optionalStaffAuth, (req, res) => {
     // Um cliente jamais define o id de outro cliente
     if (!authCust) delete payload.customerId;
     const result = createOrderTransactional(payload, { isStaff });
+    if (!result.deduplicated) routeOrderToPrint(result.order);
 
     // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
     broadcastOrdersUpdate('order_created', result.order);
@@ -1328,6 +1376,8 @@ app.post('/api/orders/table/append', publicWriteLimiter, optionalStaffAuth, (req
       idempotencyKey,
     }, { isStaff });
 
+    if (result.order) routeOrderToPrint(result.order, result.isNew ? result.order.items : req.body.items, req.body.idempotencyKey);
+
     // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
     broadcastOrdersUpdate(result.isNew ? 'order_created' : 'table_items_appended', result.order);
 
@@ -1412,6 +1462,25 @@ app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('ca
 });
 
 // 6. Update Thermal Ticket Print Status
+app.post('/api/orders/:id/conference', authenticateStaff, requirePermission('can_view_orders'), (req, res) => {
+  try {
+    const order = getOrderById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Pedido não encontrado.' });
+    const conference = {
+      type: 'CONFERENCIA_NAO_FISCAL',
+      orderId: order.id,
+      shortCode: order.shortCode,
+      tableNumber: order.tableNumber,
+      items: order.items.map((i) => ({ id: i.id, name: i.name, quantity: i.quantity, unitPrice: i.unitPrice, totalPrice: i.totalPrice, selectedOptions: i.selectedOptions || [], notes: i.notes })),
+      subtotal: order.subtotal, deliveryFee: order.deliveryFee, discount: order.discount, total: order.total,
+      createdAt: new Date().toISOString(),
+    };
+    res.json({ success: true, conference });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 app.patch('/api/orders/:id/print', authenticateStaff, requirePermission('can_view_orders'), (req, res) => {
   try {
     const { printStatus } = req.body as { printStatus: 'pendente' | 'imprimindo' | 'impresso' };
@@ -1424,6 +1493,26 @@ app.patch('/api/orders/:id/print', authenticateStaff, requirePermission('can_vie
 });
 
 // 7. Update/Transfer Order Table
+app.patch('/api/orders/:id/items/:itemId', authenticateStaff, requirePermission('can_edit_orders'), (req, res) => {
+  try {
+    const { quantity, selectedOptions, notes, idempotencyKey } = req.body || {};
+    const updated = updateOrderItemTransactional({
+      orderId: req.params.id,
+      itemId: req.params.itemId,
+      quantity: Number(quantity),
+      selectedOptions,
+      notes,
+      actor: { isStaff: true },
+      idempotencyKey,
+    });
+    broadcastOrdersUpdate('order_item_updated', updated);
+    syncOrderToSupabase(updated).catch(() => {});
+    res.json({ success: true, order: updated });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 app.patch('/api/orders/:id/table', authenticateStaff, requirePermission('can_edit_orders'), (req, res) => {
   try {
     const { tableNumber } = req.body as { tableNumber: number };
