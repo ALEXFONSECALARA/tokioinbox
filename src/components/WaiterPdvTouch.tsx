@@ -87,11 +87,51 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     showToast,
   } = useStore();
 
+  // ---------------------------------------------------------------------
+  // PERSISTÊNCIA DE CONTEXTO ENTRE REFRESH (F5)
+  // Antes, tela atual, mesa selecionada e itens ainda não enviados eram
+  // perdidos a cada atualização da página porque viviam só em useState.
+  // Agora ficam também em sessionStorage (por aba), restritos ao
+  // restaurante ativo no momento em que foram salvos. Isso não altera a
+  // navegação por URL (mantida como estado interno, conforme já decidido
+  // no sistema) — apenas evita perder o contexto operacional no F5.
+  // ---------------------------------------------------------------------
+  const PDV_TOUCH_SESSION_KEY = 'nx_waiter_pdv_touch_session_v1';
+
+  type PersistedTouchState = {
+    slug: string;
+    screen: WaiterScreen;
+    table: number | null;
+    draftItems: DraftItem[];
+  };
+
+  const readPersistedTouchState = (): PersistedTouchState | null => {
+    try {
+      const raw = sessionStorage.getItem(PDV_TOUCH_SESSION_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      return parsed as PersistedTouchState;
+    } catch {
+      return null;
+    }
+  };
+
+  const persistedOnLoadRaw = readPersistedTouchState();
+  // Só reaproveita o estado salvo se for do MESMO restaurante ativo agora.
+  const persistedOnLoad = useRef<PersistedTouchState | null>(
+    persistedOnLoadRaw && persistedOnLoadRaw.slug === activeRestaurantSlug ? persistedOnLoadRaw : null
+  );
+
   // Current Screen in the Touch Waiter Flow
-  const [currentScreen, setCurrentScreen] = useState<WaiterScreen>('mesas');
+  const [currentScreen, setCurrentScreen] = useState<WaiterScreen>(
+    () => persistedOnLoad.current?.screen || 'mesas'
+  );
 
   // Selected Table & Operator
-  const [selectedTable, setSelectedTable] = useState<number | null>(null);
+  const [selectedTable, setSelectedTable] = useState<number | null>(
+    () => (persistedOnLoad.current ? persistedOnLoad.current.table : null)
+  );
   const [waiterName, setWaiterName] = useState('Garçom Salão');
 
   // Screen 1: Mesas Filters & Modal
@@ -117,7 +157,9 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [editRemovedIngredients, setEditRemovedIngredients] = useState<string[]>([]);
 
   // Screen 3: Draft Items for Current Round
-  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>(
+    () => persistedOnLoad.current?.draftItems || []
+  );
   const [isSendingOrder, setIsSendingOrder] = useState(false);
 
   // Screen 4: Fechamento Settings
@@ -162,13 +204,49 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     }
   }, [currentUser?.restaurantSlug, activeRestaurantSlug, setActiveRestaurantSlug]);
 
+  // Limpa filtros/mesa/rascunho ao TROCAR de restaurante — mas não no
+  // carregamento inicial da página (refresh), para não descartar o contexto
+  // que acabou de ser restaurado do sessionStorage acima.
+  const isFirstRestaurantEffect = useRef(true);
   useEffect(() => {
+    if (isFirstRestaurantEffect.current) {
+      isFirstRestaurantEffect.current = false;
+      return;
+    }
     setSelectedCategory('all');
     setSearchQuery('');
     setSelectedTable(null);
     setDraftItems([]);
     setCurrentScreen('mesas');
   }, [activeRestaurantSlug]);
+
+  // Salva o contexto (tela, mesa, rascunho) a cada mudança, para sobreviver a um F5.
+  useEffect(() => {
+    try {
+      const toSave: PersistedTouchState = {
+        slug: activeRestaurantSlug,
+        screen: currentScreen,
+        table: selectedTable,
+        draftItems,
+      };
+      sessionStorage.setItem(PDV_TOUCH_SESSION_KEY, JSON.stringify(toSave));
+    } catch {
+      // sessionStorage indisponível (modo privado/quota) — falha silenciosa,
+      // sem impacto na operação, só perde a restauração após F5.
+    }
+  }, [activeRestaurantSlug, currentScreen, selectedTable, draftItems]);
+
+  // Ao fechar a mesa (pagamento concluído) ou voltar manualmente para a tela
+  // de mesas, não faz sentido restaurar aquela mesa/rascunho num F5 futuro.
+  useEffect(() => {
+    if (currentScreen === 'mesas' && selectedTable === null && draftItems.length === 0) {
+      try {
+        sessionStorage.removeItem(PDV_TOUCH_SESSION_KEY);
+      } catch {
+        // ignorar
+      }
+    }
+  }, [currentScreen, selectedTable, draftItems.length]);
 
   // Map active orders by table
   const activeOrdersByTable = useMemo(() => {

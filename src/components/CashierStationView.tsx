@@ -46,6 +46,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     closeTableOrder,
     updateOrderStatus,
     showToast,
+    restaurants,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'mesas' | 'delivery' | 'retirada' | 'movimentacoes'>('mesas');
@@ -1067,9 +1068,13 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
       )}
 
       {/* Thermal Ticket Modal */}
-      {ticketOrder && (
+      {/* BUG CORRIGIDO: faltava a prop `restaurant`, obrigatória no componente —
+          o modal quebrava (referência undefined) sempre que o caixa tentava
+          reimprimir um pedido a partir desta tela. */}
+      {ticketOrder && restaurants[ticketOrder.restaurantSlug] && (
         <ThermalTicketModal
           order={ticketOrder}
+          restaurant={restaurants[ticketOrder.restaurantSlug]}
           onClose={() => setTicketOrder(null)}
         />
       )}

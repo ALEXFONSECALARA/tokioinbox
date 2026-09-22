@@ -33,7 +33,7 @@ interface DeliveryOnlineOrdersViewProps {
 export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> = ({
   onBackToApp,
 }) => {
-  const { orders, updateOrderStatus, showToast } = useStore();
+  const { orders, updateOrderStatus, showToast, restaurants } = useStore();
 
   const [activeTab, setActiveTab] = useState<'all' | 'delivery' | 'retirada'>('all');
   const [statusFilter, setStatusFilter] = useState<'ativos' | 'recebido' | 'em_preparo' | 'pronto' | 'saiu_para_entrega' | 'entregue'>('ativos');
@@ -59,7 +59,8 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
         if (order.status === 'entregue' || order.status === 'finalizado' || order.status === 'cancelado') {
           return false;
         }
-      } else if (statusFilter !== 'ativos') {
+      } else {
+        // (statusFilter já não pode ser 'ativos' aqui — tratado no if acima)
         if (statusFilter === 'em_preparo') {
           if (order.status !== 'em_preparo' && order.status !== 'em_producao') return false;
         } else if (order.status !== statusFilter) {
@@ -484,9 +485,13 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
       </main>
 
       {/* Thermal Ticket Modal */}
-      {selectedTicketOrder && (
+      {/* BUG CORRIGIDO: faltava a prop `restaurant`, obrigatória no componente —
+          o modal quebrava sempre que se tentava imprimir um pedido de delivery
+          online a partir desta tela. */}
+      {selectedTicketOrder && restaurants[selectedTicketOrder.restaurantSlug] && (
         <ThermalTicketModal
           order={selectedTicketOrder}
+          restaurant={restaurants[selectedTicketOrder.restaurantSlug]}
           onClose={() => setSelectedTicketOrder(null)}
         />
       )}

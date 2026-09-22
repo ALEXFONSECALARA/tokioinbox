@@ -454,15 +454,23 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
         })}
       </div>
 
-      {/* Edit / Create Item Modal */}
+      {/* Edit / Create Item Modal
+          BUG CORRIGIDO (viewport/modal): este formulário (~30 campos, incluindo
+          dados fiscais) não tinha `max-height` nem scroll interno — em telas
+          menores (notebook, tablet, PDV touch 1366x768) ele ultrapassava o
+          viewport e os botões "Cancelar"/"Salvar" ficavam fora da área
+          visível, sem forma de rolar até eles. Agora o cartão é limitado a
+          90% da altura da tela, com cabeçalho fixo, campos com scroll interno
+          e os botões de ação sempre visíveis no rodapé. */}
       {(isCreating || editingItem) && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-bold text-white">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full shadow-2xl my-auto max-h-[90vh] flex flex-col overflow-hidden">
+            <h3 className="text-base font-bold text-white px-6 pt-6 pb-2 shrink-0">
               {editingItem ? `Editar: ${editingItem.name}` : 'Novo Item no Cardápio'}
             </h3>
 
-            <form onSubmit={handleSave} className="space-y-3 text-xs">
+            <form onSubmit={handleSave} className="flex flex-col min-h-0 flex-1">
+            <div className="space-y-3 text-xs overflow-y-auto flex-1 min-h-0 px-6 pb-2">
               <div>
                 <label className="block text-slate-400 mb-1">Nome do Prato *</label>
                 <input
@@ -685,8 +693,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                   Produto Disponível no Cardápio Online
                 </label>
               </div>
+            </div>
 
-              <div className="flex gap-2 pt-3">
+              <div className="flex gap-2 p-4 border-t border-slate-800 shrink-0">
                 <button
                   type="button"
                   onClick={() => {

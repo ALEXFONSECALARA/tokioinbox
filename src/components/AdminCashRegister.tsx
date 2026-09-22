@@ -553,7 +553,6 @@ export const AdminCashRegister: React.FC = () => {
       {/* Modal for Thermal Print from Caixa */}
       {ticketOrder && (
         <ThermalTicketModal
-          isOpen={!!ticketOrder}
           order={ticketOrder}
           restaurant={restaurants[ticketOrder.restaurantSlug] || Object.values(restaurants)[0]}
           onClose={() => setTicketOrder(null)}

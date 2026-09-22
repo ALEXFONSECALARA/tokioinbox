@@ -68,6 +68,30 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   const { orders, restaurants } = useStore();
   const [searchCode, setSearchCode] = useState('');
 
+  // BUG CORRIGIDO: `currentOrder` e `restaurant` nunca eram calculados nesta
+  // tela — a modal quebrava (tela em branco) sempre que um cliente tentava
+  // rastrear um pedido, pois o componente referenciava variáveis inexistentes.
+  // Busca por: (1) código digitado (ex.: "TK-4821" ou "#TK-4821"), comparado
+  // sem diferenciar caixa nem o "#"; (2) se nada foi digitado, usa o pedido
+  // mais recente do cliente indicado por `defaultOrderId` (id OU shortCode).
+  const normalizeCode = (v: string) => v.trim().toUpperCase().replace(/^#/, '');
+
+  const currentOrder: Order | null = React.useMemo(() => {
+    const typed = normalizeCode(searchCode);
+    if (typed) {
+      return orders.find((o) => normalizeCode(o.shortCode) === typed) || null;
+    }
+    if (defaultOrderId) {
+      return (
+        orders.find((o) => o.id === defaultOrderId || normalizeCode(o.shortCode) === normalizeCode(defaultOrderId)) ||
+        null
+      );
+    }
+    return null;
+  }, [orders, searchCode, defaultOrderId]);
+
+  const restaurant = currentOrder ? restaurants[currentOrder.restaurantSlug] : null;
+
   const getStepIndex = (status: OrderStatus) => {
     switch (status) {
       case 'recebido':

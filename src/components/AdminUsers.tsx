@@ -35,8 +35,19 @@ export const AdminUsers: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('caixa');
-  const [restaurantAccess, setRestaurantAccess] = useState<'all' | 'japones' | 'hamburgueria' | 'pizzaria' | 'brasileiro'>('all');
-  const [permissions, setPermissions] = useState<UserPermissions>({
+  // BUG CORRIGIDO (tipagem): estava fixo em 4 slugs antigos ('japones' |
+  // 'hamburgueria' | 'pizzaria' | 'brasileiro') que nem batem com os slugs
+  // reais de RestaurantSlug — o dropdown abaixo já é montado dinamicamente a
+  // partir de `restaurants` (correto), só o tipo do estado estava desatualizado.
+  const [restaurantAccess, setRestaurantAccess] = useState<string>('all');
+  // Nota: este formulário edita apenas um subconjunto de permissões por
+  // conveniência. O backend mescla este objeto por cima dos padrões completos
+  // do cargo (ROLE_DEFAULT_PERMISSIONS) em createUser/updateUser — ver
+  // server/authAndDeviceService.ts — então os demais campos de UserPermissions
+  // não ficam "undefined", apenas não são customizados por aqui. `Partial<>`
+  // reflete corretamente essa intenção (antes tipado como UserPermissions
+  // completo, o que não batia com os objetos parciais usados abaixo).
+  const [permissions, setPermissions] = useState<Partial<UserPermissions>>({
     can_view_orders: true,
     can_change_status: true,
     can_edit_menu: false,

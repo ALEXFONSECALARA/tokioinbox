@@ -186,41 +186,46 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
                 <Bot className="w-4 h-4 text-amber-400" />
                 <span className="text-xs font-bold text-white">Tokio Copilot Cozinha (IA)</span>
               </div>
-              <span
-                className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                  aiAnalysis.urgencyLevel === 'alta'
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                    : aiAnalysis.urgencyLevel === 'media'
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                }`}
-              >
-                Urgência: {aiAnalysis.urgencyLevel}
+              {/*
+                BUG CORRIGIDO: este cartão usava nomes de campo
+                (urgencyLevel, prepStation, allergyOrDietAlerts, prepSequence,
+                chefNotes, customerKindMessage) que NUNCA existiram na resposta
+                real da IA (nem no fallback heurístico, nem no Gemini) — o
+                endpoint /api/ai/smart-ticket sempre respondeu com
+                stationRouting, allergyWarnings, preparationSequence,
+                estimatedPrepMinutes e chefMessage (ver server.ts e
+                SmartTicketAIAnalysis em src/types/restaurant.ts). Na prática
+                todo este cartão renderizava "undefined" e o badge de urgência
+                (que nunca existiu como dado real) quebraria a tela com
+                TypeError ao chamar .toUpperCase() em undefined mais abaixo.
+                Substituído por um selo de tempo estimado, que é dado real.
+              */}
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                <Clock className="w-3 h-3" /> ~{aiAnalysis.estimatedPrepMinutes} min
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-                <span className="text-slate-400 text-[10px] block">Estação de Trabalho</span>
-                <span className="font-bold text-slate-200">{aiAnalysis.prepStation}</span>
+            {/* Station Routing */}
+            {aiAnalysis.stationRouting && aiAnalysis.stationRouting.length > 0 && (
+              <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800 text-xs space-y-1">
+                <span className="text-slate-400 text-[10px] block">Roteamento por Estação</span>
+                <ul className="list-disc list-inside text-[11px] text-slate-200 space-y-0.5 pl-1">
+                  {aiAnalysis.stationRouting.map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
               </div>
-              <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-                <span className="text-slate-400 text-[10px] block">Tempo Estimado Preparo</span>
-                <span className="font-bold text-amber-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> {aiAnalysis.estimatedPrepMinutes} minutos
-                </span>
-              </div>
-            </div>
+            )}
 
             {/* Allergy Alerts */}
-            {aiAnalysis.allergyOrDietAlerts && aiAnalysis.allergyOrDietAlerts.length > 0 && (
+            {aiAnalysis.allergyWarnings && aiAnalysis.allergyWarnings.length > 0 && (
               <div className="bg-rose-950/40 border border-rose-800/60 p-2 rounded-xl text-xs text-rose-200 space-y-1">
                 <div className="flex items-center gap-1 font-bold text-rose-300 text-[11px]">
                   <ShieldAlert className="w-3.5 h-3.5" />
                   <span>Atenção para Alergias & Restrições:</span>
                 </div>
                 <ul className="list-disc list-inside text-[11px] space-y-0.5 pl-1">
-                  {aiAnalysis.allergyOrDietAlerts.map((alert, i) => (
+                  {aiAnalysis.allergyWarnings.map((alert, i) => (
                     <li key={i}>{alert}</li>
                   ))}
                 </ul>
@@ -228,27 +233,29 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
             )}
 
             {/* Prep Sequence */}
-            {aiAnalysis.prepSequence && aiAnalysis.prepSequence.length > 0 && (
+            {aiAnalysis.preparationSequence && aiAnalysis.preparationSequence.length > 0 && (
               <div className="text-xs space-y-1 bg-slate-950/60 p-2 rounded-xl border border-slate-800/80">
                 <span className="font-bold text-slate-300 text-[11px] flex items-center gap-1">
                   <ListOrdered className="w-3 h-3 text-amber-400" />
                   Sequência Otimizada de Montagem:
                 </span>
                 <ol className="list-decimal list-inside text-[11px] text-slate-300 space-y-0.5 pl-1">
-                  {aiAnalysis.prepSequence.map((step, i) => (
+                  {aiAnalysis.preparationSequence.map((step, i) => (
                     <li key={i}>{step}</li>
                   ))}
                 </ol>
               </div>
             )}
 
-            {/* Chef note & kindness message */}
-            <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl border border-slate-800 flex items-start gap-1.5">
-              <HeartHandshake className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-              <span>
-                <strong>Dica da Cozinha:</strong> {aiAnalysis.chefNotes} &quot;{aiAnalysis.customerKindMessage}&quot;
-              </span>
-            </div>
+            {/* Chef message */}
+            {aiAnalysis.chefMessage && (
+              <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl border border-slate-800 flex items-start gap-1.5">
+                <HeartHandshake className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Mensagem da Cozinha:</strong> &quot;{aiAnalysis.chefMessage}&quot;
+                </span>
+              </div>
+            )}
 
             <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
               <input
@@ -299,16 +306,24 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
             </div>
 
             {/* AI Summary on Ticket */}
+            {/* BUG CORRIGIDO (grave): `aiAnalysis.urgencyLevel.toUpperCase()`
+                chamava .toUpperCase() em `undefined` (o campo nunca existiu na
+                resposta real da IA), o que quebrava a impressão do ticket com
+                um TypeError sempre que "incluir IA na impressão" estava
+                ativado. Campos alinhados com o retorno real do backend
+                (stationRouting, allergyWarnings, estimatedPrepMinutes). */}
             {aiAnalysis && includeAiInPrint && (
               <div className="bg-amber-100/90 border border-amber-300 p-2 rounded text-[10px] space-y-1">
                 <div className="flex justify-between font-bold">
                   <span>[IA TOKIO KITCHEN]</span>
-                  <span>ESTAÇÃO: {aiAnalysis.prepStation}</span>
+                  <span>PREP: ~{aiAnalysis.estimatedPrepMinutes}m</span>
                 </div>
-                <div>URGÊNCIA: {aiAnalysis.urgencyLevel.toUpperCase()} • PREP: ~{aiAnalysis.estimatedPrepMinutes}m</div>
-                {aiAnalysis.allergyOrDietAlerts && aiAnalysis.allergyOrDietAlerts.length > 0 && (
+                {aiAnalysis.stationRouting && aiAnalysis.stationRouting.length > 0 && (
+                  <div>ESTAÇÕES: {aiAnalysis.stationRouting.join(' | ')}</div>
+                )}
+                {aiAnalysis.allergyWarnings && aiAnalysis.allergyWarnings.length > 0 && (
                   <div className="font-bold text-rose-800">
-                    ALERTA: {aiAnalysis.allergyOrDietAlerts.join(' | ')}
+                    ALERTA: {aiAnalysis.allergyWarnings.join(' | ')}
                   </div>
                 )}
               </div>
