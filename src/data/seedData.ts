@@ -101,7 +101,7 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
         subtitle: 'A melhor seleção de niguiris trufados, uramakis e sashimis maçaricados.',
       },
     ],
-    activeTables: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
   },
   italiano: {
     slug: 'italiano',
@@ -196,7 +196,7 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
         subtitle: 'Ragu bolognese clássico apurado por 6 horas e queijos maturados.',
       },
     ],
-    activeTables: [1, 2, 3, 4, 5, 6, 7, 8, 12, 14],
+    activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
   },
   pizza: {
     slug: 'pizza',
@@ -291,7 +291,7 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
         subtitle: 'Ingredientes nobres certificados D.O.P. direto de Nápoles.',
       },
     ],
-    activeTables: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15],
+    activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
   },
   hamburgueria: {
     slug: 'hamburgueria',
@@ -386,7 +386,7 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
         subtitle: 'Acompanhamentos artesanais preparados do zero para o lanche perfeito.',
       },
     ],
-    activeTables: [1, 2, 3, 4, 5, 6, 7, 8],
+    activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
   },
 
   risotos: {
@@ -482,7 +482,7 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
         subtitle: 'Cozimento lento de 12 horas para extrair pureza e profundidade de sabor.',
       },
     ],
-    activeTables: [1, 2, 3, 4, 5, 6, 7, 8],
+    activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
   },
 
   grelhados: {
@@ -578,7 +578,7 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
         subtitle: 'Lenha nobre de árvores frutíferas que proporcionam aroma e maciez únicos.',
       },
     ],
-    activeTables: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
   },
 
   vegano: {
@@ -674,7 +674,7 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
         subtitle: 'Fermentações, desidratações lentas e emulsões sedosas sem nenhum ingrediente animal.',
       },
     ],
-    activeTables: [1, 2, 3, 4, 5, 6, 7, 8],
+    activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
   },
 };
 
