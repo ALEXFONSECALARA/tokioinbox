@@ -1,31 +1,11 @@
 @import "tailwindcss";
 
 @layer base {
-  html {
-    /* Impede o "double-tap zoom" e o zoom acidental em telas touch (PDV/tablet/mobile) */
-    touch-action: manipulation;
-    -webkit-text-size-adjust: 100%;
-    text-size-adjust: 100%;
-  }
   body {
     background-color: #050505;
     color: #F5F5F5;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    overscroll-behavior-y: contain;
   }
-  /* iOS abre teclado e dá "zoom" automático quando o input tem font-size < 16px.
-     Forçando >=16px em todos os campos resolve isso sem precisar desabilitar o zoom do usuário. */
-  input,
-  select,
-  textarea {
-    font-size: max(16px, 1em);
-  }
-}
-
-/* Trava telas de PDV/painel para não sofrerem pinch-zoom em tablets/mobile,
-   mantendo o scroll vertical normal do conteúdo interno. */
-.no-pinch-zoom {
-  touch-action: pan-x pan-y;
 }
 
 /* PALETA PRINCIPAL RÚSTICO PREMIUM & PRIME LUXURY:
