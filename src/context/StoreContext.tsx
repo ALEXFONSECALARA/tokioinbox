@@ -194,6 +194,7 @@ interface StoreContextType {
     customerPhone?: string;
     waiterName?: string;
     tableSessionId?: string;
+    tableAccessToken?: string;
     idempotencyKey?: string;
   }) => Promise<{ success: boolean; order?: Order; isNew?: boolean; error?: string }>;
   closeTableOrder: (params: {
@@ -1594,6 +1595,13 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       totalPrice: c.subtotal,
       selectedOptions: c.selectedOptions,
       notes: c.notes,
+      // BUG CORRIGIDO: no fallback OFFLINE abaixo, todo item caía sempre em
+      // 'cozinha' (station: item.station || 'cozinha') porque este payload
+      // nunca carregava a estação do item do cardápio — um prato de sushibar
+      // ou bar pedido sem internet seria roteado para a tela errada até
+      // sincronizar. Quando online, o servidor já resolve isso corretamente
+      // via resolveItemStation(); isto só afeta o fallback local.
+      station: c.menuItem.station,
     }));
 
     const payload = {
