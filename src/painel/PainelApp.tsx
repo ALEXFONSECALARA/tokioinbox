@@ -194,10 +194,19 @@ export function PainelApp() {
     );
   }
 
+  // BUG CORRIGIDO (viewport/scroll): `min-h-screen` define só uma altura
+  // MÍNIMA — sem teto — então uma tela com muito conteúdo (mesas, kanban,
+  // balcão) empurrava a página inteira e criava rolagem do navegador na
+  // tela toda, escondendo o header por trás do topo em telas menores.
+  // Agora o shell ocupa exatamente a altura disponível (`h-full`, já travada
+  // no viewport por `body.painel-app-shell` em src/utils/index.css) e SÓ a
+  // área de conteúdo rola internamente (`min-h-0 overflow-y-auto` — o
+  // `min-h-0` é o que permite o filho realmente encolher dentro do flex em
+  // vez de estourar o pai).
   const withBar = (content: React.ReactNode) => (
-    <div className="min-h-screen bg-[#07090E] flex flex-col">
+    <div className="h-full bg-[#07090E] flex flex-col overflow-hidden">
       <EnvironmentBar currentEnvironment={AREA_TO_ENV[area]} onSelectEnvironment={handleNavigateEnvironment} />
-      <div className="flex-1">{content}</div>
+      <div className="flex-1 min-h-0 overflow-y-auto">{content}</div>
     </div>
   );
 
