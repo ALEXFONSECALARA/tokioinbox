@@ -175,9 +175,15 @@ export function CustomerApp() {
         setCurrentView={(v) => (v === 'home' ? goHome() : setView('menu'))}
       />
 
+      {/* BUG CORRIGIDO: `onClaimSuccess` não existe no componente (fluxo de
+          resgate de cupom foi removido dele em algum momento) — o callback
+          nunca era chamado, e o `alert()` de "parabéns" nunca aparecia. A
+          única prop real hoje é `onOpenCustomerArea`, que abre a área do
+          cliente onde o cupom de boas-vindas pode ser resgatado. */}
       <PwaInstallationBanner
-        onClaimSuccess={(phone, code) => {
-          alert(`Parabéns! Cupom de instalação "${code}" liberado para ${phone}!`);
+        onOpenCustomerArea={() => {
+          setAuthModalMode('account');
+          setIsAuthModalOpen(true);
         }}
       />
 
@@ -292,7 +298,6 @@ export function CustomerApp() {
         <CustomerAuthModal
           isOpen={isAuthModalOpen}
           initialMode={authModalMode}
-          restaurantSlug={currentRestaurant?.slug}
           onClose={() => setIsAuthModalOpen(false)}
           onOrderClick={(orderId) => {
             setTrackedOrderId(orderId);
