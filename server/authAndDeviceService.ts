@@ -298,7 +298,7 @@ export function validateStaffPassword(password: string): string | null {
 
 const KNOWN_DEFAULT_PASSWORDS = [
   'admin123', 'cozinha123', 'caixa123', 'entrega123', 'gerente123', 'salao123',
-  '12345678', 'password', 'senha123', '1234', 'nexoro123', 'tokio123',
+  '12345678', 'password', 'senha123', '1234', 'admin', 'nexoro123', 'tokio123',
 ];
 
 // ----------------------------------------------------
@@ -308,23 +308,16 @@ let usersCache: UserAccount[] = [];
 let usersInitialized = false;
 
 function resolveBootstrapAdminPassword(): { password: string; generated: boolean } {
-  const envPass = process.env.ADMIN_PASSWORD?.trim();
-
-  // Credencial inicial simples e explícita solicitada para o primeiro acesso.
-  // Depois do login, a senha pode ser alterada em Equipe > Usuários.
-  // Se ADMIN_PASSWORD estiver configurada, ela tem prioridade.
-  if (envPass === 'admin') {
-    return { password: 'admin', generated: false };
-  }
+  const envPass = process.env.ADMIN_PASSWORD;
   if (envPass && validateStaffPassword(envPass) === null) {
     return { password: envPass, generated: false };
   }
   if (!IS_PRODUCTION) {
-    console.warn('[AUTH] ADMIN_PASSWORD ausente/fraca: usando credencial inicial admin/admin.');
-    return { password: 'admin', generated: false };
+    console.warn('[AUTH] ADMIN_PASSWORD ausente/fraca: usando senha de DESENVOLVIMENTO. Nunca use isso em produção.');
+    return { password: envPass && envPass.length >= 4 ? envPass : 'admin123', generated: false };
   }
-  console.warn('[AUTH] ADMIN_PASSWORD ausente: usando credencial inicial admin/admin. Troque a senha em Equipe > Usuários.');
-  return { password: 'admin', generated: false };
+  const generated = crypto.randomBytes(9).toString('base64url');
+  return { password: generated, generated: true };
 }
 
 function getInitialUsers(): UserAccount[] {
@@ -359,8 +352,7 @@ function getInitialUsers(): UserAccount[] {
 
 /**
  * Migração de segurança: contas herdadas com senhas padrão conhecidas
- * (admin123, cozinha123...) são desativadas em produção. A credencial inicial admin/admin
- * é uma exceção de bootstrap e pode ser alterada em Equipe > Usuários.
+ * (admin123, cozinha123...) são desativadas em produção.
  */
 function neutralizeDefaultCredentials() {
   let changed = false;
