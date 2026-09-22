@@ -285,6 +285,8 @@ interface StoreContextType {
 
   // Vitrine Manager
   updateVitrineConfig: (slug: string, updates: Partial<RestaurantConfig>) => void;
+  /** Aplica um status operacional (aberto / abrimos em breve / fechado temporariamente) a TODOS os restaurantes do sistema de uma vez. */
+  setAllRestaurantsOperationalStatus: (status: 'aberto' | 'abrimos_em_breve' | 'fechado_temporariamente', message?: string) => void;
 
   // Real-time Delivery Personnel
   deliveryStaff: DeliveryPersonnel[];
@@ -2170,6 +2172,30 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     });
   };
 
+  // Botão global do Super Admin: desativa/reativa TODOS os restaurantes do sistema de uma vez
+  // (ex.: "Abrimos em Breve" antes do lançamento, ou "Temporariamente Fechado" em manutenção).
+  const setAllRestaurantsOperationalStatus = (
+    status: 'aberto' | 'abrimos_em_breve' | 'fechado_temporariamente',
+    message?: string
+  ) => {
+    setRestaurants((prev) => {
+      const next: Record<string, RestaurantConfig> = {};
+      for (const [slug, rest] of Object.entries(prev)) {
+        next[slug] = {
+          ...rest,
+          operationalStatus: status,
+          operationalStatusMessage: message ?? rest.operationalStatusMessage,
+          isOpen: status === 'aberto' ? rest.isOpen : false,
+        };
+      }
+      return next;
+    });
+    logAction(
+      `Status global do sistema alterado para "${status}" em TODOS os restaurantes${message ? ` — mensagem: "${message}"` : ''}`,
+      'system'
+    );
+  };
+
   // Vitrine Manager
   const updateVitrineConfig = (slug: string, updates: Partial<RestaurantConfig>) => {
     setRestaurants((prev) => {
@@ -2616,6 +2642,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         deleteRestaurant,
         resetToDefaultData,
         updateVitrineConfig,
+        setAllRestaurantsOperationalStatus,
         masterResetOrders,
         createBatchOrders,
         currentCustomer,
