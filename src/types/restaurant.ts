@@ -119,6 +119,7 @@ export interface MenuItem {
   technicalSheet?: TechnicalSheet;
   image: string;
   available: boolean;
+  code?: string; // Código/SKU curto exibido em telas compactas (Balcão Touch)
   station?: ProductionStation; // Optional explicit station override ('cozinha' | 'sushibar' | 'bar')
   tags?: ('mais_vendido' | 'promocao' | 'vegetariano' | 'destaque')[];
   optionGroups?: MenuItemOptionGroup[];
@@ -376,6 +377,17 @@ export interface UserPermissions {
   can_configure_restaurant: boolean;
   can_manage_notifications: boolean;
   can_edit_restaurants?: boolean;
+  // BUG CORRIGIDO: a tela Equipe > Usuários (AdminUsers.tsx) já lia/gravava estes
+  // dois campos havia tempo, mas eles nunca existiram neste tipo — o toggle na
+  // interface era puramente visual e o typecheck do projeto falhava aqui. Ainda
+  // NÃO há checagem correspondente no backend: hoje a exclusão definitiva de
+  // pedido continua restrita a `super_admin` (ver DELETE /api/orders/:id em
+  // server.ts) independentemente deste campo. Se o objetivo é permitir que
+  // outros perfis excluam pedidos, o endpoint precisa ser atualizado para usar
+  // `requirePermission('can_delete_orders')` — decisão de regra de negócio que
+  // não foi alterada aqui.
+  can_delete_orders?: boolean;
+  can_print_tickets?: boolean;
 }
 
 export interface UserAccount {
