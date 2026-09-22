@@ -752,7 +752,14 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col font-sans select-none pb-20 lg:pb-0">
+    // BUG CORRIGIDO (mesas cortadas / mesas que não aparecem): "min-h-screen"
+    // não tem teto de altura, então esta tela criava rolagem de PÁGINA
+    // inteira por cima da trava de viewport do shell (body.painel-app-shell
+    // em src/utils/index.css), e cards de mesa ficavam parcialmente atrás
+    // do rodapé/topo sem aviso de scroll. Agora "h-full overflow-hidden":
+    // o cabeçalho, a barra de ambientes e as abas ficam fixos, e SÓ o
+    // <main> abaixo rola internamente (flex-1 min-h-0 overflow-y-auto).
+    <div className="h-full bg-[#07090E] text-slate-100 flex flex-col font-sans select-none overflow-hidden">
       {/* ========================================================================= */}
       {/* 1. SEPARAÇÃO VISUAL DE AMBIENTES (CLIENTE, GARÇOM/PDV, COZINHA, BAR, SUSHIBAR, ADMIN) */}
       {/* ========================================================================= */}
@@ -946,7 +953,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* ========================================================================= */}
       {/* 4. CONTEÚDO PRINCIPAL (TELAS SEPARADAS) */}
       {/* ========================================================================= */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+      <main className="flex-1 min-h-0 overflow-y-auto max-w-7xl w-full mx-auto p-4 sm:p-6 pb-24 lg:pb-6">
         {/* --------------------------------------------------------------------- */}
         {/* TELA 1: MESAS */}
         {/* --------------------------------------------------------------------- */}
@@ -992,8 +999,10 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               </div>
             </div>
 
-            {/* Grid de Mesas em Cards Grandes */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {/* Grid de Mesas — cards compactos para caber o máximo de mesas
+                possível na tela sem cortar e sem depender de rolagem grande
+                (mais colunas + cards mais baixos que a versão anterior) */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2.5">
               {tableNumbers.map((tableNum) => {
                 const status = getTableStatus(tableNum);
                 const order = activeOrdersByTable[tableNum];
@@ -1010,51 +1019,38 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                     key={tableNum}
                     type="button"
                     onClick={() => handleSelectTable(tableNum)}
-                    className={`min-h-[140px] p-4 rounded-3xl border-2 text-left flex flex-col justify-between transition-all active:scale-95 shadow-xl relative overflow-hidden group ${
+                    className={`min-h-[92px] p-2.5 rounded-2xl border-2 text-left flex flex-col justify-between transition-all active:scale-95 shadow-lg relative overflow-hidden group ${
                       status.cardBg
                     } ${isCurrent ? 'ring-4 ring-amber-400/80' : ''}`}
                   >
                     {/* Top row: Mesa Number & Status Indicator */}
                     <div className="flex items-start justify-between w-full">
-                      <div className="flex flex-col">
-                        <span className="text-2xl sm:text-3xl font-black text-white font-mono tracking-tight">
-                          {tableNum}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                          Mesa
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-2.5 h-2.5 rounded-full ${status.dot}`} />
-                        <span
-                          className={`text-[10px] font-black px-2 py-0.5 rounded-full border uppercase ${status.badgeColor}`}
-                        >
-                          {status.label}
-                        </span>
-                      </div>
+                      <span className="text-xl font-black text-white font-mono tracking-tight leading-none">
+                        {tableNum}
+                      </span>
+                      <span className={`w-2 h-2 rounded-full shrink-0 mt-1 ${status.dot}`} />
                     </div>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider -mt-1">
+                      Mesa
+                    </span>
 
                     {/* Bottom Info: Order items or Free status */}
-                    <div className="mt-3 pt-2 border-t border-slate-800/80 w-full">
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-800/80 w-full">
                       {order ? (
-                        <div className="space-y-0.5">
-                          <div className="flex items-center justify-between text-xs">
+                        <div className="space-y-0">
+                          <div className="flex items-center justify-between text-[10px]">
                             <span className="text-slate-400 font-medium">
-                              {order.items.length} itens
+                              {order.items.length} it.
                             </span>
                             <span className="font-mono font-black text-amber-400">
-                              R$ {order.total.toFixed(2)}
+                              R$ {order.total.toFixed(0)}
                             </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {order.customerName || `Garçom: ${order.waiterName || 'Salão'}`}
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between text-xs text-emerald-400 font-bold">
-                          <span>Disponível</span>
-                          <Plus className="w-4 h-4 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-transform" />
+                        <div className="flex items-center justify-between text-[10px] text-emerald-400 font-bold">
+                          <span>Livre</span>
+                          <Plus className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-transform" />
                         </div>
                       )}
                     </div>
