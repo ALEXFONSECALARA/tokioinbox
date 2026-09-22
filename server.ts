@@ -1700,6 +1700,43 @@ app.post('/api/auth/reset-password', resetLimiter, (req, res) => {
 // AUTHENTICATION & SESSIONS API
 // ==========================================
 
+// Recuperação administrativa: usa exclusivamente ADMIN_PASSWORD configurada
+// no ambiente. Não existe senha fixa, senha mestre ou bypass público.
+app.post('/api/auth/admin-reset', resetLimiter, (req, res) => {
+  try {
+    const configured = process.env.ADMIN_PASSWORD?.trim();
+    if (!configured || configured.length < 8) {
+      return res.status(503).json({
+        success: false,
+        error: 'Recuperação administrativa indisponível: configure ADMIN_PASSWORD com pelo menos 8 caracteres no ambiente.',
+      });
+    }
+
+    const admin = findUserByUsername('admin');
+    if (!admin) {
+      return res.status(404).json({ success: false, error: 'Usuário admin não encontrado.' });
+    }
+
+    if (!verifyPassword(configured, admin.passwordHash, admin.passwordSalt)) {
+      const updated = updateUser(admin.id, { newPassword: configured, operatorName: 'Recuperação administrativa' });
+      revokeAllSessionsForUser(admin.id);
+      logAuditAction({
+        userName: 'Sistema',
+        userRole: 'system',
+        action: 'Senha do super administrador redefinida por ADMIN_PASSWORD',
+        category: 'user',
+      });
+      return res.json({ success: true, message: 'Senha do administrador redefinida. Todas as sessões anteriores foram encerradas.', user: updated });
+    }
+
+    revokeAllSessionsForUser(admin.id);
+    return res.json({ success: true, message: 'Senha do administrador já corresponde a ADMIN_PASSWORD. Sessões anteriores foram encerradas.' });
+  } catch (error: any) {
+    console.error('[ADMIN RESET ERROR]:', error);
+    return res.status(500).json({ success: false, error: 'Não foi possível redefinir a senha do administrador.' });
+  }
+});
+
 app.post('/api/auth/login', authLimiter, (req, res) => {
   try {
     const { username, password } = req.body || {};
