@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { normalizePhone } from './phoneUtils';
-import { getRestaurant, getCoupon, priceLine, restaurantExists } from './catalogService';
+import { getRestaurant, getCoupon, priceLine, restaurantExists, assertCanAcceptNewOrder } from './catalogService';
 import { secureToken } from './security';
 
 export interface OrderItemOption {
@@ -506,7 +506,8 @@ export function createOrderTransactional(
 
   // 2. Validate payload
   const customerName = cleanText(payload.customerName, 80);
-  if (!customerName || !payload.customerPhone) {
+  const canonicalRequestedType = normalizeOrderOrigin(payload.orderType);
+  if (!customerName || (canonicalRequestedType !== 'mesa' && !payload.customerPhone)) {
     throw new Error('Nome e telefone do cliente são obrigatórios.');
   }
 
@@ -519,6 +520,7 @@ export function createOrderTransactional(
   if (restaurant.isActive === false) {
     throw new Error('Este restaurante não está recebendo pedidos.');
   }
+  assertCanAcceptNewOrder(slug, Boolean(actor.isStaff));
   if (!actor.isStaff && restaurant.isOpen === false) {
     throw new Error(`${restaurant.name} está fechado no momento e não está recebendo pedidos.`);
   }
@@ -969,6 +971,15 @@ export function appendItemsToTableOrderTransactional(params: {
     throw new Error('Número de mesa inválido.');
   }
 
+  // Idempotência obrigatória para operações de mesa: retries/reloads com a mesma chave
+  // devem devolver exatamente o mesmo resultado sem acrescentar itens novamente.
+  if (params.idempotencyKey) {
+    const existingByKey = findOrderByDeliveryKey(params.idempotencyKey);
+    if (existingByKey && existingByKey.restaurantSlug === params.restaurantSlug) {
+      return { order: existingByKey, isNew: false };
+    }
+  }
+
   // Look for active open order on this table
   const activeStatuses: OrderStatus[] = [
     'recebido',
@@ -1056,7 +1067,7 @@ export function appendItemsToTableOrderTransactional(params: {
       restaurantSlug: params.restaurantSlug,
       restaurantName: params.restaurantName || 'Restaurante',
       customerName: params.customerName || `Mesa ${String(params.tableNumber).padStart(2, '0')}`,
-      customerPhone: params.customerPhone || '(11) 99999-0000',
+      customerPhone: params.customerPhone || '',
       paymentMethod: 'pix',
       items: params.items as any,
       idempotencyKey: params.idempotencyKey,
@@ -1065,6 +1076,46 @@ export function appendItemsToTableOrderTransactional(params: {
   );
 
   return { order: newOrderResult.order, isNew: true };
+}
+
+export function updateOrderItemTransactional(params: {
+  orderId: string;
+  itemId: string;
+  quantity: number;
+  selectedOptions?: OrderItemOption[];
+  notes?: string;
+  actor?: OrderActor;
+  idempotencyKey?: string;
+}): Order {
+  initializeOrders();
+  const idx = ordersCache.findIndex((o) => o.id === params.orderId);
+  if (idx === -1) throw new Error(`Pedido com ID "${params.orderId}" não encontrado.`);
+  const order = ordersCache[idx];
+  if (order.status === 'finalizado' || order.status === 'cancelado') {
+    throw new Error('Não é possível editar um pedido encerrado ou cancelado.');
+  }
+  const itemIndex = order.items.findIndex((i) => i.id === params.itemId);
+  if (itemIndex === -1) throw new Error('Item do pedido não encontrado.');
+  const current = order.items[itemIndex];
+  const qty = Math.min(MAX_QTY_PER_ITEM, Math.max(1, Math.floor(Number(params.quantity) || 1)));
+  const priced = priceOrderItems(order.restaurantSlug, [{
+    id: current.id,
+    name: current.name,
+    quantity: qty,
+    unitPrice: current.unitPrice,
+    selectedOptions: params.selectedOptions ?? current.selectedOptions,
+    notes: params.notes ?? current.notes,
+    station: current.station,
+  }], params.actor || { isStaff: true });
+  const replacement = { ...priced.items[0], id: current.id };
+  const items = [...order.items];
+  items[itemIndex] = replacement;
+  const subtotal = Number(items.reduce((sum, it) => sum + it.totalPrice, 0).toFixed(2));
+  const total = Number(Math.max(0, subtotal - (order.discount || 0) + (order.deliveryFee || 0)).toFixed(2));
+  const updated: Order = { ...order, items, subtotal, total, updatedAt: new Date().toISOString() };
+  ordersCache[idx] = updated;
+  persistOrdersSync();
+  return updated;
 }
 
 export function closeTableOrderTransactional(params: {

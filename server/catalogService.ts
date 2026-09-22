@@ -126,7 +126,9 @@ export function getPublicCatalog() {
   const c = initializeCatalog();
   const restaurants: Record<string, any> = {};
   for (const [slug, r] of Object.entries(c.restaurants)) {
-    if (r && r.isActive !== false) restaurants[slug] = r;
+    if (r && r.isActive !== false && r.vitrineStatus !== 'OCULTO' && r.isActiveInVitrine !== false) {
+      restaurants[slug] = r;
+    }
   }
   const activeSlugs = new Set(Object.keys(restaurants));
   return {
@@ -142,6 +144,23 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{1,40}$/;
 
 export function isValidSlugFormat(slug: unknown): slug is string {
   return typeof slug === 'string' && SLUG_RE.test(slug);
+}
+
+export function getVitrineStatus(slug: string): 'ATIVO' | 'OCULTO' | 'FECHADO_TEMPORARIAMENTE' {
+  const r = getRestaurant(slug);
+  if (!r || r.isActive === false || r.isActiveInVitrine === false) return 'OCULTO';
+  return r.vitrineStatus || 'ATIVO';
+}
+
+export function assertCanAcceptNewOrder(slug: string, isStaff = false) {
+  const r = getRestaurant(slug);
+  if (!r || r.isActive === false) throw new Error('Restaurante não encontrado ou inativo.');
+  const status = getVitrineStatus(slug);
+  if (!isStaff && status !== 'ATIVO') {
+    throw new Error(status === 'FECHADO_TEMPORARIAMENTE'
+      ? 'O restaurante está fechado temporariamente e não está aceitando novos pedidos.'
+      : 'O restaurante não está disponível na vitrine.');
+  }
 }
 
 export function restaurantExists(slug: string): boolean {
