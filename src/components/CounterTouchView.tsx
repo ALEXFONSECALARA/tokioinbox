@@ -19,14 +19,16 @@ import {
   User,
   Phone,
   Clock,
+  Store,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
 
 interface CounterTouchViewProps {
   onBackToApp?: () => void;
+  onOpenAdmin?: () => void;
 }
 
-export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp }) => {
+export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp, onOpenAdmin }) => {
   const {
     menuItems,
     categories,
@@ -223,7 +225,17 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp 
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {onOpenAdmin && (
+            <button
+              type="button"
+              onClick={onOpenAdmin}
+              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 text-[11px] font-bold transition-colors"
+              title="Abrir painel administrativo"
+            >
+              ADMIN
+            </button>
+          )}
           <OfflineStatusIndicator showToggle />
         </div>
       </header>
