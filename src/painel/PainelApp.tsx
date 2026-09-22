@@ -1,11 +1,10 @@
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import React, { Component, ErrorInfo, Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { LogOut, Loader2, ShieldAlert } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { EnvironmentBar, OperationalEnvironment } from '../components/EnvironmentBar';
 import { StaffLogin } from './StaffLogin';
 import {
   AREA_LABELS,
-  AREA_PATHS,
   ROLE_LABELS,
   StaffArea,
   StaffRole,
@@ -55,6 +54,39 @@ const AREA_TO_ENV: Record<StaffArea, OperationalEnvironment> = {
   courier: 'delivery',
 };
 
+class ModuleErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[PAINEL] Falha ao carregar módulo:', error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-[#07090E] text-white flex items-center justify-center p-6">
+          <div className="w-full max-w-lg rounded-3xl border border-rose-500/30 bg-[#0E121B] p-6 text-center">
+            <h2 className="text-lg font-black">Não foi possível abrir esta ferramenta</h2>
+            <p className="mt-2 text-sm text-slate-400">O módulo encontrou um erro ao carregar. Volte ao painel e tente novamente.</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-5 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-black text-slate-950"
+            >
+              RECARREGAR
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const Loading = () => (
   <div className="min-h-[60vh] flex items-center justify-center text-slate-400">
     <Loader2 className="w-6 h-6 animate-spin" />
@@ -65,23 +97,14 @@ export function PainelApp() {
   const { currentUser, loginUser, logoutUser } = useStore();
   const role = currentUser?.role;
 
+  // A navegação das ferramentas do painel é interna ao React.
+  // Não altera a URL nem cria links /pdv, /balcao, /caixa etc.
   const [area, setArea] = useState<StaffArea | null>(() => areaFromPathname(window.location.pathname));
   const [adminInitialTab, setAdminInitialTab] = useState<any>('dashboard');
 
-  const goArea = useCallback((next: StaffArea, replace = false) => {
+  const goArea = useCallback((next: StaffArea) => {
+    // Troca somente o módulo montado; a URL permanece na página atual.
     setArea(next);
-    const target = AREA_PATHS[next];
-    if (window.location.pathname !== target) {
-      if (replace) window.history.replaceState({}, '', target);
-      else window.history.pushState({}, '', target);
-    }
-  }, []);
-
-  // Navegação pelo histórico do navegador
-  useEffect(() => {
-    const onPop = () => setArea(areaFromPathname(window.location.pathname));
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   // Sessão derrubada pelo servidor (expirou, usuário desativado, senha trocada...)
@@ -98,7 +121,7 @@ export function PainelApp() {
     if (!currentUser) return;
     if (area === null) {
       const def = defaultAreaForRole(role);
-      if (def) goArea(def, true);
+      if (def) goArea(def);
     }
   }, [currentUser?.id, area]);
 
@@ -117,7 +140,7 @@ export function PainelApp() {
   const backToStart = () => {
     const def = defaultAreaForRole(role);
     if (def && area !== def) goArea(def);
-    else window.location.assign('/');
+    else setArea(null);
   };
 
   if (!currentUser) {
@@ -129,7 +152,6 @@ export function PainelApp() {
     <button
       onClick={() => {
         logoutUser();
-        window.history.replaceState({}, '', '/painel');
         setArea(null);
       }}
       className="fixed bottom-3 left-3 z-[60] flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0B0F19]/95 border border-slate-700 text-[11px] text-slate-300 hover:text-white hover:border-amber-500/60 shadow-lg"
@@ -225,7 +247,7 @@ export function PainelApp() {
 
   return (
     <>
-      <Suspense fallback={<Loading />}>{screen}</Suspense>
+      <ModuleErrorBoundary><Suspense fallback={<Loading />}>{screen}</Suspense></ModuleErrorBoundary>
       {logoutChip}
     </>
   );
