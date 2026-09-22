@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { RestaurantSlug, OrderSoundType } from '../types/restaurant';
 import { SOUND_PRESETS, playDelayAlertSound, triggerVibrate } from '../utils/audioAlert';
-import { AdminSystemStatusCard } from './AdminSystemStatusCard';
 import {
   Save,
   CheckCircle2,
@@ -144,8 +143,6 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
           <span>Configurações Gerais &amp; Loja</span>
         </div>
       </div>
-
-      <AdminSystemStatusCard />
 
       <form onSubmit={handleSave} className="space-y-6">
           {/* Top Banner with Open/Closed switch */}

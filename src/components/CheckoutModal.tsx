@@ -59,11 +59,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [number, setNumber] = useState(defaultAddr?.number || '');
   const [neighborhood, setNeighborhood] = useState(defaultAddr?.neighborhood || '');
   const [city, setCity] = useState(defaultAddr?.city || 'São Paulo');
-  const [state, setState] = useState(defaultAddr?.state || '');
   const [complement, setComplement] = useState(defaultAddr?.complement || '');
-  const [zipCode, setZipCode] = useState(defaultAddr?.zipCode || '');
-  const [isLookingUpCep, setIsLookingUpCep] = useState(false);
-  const [cepError, setCepError] = useState<string | null>(null);
 
   useEffect(() => {
     if (customer) {
@@ -117,58 +113,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     2
   )}5802BR5920${currentRestaurant.name.slice(0, 20)}6009SAOPAULO62070503***6304E8B2`;
 
-  // Cadastro facilitado: busca automática de endereço pelo CEP (API pública ViaCEP, sem custo/chave).
-  const formatCep = (raw: string) => {
-    const digits = raw.replace(/\D/g, '').slice(0, 8);
-    return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
-  };
-
-  const handleCepChange = (raw: string) => {
-    const formatted = formatCep(raw);
-    setZipCode(formatted);
-    setCepError(null);
-    const digits = formatted.replace(/\D/g, '');
-    if (digits.length === 8) {
-      lookupCep(digits);
-    }
-  };
-
-  const lookupCep = async (digitsOnly: string) => {
-    setIsLookingUpCep(true);
-    setCepError(null);
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${digitsOnly}/json/`);
-      const data = await res.json();
-      if (data.erro) {
-        setCepError('CEP não encontrado. Confira o número ou preencha manualmente.');
-        return;
-      }
-      setStreet(data.logradouro || '');
-      setNeighborhood(data.bairro || '');
-      setCity(data.localidade || city);
-      setState(data.uf || '');
-      // Só o número e complemento continuam manuais — o resto veio automático.
-    } catch {
-      setCepError('Não foi possível buscar o CEP agora. Preencha o endereço manualmente.');
-    } finally {
-      setIsLookingUpCep(false);
-    }
-  };
-
-
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    const opStatus = currentRestaurant.operationalStatus || 'aberto';
-    if (opStatus !== 'aberto') {
-      setSubmitError(
-        currentRestaurant.operationalStatusMessage ||
-          (opStatus === 'abrimos_em_breve'
-            ? 'Esta loja ainda não está aberta para pedidos. Abrimos em breve!'
-            : 'Esta loja está temporariamente fechada e não está aceitando pedidos no momento.')
-      );
-      return;
-    }
 
     if (!customerName.trim() || !customerPhone.trim()) {
       alert('Por favor informe seu nome e telefone/WhatsApp.');
@@ -192,12 +138,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       deliveryAddress:
         orderType === 'delivery'
           ? {
-              zipCode: zipCode.trim() || undefined,
               street: street.trim(),
               number: number.trim(),
               neighborhood: neighborhood.trim(),
               city: city.trim(),
-              state: state.trim() || undefined,
               complement: complement.trim() || undefined,
             }
           : undefined,
@@ -428,9 +372,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 <button
                   onClick={() => {
-                    onOrderSuccess?.(createdOrder);
-                    onOrderPlaced?.(createdOrder);
-                    onClose();
+                    onOrderSuccess(createdOrder);
                   }}
                   className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition-colors"
                 >
@@ -442,28 +384,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           ) : (
             /* CHECKOUT FORM VIEW */
             <form onSubmit={handleSubmitOrder} className="space-y-5">
-              {(currentRestaurant.operationalStatus && currentRestaurant.operationalStatus !== 'aberto') && (
-                <div
-                  className={`p-3.5 rounded-2xl border flex items-start gap-2.5 text-xs ${
-                    currentRestaurant.operationalStatus === 'abrimos_em_breve'
-                      ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
-                      : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
-                  }`}
-                >
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold">
-                      {currentRestaurant.operationalStatus === 'abrimos_em_breve'
-                        ? 'Loja ainda não está aberta para pedidos'
-                        : 'Loja temporariamente fechada'}
-                    </p>
-                    <p className="text-[11px] opacity-90 mt-0.5">
-                      {currentRestaurant.operationalStatusMessage ||
-                        'Não é possível finalizar pedidos enquanto esse status estiver ativo.'}
-                    </p>
-                  </div>
-                </div>
-              )}
               {/* Modality Pill Summary */}
               <div className="flex items-center justify-between p-3 bg-slate-950/60 rounded-2xl border border-slate-800">
                 <div className="flex items-center gap-2 text-xs">
@@ -532,29 +452,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
                     2. Endereço de Entrega
                   </h3>
-
-                  {/* CEP com preenchimento automático (ViaCEP) */}
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">
-                      CEP {isLookingUpCep && <span className="text-amber-400">• buscando endereço...</span>}
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={zipCode}
-                      onChange={(e) => handleCepChange(e.target.value)}
-                      placeholder="00000-000"
-                      maxLength={9}
-                      className="w-full sm:w-40 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                    />
-                    {cepError && <p className="text-[11px] text-rose-400 mt-1">{cepError}</p>}
-                    {!cepError && (
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        Digite o CEP e a rua, bairro e cidade são preenchidos automaticamente.
-                      </p>
-                    )}
-                  </div>
-
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2">
                       <label className="block text-[11px] text-slate-400 mb-1">Rua / Avenida *</label>
@@ -602,29 +499,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         onChange={(e) => setComplement(e.target.value)}
                         placeholder="Apto 42, Bloco B"
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">Cidade</label>
-                      <input
-                        type="text"
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        placeholder="Cidade"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">UF</label>
-                      <input
-                        type="text"
-                        value={state}
-                        onChange={(e) => setState(e.target.value.toUpperCase().slice(0, 2))}
-                        placeholder="SP"
-                        maxLength={2}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 uppercase"
                       />
                     </div>
                   </div>
@@ -840,10 +714,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               {/* Submit CTA */}
               <button
                 type="submit"
-                disabled={isSubmitting || (!!currentRestaurant.operationalStatus && currentRestaurant.operationalStatus !== 'aberto')}
+                disabled={isSubmitting}
                 className={`w-full py-4 px-4 font-black text-sm rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${
-                  isSubmitting || (currentRestaurant.operationalStatus && currentRestaurant.operationalStatus !== 'aberto')
-                    ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                  isSubmitting
+                    ? 'bg-amber-600/60 text-slate-900 cursor-wait'
                     : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 hover:shadow-amber-500/20'
                 }`}
               >

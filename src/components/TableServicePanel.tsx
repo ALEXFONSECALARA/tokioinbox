@@ -52,12 +52,7 @@ interface TableState {
   notes?: string;
 }
 
-// 50 physical tables standard configuration (Salão, Mezanino e Varanda)
-const INITIAL_TABLES: TableState[] = Array.from({ length: 50 }, (_, idx) => ({
-  id: idx + 1,
-  capacity: idx < 15 ? 2 : idx < 35 ? 4 : idx < 45 ? 6 : 8,
-  label: `Mesa ${String(idx + 1).padStart(2, '0')}`,
-}));
+const INITIAL_TABLES: TableState[] = [];
 
 export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   onBackToApp,

@@ -78,6 +78,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     menuItems,
     categories,
     appendItemsToTableOrder,
+    updateOrderItem,
     closeTableOrder,
     activeRestaurantSlug,
     setActiveRestaurantSlug,
@@ -109,6 +110,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   // Item Customizer Panel (Touch Modal / Bottom Drawer)
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
+  const [editingExistingItemId, setEditingExistingItemId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState(1);
   const [editNotes, setEditNotes] = useState('');
   const [editSelectedOptions, setEditSelectedOptions] = useState<any[]>([]);
@@ -128,8 +130,14 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [isClosingTable, setIsClosingTable] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  // Tables range: 1 to 24
-  const tableNumbers = useMemo(() => Array.from({ length: 24 }, (_, i) => i + 1), []);
+  // Fonte única: mesas cadastradas/configuradas no restaurante. Nunca limitar por quantidade fixa.
+  const tableNumbers = useMemo(() => {
+    const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : [];
+    const activeFromOrders = orders
+      .filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber))
+      .map((o) => Number(o.tableNumber));
+    return Array.from(new Set([...configured, ...activeFromOrders])).filter((n) => Number.isInteger(n) && n > 0).sort((a,b) => a-b);
+  }, [restaurant?.activeTables, orders, activeRestaurantSlug]);
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
   const restaurantMenuItems = useMemo(
@@ -478,9 +486,27 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   }, [editingItem, editSelectedOptions]);
 
   // Confirm item into Draft cart
-  const handleConfirmItem = () => {
+  const handleConfirmItem = async () => {
     if (!editingItem) return;
     const station = determineStation(editingItem);
+
+    // Se a edição veio de uma comanda já enviada, persistir no pedido real.
+    if (editingExistingItemId && currentTableOrder) {
+      let finalNoteParts: string[] = [];
+      if (editRemovedIngredients.length > 0) finalNoteParts.push(`SEM: ${editRemovedIngredients.join(', ')}`);
+      if (editNotes.trim()) finalNoteParts.push(editNotes.trim());
+      const result = await updateOrderItem({
+        orderId: currentTableOrder.id,
+        itemId: editingExistingItemId,
+        quantity: editQty,
+        selectedOptions: editSelectedOptions,
+        notes: finalNoteParts.join(' • '),
+      });
+      if (result.success) showToast(`${editingItem.name} atualizado na comanda`, 'success');
+      setEditingItem(null);
+      setEditingExistingItemId(null);
+      return;
+    }
 
     // Format full notes including removed ingredients
     let finalNoteParts: string[] = [];
@@ -526,6 +552,22 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
     setEditingItem(null);
     setEditDraftId(null);
+    setEditingExistingItemId(null);
+  };
+
+  const handleEditSentItem = (item: Order['items'][number]) => {
+    const menuItem = restaurantMenuItems.find((m) => m.id === item.id);
+    if (!menuItem) {
+      showToast('O produto original não está mais disponível no catálogo.', 'error');
+      return;
+    }
+    setEditingExistingItemId(item.id);
+    setEditingItem(menuItem);
+    setEditDraftId(null);
+    setEditQty(item.quantity);
+    setEditNotes(item.notes || '');
+    setEditSelectedOptions(item.selectedOptions || []);
+    setEditRemovedIngredients([]);
   };
 
   // Remove draft item
@@ -575,6 +617,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
         items: payloadItems,
         waiterName,
         customerName: `Mesa ${selectedTable} (${waiterName})`,
+        idempotencyKey: `touch-${activeRestaurantSlug}-${selectedTable}-${draftItems.map((d) => `${d.id}:${d.quantity}`).join('|')}`,
       });
 
       if (res.success) {
@@ -1764,6 +1807,13 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                           <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 uppercase font-bold">
                             {it.stationStatus || currentTableOrder.status}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => handleEditSentItem(it)}
+                            className="px-2 py-1 rounded-lg bg-blue-500/15 text-blue-300 border border-blue-500/30 font-black uppercase text-[9px]"
+                          >
+                            Editar
+                          </button>
                           <span className="font-mono font-black text-slate-300">
                             R$ {(it.quantity * it.unitPrice).toFixed(2)}
                           </span>
