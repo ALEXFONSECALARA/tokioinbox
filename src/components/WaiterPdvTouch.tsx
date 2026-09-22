@@ -135,10 +135,11 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   // Fonte única: mesas cadastradas/configuradas no restaurante. Nunca limitar por quantidade fixa.
   const tableNumbers = useMemo(() => {
     const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : [];
+    const defaultTables = Array.from({ length: 30 }, (_, i) => i + 1);
     const activeFromOrders = orders
       .filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber))
       .map((o) => Number(o.tableNumber));
-    return Array.from(new Set([...configured, ...activeFromOrders]))
+    return Array.from(new Set([...defaultTables, ...configured, ...activeFromOrders]))
       .filter((n) => Number.isInteger(n) && n > 0)
       .sort((a, b) => a - b);
   }, [restaurant?.activeTables, orders, activeRestaurantSlug]);
@@ -939,7 +940,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                     <div className="flex items-start justify-between w-full">
                       <div className="flex flex-col">
                         <span className="text-2xl sm:text-3xl font-black text-white font-mono tracking-tight">
-                          #{tableNum}
+                          {tableNum}
                         </span>
                         <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                           Mesa

@@ -137,12 +137,16 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   // Não cria mesas fictícias fora do cadastro: usa exatamente as mesas configuradas.
   useEffect(() => {
     const configured = Array.isArray(restaurant?.activeTables)
-      ? Array.from(new Set(restaurant.activeTables.filter((n) => Number.isInteger(n) && n > 0))).sort((a, b) => a - b)
+      ? restaurant.activeTables.filter((n) => Number.isInteger(n) && n > 0)
       : [];
-    if (!configured.length) return;
+    // O salão inicia com 30 mesas padrão (1 a 30), preservando mesas adicionais
+    // que já tenham pedidos ativos para evitar qualquer perda de dados.
+    const defaultTables = Array.from({ length: 30 }, (_, i) => i + 1);
+    const normalized = Array.from(new Set([...defaultTables, ...configured])).sort((a, b) => a - b);
+    if (!normalized.length) return;
     setTables((prev) => {
       const byId = new Map(prev.map((t) => [t.id, t]));
-      const next = configured.map((id) => byId.get(id) || ({ id, capacity: 4, label: `Mesa ${id}` } as TableState));
+      const next = normalized.map((id) => byId.get(id) || ({ id, capacity: 4, label: `Mesa ${id}` } as TableState));
       const same = prev.length === next.length && prev.every((t, i) => t.id === next[i].id);
       return same ? prev : next;
     });
