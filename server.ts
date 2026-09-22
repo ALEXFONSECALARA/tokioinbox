@@ -1,5 +1,6 @@
 import { getGeminiModel } from './server/aiModel';
 import 'dotenv/config';
+import { checkDataPersistence } from './server/dataDir';
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
@@ -204,6 +205,21 @@ app.get('/api/health/ready', (req, res) => {
   } catch (err: any) {
     res.status(503).json({ ready: false, error: 'Armazenamento indisponível' });
   }
+});
+
+// Diagnóstico de persistência: só admin vê o caminho real do disco. Ajuda a
+// detectar em produção se o sistema está gravando em um disco efêmero
+// (sintoma: este endpoint reporta "primeira execução" a cada novo deploy).
+app.get('/api/system/persistence-check', ...adminOnly, (req, res) => {
+  const info = checkDataPersistence();
+  res.json({
+    dataDir: info.dataDir,
+    dataDirFromEnv: Boolean(process.env.DATA_DIR?.trim()),
+    looksLikeFreshDisk: !info.usersExisted && !info.markerExisted,
+    warning: !process.env.DATA_DIR?.trim()
+      ? 'DATA_DIR não está definida via variável de ambiente. Em plataformas com disco efêmero (ex.: Render sem Persistent Disk), os dados serão perdidos a cada deploy.'
+      : null,
+  });
 });
 
 // Token assinado para o QR físico de uma mesa. Somente a equipe autorizada pode gerar.
@@ -867,7 +883,12 @@ app.post('/api/print-agent/printers', authenticateStaffOrAgent, (req, res) => {
   }
 });
 
-app.delete('/api/print-agent/printers/:printerId', authenticateStaff, requirePermission('can_manage_settings'), (req, res) => {
+// BUG CORRIGIDO: 'can_manage_settings' não existe em UserPermissions (não é
+// pego pelo bundler/esbuild em runtime, só pelo typecheck) — na prática a
+// checagem de permissão falhava sempre e NINGUÉM conseguia excluir uma
+// impressora, nem o administrador. Alinhado com a mesma permissão já usada
+// para as demais configurações do restaurante (ex.: QR da mesa).
+app.delete('/api/print-agent/printers/:printerId', authenticateStaff, requirePermission('can_configure_restaurant'), (req, res) => {
   try {
     const removed = deletePrinter(req.params.printerId, req.query.slug as string | undefined);
     if (!removed) return res.status(404).json({ success: false, error: 'Impressora não encontrada.' });
@@ -2208,6 +2229,9 @@ app.get('/api/admin/system-audit', ...adminOnly, (req, res) => {
 const STAFF_PATH_RE = /^\/(painelrestaurante|painel|admin|cozinha|bar|drinks|sushibar|pdv|garcom|mesas|salao|caixa|balcao|delivery|kanban|entregador|courier)(\/|$)/i;
 
 async function startServer() {
+  // Verifica se o diretório de dados persistentes parece "novo" em produção — sintoma
+  // direto do bug de senha/usuários resetando a cada deploy (ver server/dataDir.ts).
+  checkDataPersistence();
   // Falha rápido se os dados estiverem inconsistentes (em vez de subir com dados de exemplo)
   initializeCatalog();
   initializeOrders();
