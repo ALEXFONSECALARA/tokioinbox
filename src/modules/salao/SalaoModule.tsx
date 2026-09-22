@@ -18,7 +18,14 @@ export const SalaoModule: React.FC<SalaoModuleProps> = ({
   onNavigateToEnvironment,
 }) => {
   return (
-    <div className="w-full h-full min-h-screen bg-[#07090E]">
+    // BUG CORRIGIDO: "min-h-screen" aqui reintroduzia rolagem de PÁGINA
+    // inteira (min-height não tem teto), quebrando a trava de viewport do
+    // shell do painel (ver body.painel-app-shell em src/utils/index.css) —
+    // era a causa real das "mesas cortadas / mesas que não aparecem".
+    // Agora só "h-full": este módulo preenche exatamente a altura que o
+    // #root já reserva, e quem rola internamente é só a área de conteúdo
+    // dentro do WaiterPdvTouch (ver comentário lá).
+    <div className="w-full h-full bg-[#07090E]">
       <WaiterPdvTouch
         onBackToApp={onBackToApp}
         onOpenAdmin={onOpenAdmin}
