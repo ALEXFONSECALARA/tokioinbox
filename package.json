@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "reset-admin": "tsx scripts/reset-admin-password.ts",
     "test:api": "node scripts/api-security-test.mjs",
     "test:e2e": "python3 scripts/e2e-browser.py",
     "typecheck": "tsc --noEmit"
