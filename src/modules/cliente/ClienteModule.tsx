@@ -12,6 +12,7 @@ import { ShoppingBag, ArrowLeft, Utensils, QrCode } from 'lucide-react';
 
 interface ClienteModuleProps {
   tableNumber?: number | null;
+  tableAccessToken?: string;
   onExitToHome?: () => void;
   onSwitchToTableMode?: (table: number) => void;
 }
@@ -22,6 +23,7 @@ interface ClienteModuleProps {
  */
 export const ClienteModule: React.FC<ClienteModuleProps> = ({
   tableNumber,
+  tableAccessToken,
   onExitToHome,
 }) => {
   const { currentRestaurant, cartItemCount, cartTotal } = useStore();
@@ -39,6 +41,7 @@ export const ClienteModule: React.FC<ClienteModuleProps> = ({
       <div className="min-h-screen bg-[#07090E]">
         <ClientTableView
           tableNumber={manualTableNumber}
+          tableAccessToken={tableAccessToken}
           onExit={onExitToHome || (() => setManualTableNumber(null))}
         />
       </div>
@@ -72,13 +75,10 @@ export const ClienteModule: React.FC<ClienteModuleProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setManualTableNumber(4)}
-            className="px-3 py-1.5 rounded-xl bg-slate-900 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500/10 transition-colors"
-          >
+          <span className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold">
             <QrCode className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Simular Mesa QR</span>
-          </button>
+            Cardápio online
+          </span>
 
           <button
             onClick={() => setIsCartOpen(true)}
