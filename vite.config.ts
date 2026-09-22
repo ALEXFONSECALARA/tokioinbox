@@ -1,50 +1,45 @@
 ```ts
-import { defineConfig } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
+import { defineConfig } from 'vite';
 
-export default defineConfig({
-  plugins: [react()],
+export default defineConfig(() => {
+  return {
+    plugins: [react(), tailwindcss()],
 
-  build: {
-    // O aviso será exibido somente para chunks acima de 1 MB.
-    chunkSizeWarningLimit: 1000,
+    // Dois aplicativos independentes:
+    // cardápio do cliente (index.html)
+    // painel da equipe (painel.html)
+    build: {
+      // Aumenta o limite do aviso de tamanho dos chunks para 1 MB.
+      // Isso NÃO desativa o build nem altera as funcionalidades.
+      chunkSizeWarningLimit: 1000,
 
-    // Otimização do build para produção.
-    target: 'es2020',
-
-    // Gera mapas de código somente se necessário.
-    sourcemap: false,
-
-    // Minificação para reduzir o tamanho dos arquivos.
-    minify: 'esbuild',
-
-    // Divide dependências grandes em chunks separados.
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) {
-            return;
-          }
-
-          if (
-            id.includes('react') ||
-            id.includes('react-dom') ||
-            id.includes('react-router')
-          ) {
-            return 'vendor-react';
-          }
-
-          if (
-            id.includes('@supabase') ||
-            id.includes('supabase')
-          ) {
-            return 'vendor-supabase';
-          }
-
-          return 'vendor';
+      rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          painel: path.resolve(__dirname, 'painel.html'),
         },
       },
     },
-  },
+
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
+    },
+
+    server: {
+      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      // Do not modify—file watching is disabled to prevent flickering
+      // during agent edits.
+      hmr: process.env.DISABLE_HMR !== 'true',
+
+      // Disable file watching when DISABLE_HMR is true
+      // to save CPU during agent edits.
+      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+  };
 });
 ```
