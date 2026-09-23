@@ -1,8 +1,6 @@
 import React from 'react';
 import { useStore } from '../context/StoreContext';
 import { RestaurantSlug, OrderType } from '../types/restaurant';
-import { BrandLogo } from './BrandLogo';
-import { BRAND_NAME } from '../config/brand';
 import {
   ShoppingBag,
   Clock,
@@ -73,29 +71,24 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-40 bg-[#0B0907]/95 backdrop-blur-xl border-b border-[#C5A880]/25 shadow-[0_8px_30px_rgba(0,0,0,0.85)]">
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-3">
-        {/* Brand / Logo */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleLogoClick}
-            className="flex items-center gap-2 group text-left focus:outline-none min-h-[44px]"
-            title="Página Inicial - Todos os Restaurantes"
-          >
-            <BrandLogo size="md" showTagline={false} />
-          </button>
-
-          {/* Breadcrumb in Menu View */}
+        {/* Breadcrumb do Cardápio — sem ícone/nome de marca no topo, conforme solicitado */}
+        <div className="flex items-center gap-3 min-h-[44px]">
           {currentView === 'menu' && (
-            <div className="hidden md:flex items-center gap-1.5 ml-4 pl-4 border-l border-stone-800">
+            <button
+              onClick={handleLogoClick}
+              className="flex items-center gap-1.5 text-left focus:outline-none"
+              title="Página Inicial - Todos os Restaurantes"
+            >
               <span className="text-xs text-stone-400">Cardápio:</span>
               <span className="text-xs font-bold text-[#C5A880] flex items-center gap-1 bg-black/60 px-2.5 py-1 rounded-lg border border-[#C5A880]/30">
                 {currentRestaurant ? `${currentRestaurant.emoji || ''} ${currentRestaurant.name}`.trim() : 'Cardápio'}
               </span>
-            </div>
+            </button>
           )}
         </div>
 
         {/* Restaurant Quick Tabs (Desktop) */}
-        <div className="hidden lg:flex items-center gap-1 bg-[#14110E]/90 p-1 rounded-2xl border border-[#C5A880]/20 backdrop-blur-md overflow-x-auto max-w-xl no-scrollbar">
+        <div className="hidden lg:flex items-center gap-1 bg-[#14110E]/90 p-1 rounded-2xl border border-[#C5A880]/20 backdrop-blur-md flex-1 min-w-0 flex-wrap justify-center">
           {slugs.map((slug) => {
             const rest = restaurants[slug];
             if (!rest) return null;

@@ -723,8 +723,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           ))}
         </div>
 
-        {/* 3. BARRA DE NAVEGAÇÃO DE ABAS */}
-        <div className="max-w-[1600px] mx-auto px-3 sm:px-5 flex items-center gap-1 border-t border-slate-800/80 overflow-x-auto no-scrollbar py-1 admin-compact-tabs">
+        {/* 3. BARRA DE NAVEGAÇÃO DE ABAS — quebra em várias linhas, nunca corta nem exige rolagem */}
+        <div className="max-w-[1600px] mx-auto px-3 sm:px-5 flex flex-wrap items-center gap-1.5 border-t border-slate-800/80 py-2 admin-compact-tabs">
           {/* 01. Painel Geral Tab (food nexoro.png) */}
           {isTabInCategory('dashboard') && (
             <button
