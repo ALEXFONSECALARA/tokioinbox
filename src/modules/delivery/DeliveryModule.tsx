@@ -11,7 +11,7 @@ interface DeliveryModuleProps {
  */
 export const DeliveryModule: React.FC<DeliveryModuleProps> = ({ onBackToApp }) => {
   return (
-    <div className="w-full h-full min-h-screen bg-[#07090E]">
+    <div className="w-full h-full bg-[#07090E]">
       <DeliveryOnlineOrdersView onBackToApp={onBackToApp} />
     </div>
   );
