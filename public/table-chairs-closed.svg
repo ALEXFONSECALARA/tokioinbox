@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 170">
+<ellipse cx="120" cy="146" rx="90" ry="14" fill="#000" opacity=".34"/>
+<path d="M55 77 120 42l65 35-65 35z" fill="#3B3157" stroke="#A78BFA" stroke-width="3"/><path d="M55 77v24l65 35v-24zM185 77v24l-65 35v-24z" fill="#28203F" stroke="#7258B4" stroke-width="3"/>
+<g fill="#31284B" stroke="#9B83D8" stroke-width="3"><path d="M20 68q0-13 13-13h18v30H33q-13 0-13-17z"/><path d="M190 55h18q13 0 13 13t-13 17h-18z"/><path d="M101 18h38q9 0 9 9v17h-56V27q0-9 9-9z"/><path d="M101 130h38v18q0 9-9 9h-20q-9 0-9-9z"/></g>
+<path d="m108 69 9 9 17-20" fill="none" stroke="#A78BFA" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="120" y="112" text-anchor="middle" fill="#C4B5FD" font-family="Arial" font-size="12" font-weight="900">FECHADA EM USO</text>
+</svg>
