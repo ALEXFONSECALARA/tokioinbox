@@ -53,7 +53,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     else setIsCartOpen(true);
   };
 
-  const currentRestaurant = restaurants[activeRestaurantSlug] || restaurants.japones;
+  const currentRestaurant =
+    restaurants[activeRestaurantSlug] ||
+    restaurants.japones ||
+    Object.values(restaurants)[0] ||
+    null;
   const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
   const cartTotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
 
@@ -84,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="hidden md:flex items-center gap-1.5 ml-4 pl-4 border-l border-stone-800">
               <span className="text-xs text-stone-400">Cardápio:</span>
               <span className="text-xs font-bold text-[#C5A880] flex items-center gap-1 bg-black/60 px-2.5 py-1 rounded-lg border border-[#C5A880]/30">
-                {currentRestaurant.emoji} {currentRestaurant.name}
+                {currentRestaurant ? `${currentRestaurant.emoji || ''} ${currentRestaurant.name}`.trim() : 'Cardápio'}
               </span>
             </div>
           )}
