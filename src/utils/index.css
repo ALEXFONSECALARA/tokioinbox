@@ -196,8 +196,21 @@ body.painel-app-shell #root > * {
 /* ============================================================
    PDV v3 — auditoria visual / responsividade
    ============================================================ */
+/* CAUSA RAIZ de vários bugs de "modal criou rolagem" / conteúdo cortado:
+   html/body/#root só tinham min-height (sem "height" real), então todo
+   componente que usa "h-full" (Caixa, Salão, PDV Touch, AdminLayout...)
+   não tinha uma base percentual válida para calcular sua altura — o
+   navegador cai para "auto", o painel cresce com o conteúdo e passa a
+   depender de rolagem de PÁGINA, cortando rodapés fixos (ex.: botão
+   "Confirmar Recebimento" do Recebimento Presencial) para fora da tela.
+   Com "height: 100%" (e 100dvh como piso em mobile), toda a cadeia de
+   "h-full" volta a funcionar e cada tela rola SÓ na sua própria área
+   interna, como já era a intenção original de cada componente. Isso não
+   corta nada: páginas comuns (cardápio do cliente, telas com
+   min-h-screen) continuam crescendo e rolando normalmente. */
 html, body, #root {
-  min-height: 100%;
+  height: 100%;
+  min-height: 100dvh;
 }
 
 button, input, select, textarea {
