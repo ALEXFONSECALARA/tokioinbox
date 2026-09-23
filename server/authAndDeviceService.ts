@@ -30,6 +30,8 @@ export interface UserPermissions {
   can_view_reports: boolean;
   can_configure_restaurant: boolean;
   can_manage_notifications: boolean;
+  can_delete_orders?: boolean;
+  can_print_tickets?: boolean;
 }
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
@@ -476,6 +478,8 @@ export function createUser(data: {
   const basePerms = ROLE_DEFAULT_PERMISSIONS[data.role] || ROLE_DEFAULT_PERMISSIONS.caixa;
   const finalPerms: UserPermissions = {
     ...basePerms,
+    can_delete_orders: false,
+    can_print_tickets: Boolean(basePerms.can_create_orders || basePerms.can_view_orders),
     ...(data.customPermissions || {}),
   };
 
@@ -537,7 +541,7 @@ export function updateUser(
   }
 
   const newRole = updates.role || user.role;
-  let newPermissions = { ...user.permissions };
+  let newPermissions: UserPermissions = { ...ROLE_DEFAULT_PERMISSIONS[newRole], ...user.permissions, can_delete_orders: Boolean(user.permissions.can_delete_orders), can_print_tickets: Boolean(user.permissions.can_print_tickets) };
   if (updates.role && updates.role !== user.role) {
     newPermissions = { ...ROLE_DEFAULT_PERMISSIONS[updates.role] };
   }
