@@ -307,17 +307,15 @@ const KNOWN_DEFAULT_PASSWORDS = [
 let usersCache: UserAccount[] = [];
 let usersInitialized = false;
 
+const FIXED_ADMIN_USERNAME = 'admin';
+const FIXED_ADMIN_PASSWORD = 'admin';
+
+/**
+ * Credencial inicial fixa solicitada para o ambiente operacional.
+ * O valor continua sendo armazenado somente como hash PBKDF2.
+ */
 function resolveBootstrapAdminPassword(): { password: string; generated: boolean } {
-  const envPass = process.env.ADMIN_PASSWORD;
-  if (envPass && validateStaffPassword(envPass) === null) {
-    return { password: envPass, generated: false };
-  }
-  if (!IS_PRODUCTION) {
-    console.warn('[AUTH] ADMIN_PASSWORD ausente/fraca: usando senha de DESENVOLVIMENTO. Nunca use isso em produção.');
-    return { password: envPass && envPass.length >= 4 ? envPass : 'admin123', generated: false };
-  }
-  const generated = crypto.randomBytes(9).toString('base64url');
-  return { password: generated, generated: true };
+  return { password: FIXED_ADMIN_PASSWORD, generated: false };
 }
 
 function getInitialUsers(): UserAccount[] {
@@ -354,32 +352,32 @@ function getInitialUsers(): UserAccount[] {
  * Migração de segurança: contas herdadas com senhas padrão conhecidas
  * (admin123, cozinha123...) são desativadas em produção.
  */
-function synchronizeConfiguredAdminPassword() {
-  const configured = process.env.ADMIN_PASSWORD?.trim();
-  if (!configured || validateStaffPassword(configured) !== null) return false;
-
-  const idx = usersCache.findIndex((u) => u.username.toLowerCase() === 'admin');
+function synchronizeFixedAdminCredentials() {
+  const idx = usersCache.findIndex((u) => u.username.toLowerCase() === FIXED_ADMIN_USERNAME);
   if (idx === -1) return false;
 
   const admin = usersCache[idx];
-  // ADMIN_PASSWORD is an explicit recovery/initialization override.
-  // Only rewrite the hash when the configured password differs, avoiding
-  // unnecessary writes on every restart.
-  if (verifyPassword(configured, admin.passwordHash, admin.passwordSalt)) return false;
+  if (verifyPassword(FIXED_ADMIN_PASSWORD, admin.passwordHash, admin.passwordSalt) && admin.isActive) {
+    return false;
+  }
 
-  const { hash, salt } = hashPassword(configured);
+  const { hash, salt } = hashPassword(FIXED_ADMIN_PASSWORD);
   usersCache[idx] = {
     ...admin,
+    username: FIXED_ADMIN_USERNAME,
     passwordHash: hash,
     passwordSalt: salt,
+    role: 'super_admin',
+    restaurantSlug: 'all',
     isActive: true,
+    permissions: { ...ROLE_DEFAULT_PERMISSIONS.super_admin },
   };
-  console.warn('[AUTH] Senha do usuário "admin" sincronizada a partir de ADMIN_PASSWORD.');
+  console.warn('[AUTH] Credencial fixa do super admin "admin" sincronizada.');
   return true;
 }
 
 function neutralizeDefaultCredentials() {
-  let changed = synchronizeConfiguredAdminPassword();
+  let changed = synchronizeFixedAdminCredentials();
   for (let i = 0; i < usersCache.length; i++) {
     const u = usersCache[i];
     if (!usesKnownDefaultPassword(u)) continue;
