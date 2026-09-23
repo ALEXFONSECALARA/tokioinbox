@@ -302,7 +302,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
   // Not authenticated gate
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-[#07090E] flex flex-col items-center justify-center p-4">
+      <div className="h-full bg-[#07090E] flex flex-col items-center justify-center p-4">
         <div className="bg-[#0E121B] border border-[#E3BD6A]/30 rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.9)] text-center space-y-5">
           <div className="w-16 h-16 rounded-2xl bg-[#E3BD6A]/15 text-[#E3BD6A] border border-[#E3BD6A]/40 flex items-center justify-center mx-auto text-2xl shadow-[0_0_20px_rgba(227,189,106,0.25)]">
             <Lock className="w-8 h-8" />
@@ -404,7 +404,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
 
   if (!hasAdminAccess) {
     return (
-      <div className="min-h-screen bg-[#07090E] flex flex-col items-center justify-center p-4">
+      <div className="h-full bg-[#07090E] flex flex-col items-center justify-center p-4">
         <div className="bg-[#0E121B] border border-rose-500/30 rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.9)] text-center space-y-5">
           <div className="w-16 h-16 rounded-2xl bg-rose-500/15 text-rose-400 border border-rose-500/40 flex items-center justify-center mx-auto text-2xl shadow-[0_0_20px_rgba(244,63,94,0.25)]">
             <Lock className="w-8 h-8" />
@@ -443,7 +443,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
   }
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col font-sans">
+    <div className="h-full bg-[#07090E] text-slate-100 flex flex-col font-sans overflow-hidden">
       {/* Simulation Bar (View As) */}
       {viewAsRole !== 'superadmin' && (
         <AdminViewAsBar
@@ -1199,7 +1199,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
       </header>
 
       {/* 4. CONTEÚDO DA ABA ATIVA */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+      <main className="flex-1 min-h-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full overflow-y-auto">
         {activeTab === 'dashboard' && (
           <AdminNexoroDashboard
             onNavigateTab={(tab) => setActiveTab(tab as any)}

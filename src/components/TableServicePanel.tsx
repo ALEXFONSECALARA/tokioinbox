@@ -518,7 +518,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   // Render Lock Screen if not authenticated
   if (!isUnlocked) {
     return (
-      <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col justify-center items-center p-4 selection:bg-amber-500 selection:text-black">
+      <div className="h-full bg-[#07090E] text-slate-100 flex flex-col justify-center items-center p-4 selection:bg-amber-500 selection:text-black">
         <div className="w-full max-w-md bg-stone-900/90 backdrop-blur-2xl border border-stone-800 rounded-3xl p-6 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] text-center space-y-6">
           {/* Header */}
           <div className="space-y-2">
@@ -702,7 +702,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black">
+    <div className="h-full bg-[#07090E] text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black overflow-hidden">
       {/* Top Header Bar for Table Service */}
       <header className="sticky top-0 z-30 bg-[#0B0907]/95 backdrop-blur-xl border-b border-stone-800 px-4 py-3 shadow-lg">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
@@ -806,7 +806,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
       </header>
 
       {/* Main Body */}
-      <main className="max-w-7xl mx-auto w-full p-4 sm:p-6 space-y-6 flex-1">
+      <main className="max-w-7xl mx-auto w-full p-4 sm:p-6 space-y-6 flex-1 min-h-0 overflow-y-auto">
         {/* Active Waiter Calls Alert Strip */}
         {Object.keys(waiterCalls).length > 0 && (
           <div className="bg-gradient-to-r from-rose-950 via-rose-900 to-amber-950 border border-rose-500/60 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 animate-pulse shadow-xl">

@@ -144,7 +144,7 @@ export const CentralKanbanView: React.FC<CentralKanbanViewProps> = ({ onBackToAp
   };
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col select-none">
+    <div className="h-full bg-[#07090E] text-slate-100 flex flex-col select-none overflow-hidden">
       {/* Top Header */}
       <header className="bg-[#0B0F19] border-b border-slate-800/80 px-4 py-3 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-20">
         <div className="flex items-center gap-3">
@@ -314,7 +314,7 @@ export const CentralKanbanView: React.FC<CentralKanbanViewProps> = ({ onBackToAp
       </div>
 
       {/* Kanban Board Columns Grid */}
-      <div className="flex-1 p-4 overflow-x-auto">
+      <div className="flex-1 min-h-0 p-4 overflow-x-auto">
         <div className="flex gap-4 min-w-max h-[calc(100vh-160px)] pb-2">
           {columns.map((col) => {
             const columnOrders = filteredOrders.filter((o) => col.statuses.includes(o.status));

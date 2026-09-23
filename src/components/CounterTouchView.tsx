@@ -187,7 +187,7 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp,
   }, [orders, activeRestaurantSlug]);
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col select-none">
+    <div className="h-full bg-[#07090E] text-slate-100 flex flex-col select-none overflow-hidden">
       {/* Top Header */}
       <header className="bg-[#0B0F19] border-b border-slate-800/80 px-4 py-3 flex items-center justify-between gap-4 sticky top-0 z-20">
         <div className="flex items-center gap-3">

@@ -116,7 +116,7 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
   };
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col font-sans">
+    <div className="h-full bg-[#07090E] text-slate-100 flex flex-col font-sans overflow-hidden">
       {/* Header */}
       <header className="bg-[#0D111A] border-b border-slate-800/80 px-4 lg:px-8 py-4 sticky top-0 z-30 shadow-xl">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -286,7 +286,7 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
       </header>
 
       {/* Orders Grid */}
-      <main className="max-w-7xl mx-auto p-4 lg:p-8 flex-1 w-full">
+      <main className="max-w-7xl mx-auto p-4 lg:p-8 flex-1 min-h-0 w-full overflow-y-auto">
         {filteredOrders.length === 0 ? (
           <div className="bg-[#0F131D] border border-slate-800 rounded-3xl p-12 text-center my-8">
             <div className="w-16 h-16 rounded-full bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto mb-4 text-slate-400">

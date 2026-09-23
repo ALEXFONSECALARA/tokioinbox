@@ -192,9 +192,9 @@ export const StationKdsView: React.FC<StationKdsViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col font-sans p-4 sm:p-6 select-none">
-      {/* Station Header */}
-      <header className="bg-[#10141D] border border-slate-800/90 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xl mb-6">
+    <div className="h-full bg-[#07090E] text-slate-100 flex flex-col font-sans select-none overflow-hidden">
+      {/* Station Header — fixo */}
+      <header className="shrink-0 m-4 sm:m-6 mb-0 bg-[#10141D] border border-slate-800/90 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xl">
         <div className="flex items-center gap-4">
           {onBack && (
             <button
@@ -249,6 +249,8 @@ export const StationKdsView: React.FC<StationKdsViewProps> = ({
         </div>
       </header>
 
+      {/* Área de conteúdo — único container com rolagem interna da tela */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 flex flex-col">
       {/* Orders List */}
       {stationOrders.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center bg-[#10141D]/50 border border-slate-800/60 rounded-3xl p-12 text-center">
@@ -409,6 +411,7 @@ export const StationKdsView: React.FC<StationKdsViewProps> = ({
           })}
         </div>
       )}
+      </div>
     </div>
   );
 };
