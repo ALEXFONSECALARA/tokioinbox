@@ -1,6 +1,5 @@
 import React from 'react';
 import { useStore } from '../context/StoreContext';
-import { RestaurantSlug, OrderType } from '../types/restaurant';
 import {
   ShoppingBag,
   Clock,
@@ -28,7 +27,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const {
     restaurants,
     activeRestaurantSlug,
-    setActiveRestaurantSlug,
     cart,
     setIsCartOpen,
     orders,
@@ -64,9 +62,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     (o) => o.status !== 'entregue' && o.status !== 'cancelado'
   ).length;
 
-  // Dynamic restaurant slugs from available restaurants
-  const slugs = Object.keys(restaurants) as RestaurantSlug[];
-
   return (
     <header className="sticky top-0 z-40 bg-[#0B0907]/95 backdrop-blur-xl border-b border-[#C5A880]/25 shadow-[0_8px_30px_rgba(0,0,0,0.85)]">
       {/* Main Navbar */}
@@ -85,32 +80,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </button>
           )}
-        </div>
-
-        {/* Restaurant Quick Tabs (Desktop) */}
-        <div className="hidden lg:flex items-center gap-1 bg-[#14110E]/90 p-1 rounded-2xl border border-[#C5A880]/20 backdrop-blur-md flex-1 min-w-0 flex-wrap justify-center">
-          {slugs.map((slug) => {
-            const rest = restaurants[slug];
-            if (!rest) return null;
-            const isSelected = currentView === 'menu' && activeRestaurantSlug === slug;
-            return (
-              <button
-                key={slug}
-                onClick={() => {
-                  setActiveRestaurantSlug(slug);
-                  if (setCurrentView) setCurrentView('menu');
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 ${
-                  isSelected
-                    ? 'bg-gradient-to-r from-[#C5A880] to-[#B85D3B] text-white font-bold shadow-sm'
-                    : 'text-stone-300 hover:text-white hover:bg-stone-800/60'
-                }`}
-              >
-                <span>{rest.emoji}</span>
-                <span>{rest.name.split(' ')[0]}</span>
-              </button>
-            );
-          })}
         </div>
 
         {/* Right actions */}
@@ -162,31 +131,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile Restaurant Horizontal Selector */}
-      <div className="lg:hidden px-3 py-2 bg-[#0B0907] border-t border-[#C5A880]/20 flex items-center gap-2 overflow-x-auto no-scrollbar">
-        {slugs.map((slug) => {
-          const rest = restaurants[slug];
-          if (!rest) return null;
-          const isSelected = currentView === 'menu' && activeRestaurantSlug === slug;
-          return (
-            <button
-              key={slug}
-              onClick={() => {
-                setActiveRestaurantSlug(slug);
-                if (setCurrentView) setCurrentView('menu');
-              }}
-              className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-colors flex items-center gap-1.5 ${
-                isSelected
-                  ? 'bg-gradient-to-r from-[#C5A880] to-[#B85D3B] text-white font-bold shadow'
-                  : 'bg-black/60 text-stone-300 hover:text-white border border-stone-800'
-              }`}
-            >
-              <span>{rest.emoji}</span>
-              <span>{rest.name}</span>
-            </button>
-          );
-        })}
-      </div>
     </header>
   );
 };
