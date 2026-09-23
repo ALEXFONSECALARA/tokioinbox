@@ -16,7 +16,7 @@ import { ClienteModule } from '../modules/cliente/ClienteModule';
 import { MenuItem, Order, RestaurantSlug } from '../types/restaurant';
 import { getRestaurantPath, resolveRestaurantFromUrlPath, updateBrowserUrl } from '../utils/urlRouting';
 import { BRAND_CONFIG, BRAND_NAME } from '../config/brand';
-import { ShoppingBag, Clock, Home, Utensils, Sparkles, User } from 'lucide-react';
+import { ShoppingBag, Clock, Utensils, Sparkles, User } from 'lucide-react';
 
 /**
  * CARDÁPIO DO CLIENTE
@@ -156,11 +156,6 @@ export function CustomerApp() {
     return <ClienteModule tableNumber={clientTableNumber} tableAccessToken={clientTableAccessToken} onExitToHome={goHome} />;
   }
 
-  const restaurantNames = Object.values(restaurants)
-    .filter((r: any) => r.isActive !== false)
-    .map((r: any) => r.name)
-    .join(' • ');
-
   return (
     <div className="min-h-screen bg-matte-black text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black">
       <Navbar
@@ -232,10 +227,6 @@ export function CustomerApp() {
       {/* Barra inferior (mobile) */}
       {cartItemCount === 0 && !isCartOpen && !isCheckoutOpen && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#0c0c10]/95 backdrop-blur-xl border-t border-amber-500/20 px-3 py-2 flex items-center justify-around">
-          <button onClick={goHome} className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl ${view === 'home' ? 'text-amber-400 font-bold' : 'text-slate-400'}`}>
-            <Home className="w-5 h-5" />
-            <span className="text-[10px]">Início</span>
-          </button>
           <button onClick={() => setView('menu')} className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl ${view === 'menu' ? 'text-amber-400 font-bold' : 'text-slate-400'}`}>
             <Utensils className="w-5 h-5" />
             <span className="text-[10px]">Cardápio</span>
@@ -318,11 +309,20 @@ export function CustomerApp() {
         />
       )}
 
-      <footer className="border-t border-slate-900 bg-slate-950/80 py-8 text-center text-xs text-slate-500 space-y-3 mt-auto pb-16">
-        <p className="font-semibold text-slate-400">
-          {BRAND_NAME} • {BRAND_CONFIG.tagline}
-        </p>
-        {restaurantNames && <p className="text-[11px] text-slate-600">{restaurantNames}</p>}
+      <footer className="mt-10 border-t border-[#C5A880]/20 bg-[#080808] px-4 py-7 sm:py-9 pb-20">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4 text-center sm:text-left">
+          <div className="shrink-0" aria-label="NEXORO FOOD SYSTEM">
+            <BrandLogo size="md" showTagline={false} />
+          </div>
+          <div className="space-y-1">
+            <div className="text-sm sm:text-base font-black tracking-[0.12em] text-white uppercase">
+              NEXORO FOOD SYSTEM
+            </div>
+            <div className="text-xs sm:text-sm font-semibold text-[#C5A880]">
+              MAIS QUE PEDIDOS, UMA EXPERIÊNCIA COMPLETA. • Cozinhas Nobres em Pedido Único
+            </div>
+          </div>
+        </div>
       </footer>
     </div>
   );
