@@ -2,14 +2,10 @@ import React from 'react';
 import { useStore } from '../context/StoreContext';
 import { RestaurantSlug, OrderType } from '../types/restaurant';
 import { BrandLogo } from './BrandLogo';
-import { BRAND_CONFIG, BRAND_NAME, BRAND_SHORT_NAME } from '../config/brand';
+import { BRAND_NAME } from '../config/brand';
 import {
   ShoppingBag,
   Clock,
-  MapPin,
-  Utensils,
-  ChevronRight,
-  Search,
   User,
 } from 'lucide-react';
 import { useCustomerAuth } from '../context/CustomerAuthContext';
@@ -71,23 +67,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-[#0B0907]/95 backdrop-blur-xl border-b border-[#C5A880]/25 shadow-[0_8px_30px_rgba(0,0,0,0.85)]">
-      {/* Top Banner Bar */}
-      <div className="bg-gradient-to-r from-[#C5A880] via-[#B85D3B] to-[#7D3F27] text-white text-xs font-black px-4 py-1.5 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
-          <span className="bg-black/85 text-[#C5A880] px-2 py-0.5 rounded-md text-[10px] font-black tracking-widest uppercase border border-[#C5A880]/40">
-            {BRAND_NAME.toUpperCase()}
-          </span>
-          <span className="text-[11px] sm:text-xs text-stone-100 font-bold">
-            {BRAND_CONFIG.tagline} • {slugs.length} Cozinhas Nobres em 1 Pedido Único
-          </span>
-        </div>
-        <div className="hidden sm:flex items-center gap-4 text-stone-100">
-          <span className="flex items-center gap-1 text-xs font-extrabold">
-            <Clock className="w-3.5 h-3.5 text-[#C5A880]" /> Entregas em 30 a 45 min
-          </span>
-        </div>
-      </div>
-
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-3">
         {/* Brand / Logo */}
@@ -113,16 +92,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Restaurant Quick Tabs (Desktop) */}
         <div className="hidden lg:flex items-center gap-1 bg-[#14110E]/90 p-1 rounded-2xl border border-[#C5A880]/20 backdrop-blur-md overflow-x-auto max-w-xl no-scrollbar">
-          <button
-            onClick={handleGoHome}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
-              currentView === 'home'
-                ? 'bg-stone-800 text-white font-bold'
-                : 'text-stone-400 hover:text-white'
-            }`}
-          >
-            🏠 Início
-          </button>
           {slugs.map((slug) => {
             const rest = restaurants[slug];
             if (!rest) return null;
@@ -198,16 +167,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Restaurant Horizontal Selector */}
       <div className="lg:hidden px-3 py-2 bg-[#0B0907] border-t border-[#C5A880]/20 flex items-center gap-2 overflow-x-auto no-scrollbar">
-        <button
-          onClick={handleGoHome}
-          className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-colors flex items-center gap-1 ${
-            currentView === 'home'
-              ? 'bg-gradient-to-r from-[#C5A880] to-[#B85D3B] text-white shadow-md'
-              : 'bg-black/60 text-stone-400 hover:text-white border border-stone-800'
-          }`}
-        >
-          🏠 Início
-        </button>
         {slugs.map((slug) => {
           const rest = restaurants[slug];
           if (!rest) return null;
