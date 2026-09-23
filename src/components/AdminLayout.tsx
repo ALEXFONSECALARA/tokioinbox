@@ -458,7 +458,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
 
       {/* 1. CABEÇALHO MULTIRRESTAURANTE PRINCIPAL */}
       <header className="sticky top-0 z-40 bg-[#0A0D14]/95 border-b border-[#E3BD6A]/20 backdrop-blur-md shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Brand Logo & Sistema Online */}
           <div className="flex items-center gap-3">
             <BrandLogo size="sm" showTagline={false} />
@@ -600,7 +600,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
 
         {/* 2. RESUMO OPERACIONAL — PAINEL MODERNO E LIMPO */}
         <div className="bg-[#07090E] border-t border-[#E3BD6A]/15 py-2.5 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+          <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
             {/* Status dos Pedidos */}
             <div className="flex items-center gap-2 shrink-0">
               {/* Recebidos */}
@@ -704,7 +704,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
         </div>
 
         {/* BARRA DAS 6 CATEGORIAS CANÔNICAS */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2.5 pb-1 flex items-center gap-1.5 border-t border-slate-800/80 overflow-x-auto no-scrollbar">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-2.5 pb-1 flex items-center gap-1.5 border-t border-slate-800/80 overflow-x-auto no-scrollbar">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 mr-1 shrink-0">
             Categorias:
           </span>
@@ -724,7 +724,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
         </div>
 
         {/* 3. BARRA DE NAVEGAÇÃO DE ABAS */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-1 border-t border-slate-800/80 overflow-x-auto no-scrollbar py-1.5">
+        <div className="max-w-[1600px] mx-auto px-3 sm:px-5 flex items-center gap-1 border-t border-slate-800/80 overflow-x-auto no-scrollbar py-1 admin-compact-tabs">
           {/* 01. Painel Geral Tab (food nexoro.png) */}
           {isTabInCategory('dashboard') && (
             <button
@@ -1199,7 +1199,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
       </header>
 
       {/* 4. CONTEÚDO DA ABA ATIVA */}
-      <main className="flex-1 min-h-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full overflow-y-auto">
+      <main className="flex-1 min-h-0 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full overflow-y-auto">
         {activeTab === 'dashboard' && (
           <AdminNexoroDashboard
             onNavigateTab={(tab) => setActiveTab(tab as any)}

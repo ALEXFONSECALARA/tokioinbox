@@ -350,7 +350,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
 
       {/* Cart Drawer */}
       {isCartOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-end animate-fadeIn">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex justify-end animate-fadeIn">
           <div className="w-full max-w-md bg-[#10141E] border-l border-slate-800 h-full flex flex-col p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div className="flex items-center gap-2">

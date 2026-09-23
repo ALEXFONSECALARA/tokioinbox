@@ -104,7 +104,7 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
   const isWidth58mm = printerSettings?.paperWidth === '58mm';
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+    <div className="modal-viewport fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full overflow-hidden shadow-2xl my-auto animate-in fade-in duration-200">
         {/* Header */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/70">
@@ -270,7 +270,7 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
         )}
 
         {/* THERMAL PAPER VISUAL CONTAINER */}
-        <div className="p-4 bg-slate-950/80 max-h-[50vh] overflow-y-auto">
+        <div className="p-4 bg-slate-950/95 max-h-[50vh] overflow-y-auto">
           <div
             id="thermal-receipt-body"
             className={`bg-amber-50 text-slate-900 font-mono text-xs p-5 rounded-md shadow-inner border border-amber-200/60 mx-auto ${

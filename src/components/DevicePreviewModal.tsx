@@ -95,7 +95,7 @@ export const DevicePreviewModal: React.FC<DevicePreviewModalProps> = ({ isOpen, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#08090C]/95 backdrop-blur-xl flex flex-col overflow-hidden text-slate-100 animate-fadeIn">
+    <div className="modal-viewport fixed inset-0 z-50 bg-[#08090C]/95 backdrop-blur-xl flex flex-col overflow-hidden text-slate-100 animate-fadeIn">
       {/* Top Controls Toolbar */}
       <header className="h-16 border-b border-[#232936] bg-[#12151C] px-4 flex items-center justify-between gap-3 shrink-0 shadow-lg">
         <div className="flex items-center gap-3">

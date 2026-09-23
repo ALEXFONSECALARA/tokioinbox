@@ -86,7 +86,7 @@ export const OperationalWorkflowModal: React.FC<OperationalWorkflowModalProps> =
   return (
     <div
       id="modal-operational-workflow"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md overflow-y-auto animate-fadeIn"
+      className="modal-viewport fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/95 backdrop-blur-md overflow-y-auto animate-fadeIn"
       onClick={onClose}
     >
       <div

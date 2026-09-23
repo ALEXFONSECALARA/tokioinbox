@@ -144,7 +144,7 @@ export const CentralKanbanView: React.FC<CentralKanbanViewProps> = ({ onBackToAp
   };
 
   return (
-    <div className="h-full bg-[#07090E] text-slate-100 flex flex-col select-none overflow-hidden">
+    <div className="min-h-full h-full bg-[#07090E] text-slate-100 flex flex-col select-none overflow-hidden">
       {/* Top Header */}
       <header className="bg-[#0B0F19] border-b border-slate-800/80 px-4 py-3 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-20">
         <div className="flex items-center gap-3">
@@ -313,16 +313,17 @@ export const CentralKanbanView: React.FC<CentralKanbanViewProps> = ({ onBackToAp
         </div>
       </div>
 
-      {/* Kanban Board Columns Grid */}
-      <div className="flex-1 min-h-0 p-4 overflow-x-auto">
-        <div className="flex gap-4 min-w-max h-[calc(100vh-160px)] pb-2">
+      {/* Kanban Board — responsivo: 1/2/3/5 colunas conforme a largura.
+          Evita min-w-max e evita o corte horizontal que ocorria no painel admin. */}
+      <div className="flex-1 min-h-0 p-3 sm:p-4 overflow-y-hidden">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 h-full min-h-[520px]">
           {columns.map((col) => {
             const columnOrders = filteredOrders.filter((o) => col.statuses.includes(o.status));
 
             return (
               <div
                 key={col.id}
-                className="w-80 sm:w-88 flex flex-col bg-[#0B0F19] rounded-2xl border border-slate-800/80 shadow-xl overflow-hidden"
+                className="min-w-0 min-h-0 flex flex-col bg-[#0B0F19] rounded-2xl border border-slate-800/80 shadow-xl overflow-hidden"
               >
                 {/* Column Header */}
                 <div className="p-3 bg-[#0E1320] border-b border-slate-800/80 flex items-center justify-between">

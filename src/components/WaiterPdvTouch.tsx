@@ -176,15 +176,25 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
   // Fonte única: mesas cadastradas/configuradas no restaurante. Nunca limitar por quantidade fixa.
   const tableNumbers = useMemo(() => {
-    const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : [];
-    const defaultTables = Array.from({ length: 30 }, (_, i) => i + 1);
+    const hasConfiguredTables = Array.isArray(restaurant?.activeTables);
+    const configured = hasConfiguredTables
+      ? (restaurant?.activeTables || [])
+      : Array.from({ length: 30 }, (_, i) => i + 1);
     const activeFromOrders = orders
       .filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber))
       .map((o) => Number(o.tableNumber));
-    return Array.from(new Set([...defaultTables, ...configured, ...activeFromOrders]))
-      .filter((n) => Number.isInteger(n) && n > 0)
+    // Cadastro é a fonte principal. Mesas com pedidos ativos continuam visíveis
+    // para evitar perda de acesso à comanda, mesmo que alguém tenha tentado removê-las.
+    return Array.from(new Set([...configured, ...activeFromOrders]))
+      .filter((n) => Number.isInteger(n) && n > 0 && n <= 999)
       .sort((a, b) => a - b);
   }, [restaurant?.activeTables, orders, activeRestaurantSlug]);
+
+  const getTableVisual = (statusKey: string) => {
+    if (statusKey === 'livre') return '/table-chairs-open.svg';
+    if (statusKey === 'ocupada' || statusKey === 'atendimento' || statusKey === 'aguardando') return '/table-chairs-use.svg';
+    return '/table-chairs-closed.svg';
+  };
   const restaurantMenuItems = useMemo(
     () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
     [menuItems, restaurant?.slug]
@@ -1023,19 +1033,27 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                       status.cardBg
                     } ${isCurrent ? 'ring-4 ring-amber-400/80' : ''}`}
                   >
+                    {/* Imagem de mesa + cadeiras: reforça visualmente livre/em uso/fechamento */}
+                    <img
+                      src={getTableVisual(status.key)}
+                      alt=""
+                      aria-hidden="true"
+                      className="absolute inset-0 m-auto w-[72px] h-[52px] object-contain opacity-25 pointer-events-none"
+                    />
+
                     {/* Top row: Mesa Number & Status Indicator */}
-                    <div className="flex items-start justify-between w-full">
-                      <span className="text-xl font-black text-white font-mono tracking-tight leading-none">
+                    <div className="relative z-10 flex items-start justify-between w-full">
+                      <span className="text-xl font-black text-white font-mono tracking-tight leading-none drop-shadow-md">
                         {tableNum}
                       </span>
-                      <span className={`w-2 h-2 rounded-full shrink-0 mt-1 ${status.dot}`} />
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${status.dot}`} />
                     </div>
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider -mt-1">
+                    <span className="relative z-10 text-[9px] text-slate-400 font-bold uppercase tracking-wider -mt-1">
                       Mesa
                     </span>
 
                     {/* Bottom Info: Order items or Free status */}
-                    <div className="mt-1.5 pt-1.5 border-t border-slate-800/80 w-full">
+                    <div className="relative z-10 mt-1.5 pt-1.5 border-t border-slate-800/80 w-full">
                       {order ? (
                         <div className="space-y-0">
                           <div className="flex items-center justify-between text-[10px]">
@@ -1358,8 +1376,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               </div>
 
               {/* COLUNA DIREITA: CARRINHO FIXO E SEMPRE VISÍVEL (4 colunas no desktop) */}
-              <div className="hidden lg:block lg:col-span-4 sticky top-[125px] space-y-4">
-                <div className="bg-[#111624] border border-slate-800 rounded-3xl p-4 shadow-2xl space-y-4">
+              <div className="hidden lg:block lg:col-span-4 sticky top-2 self-start max-h-[calc(100dvh-8rem)] space-y-4">
+                <div className="bg-[#111624] border border-slate-800 rounded-3xl p-4 shadow-2xl space-y-4 max-h-[calc(100dvh-8rem)] overflow-hidden flex flex-col">
                   {/* Cabeçalho do Carrinho Fixo */}
                   <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                     <div className="flex items-center gap-2">
@@ -1399,7 +1417,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-[min(42vh,380px)] overflow-y-auto pr-1 flex-1 min-h-0">
                       {draftItems.map((item) => (
                         <div
                           key={item.id}
@@ -2184,7 +2202,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* 5. PAINEL RÁPIDO TOUCH AO TOCAR NO PRODUTO (QUANTIDADE, MODIFICADORES, REMOVER INGREDIENTES, OBS) */}
       {/* ========================================================================= */}
       {editingItem && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4">
           {/* Modal compacto: HEADER FIXO / CONTEÚDO COM SCROLL INTERNO / AÇÃO FIXA — nunca ultrapassa o viewport */}
           <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-lg w-full max-h-[92vh] shadow-2xl animate-fadeIn flex flex-col overflow-hidden">
             <div className="flex items-start justify-between border-b border-slate-800 p-5 sm:p-6 pb-3 shrink-0">
@@ -2367,7 +2385,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* 6. DRAWER DO CARRINHO MOBILE EXPANSÍVEL */}
       {/* ========================================================================= */}
       {isMobileCartOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end lg:hidden">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col justify-end lg:hidden">
           <div className="bg-[#121622] border-t border-amber-500/50 rounded-t-3xl p-5 max-h-[85vh] flex flex-col space-y-4 animate-slideUp">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
@@ -2508,7 +2526,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* 7. MODAL DE AÇÃO DA MESA OCUPADA (TELA 1) */}
       {/* ========================================================================= */}
       {tableModalOption !== null && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 animate-fadeIn my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
@@ -2609,7 +2627,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* 8. MODAL DE TROCAR MESA RÁPIDO */}
       {/* ========================================================================= */}
       {showSwitchTableModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-sm w-full max-h-[92vh] overflow-y-auto p-5 shadow-2xl space-y-4 animate-fadeIn my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-black text-white">Trocar Mesa de Atendimento</h3>

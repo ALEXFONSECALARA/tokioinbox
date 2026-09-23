@@ -219,7 +219,7 @@ export const AdminManualOrderModal: React.FC<AdminManualOrderModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fadeIn text-slate-100">
+    <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fadeIn text-slate-100">
       <div className="bg-[#141720] border border-slate-700 rounded-3xl max-w-3xl w-full p-4 sm:p-6 max-h-[92vh] overflow-y-auto shadow-2xl space-y-4">
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">

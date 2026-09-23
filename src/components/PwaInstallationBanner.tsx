@@ -132,7 +132,7 @@ export const PwaInstallationBanner: React.FC<PwaInstallationBannerProps> = ({
 
       {/* iOS Installation Instructions Modal */}
       {showIosGuide && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto">
           <div className="relative w-full max-w-sm max-h-[92vh] overflow-y-auto my-auto bg-[#0E121B] border border-[#E3BD6A]/40 rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">

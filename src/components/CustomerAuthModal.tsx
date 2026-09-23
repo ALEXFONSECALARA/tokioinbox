@@ -263,7 +263,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="modal-viewport fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-lg bg-[#0E121B] border border-[#C5A880]/30 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="px-5 py-4 bg-gradient-to-r from-[#14120F] via-[#0E121B] to-[#14120F] border-b border-[#C5A880]/20 flex items-center justify-between">

@@ -463,7 +463,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
           90% da altura da tela, com cabeçalho fixo, campos com scroll interno
           e os botões de ação sempre visíveis no rodapé. */}
       {(isCreating || editingItem) && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full shadow-2xl my-auto max-h-[90vh] flex flex-col overflow-hidden">
             <h3 className="text-base font-bold text-white px-6 pt-6 pb-2 shrink-0">
               {editingItem ? `Editar: ${editingItem.name}` : 'Novo Item no Cardápio'}

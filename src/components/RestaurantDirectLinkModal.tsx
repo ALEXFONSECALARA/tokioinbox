@@ -67,7 +67,7 @@ export const RestaurantDirectLinkModal: React.FC<RestaurantDirectLinkModalProps>
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="modal-viewport fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-lg bg-[#0c0c10] border border-[#E3BD6A]/30 rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[92vh]">
         {/* Top Gold Shimmer Border */}
         <div className="h-1 bg-gradient-to-r from-transparent via-[#E3BD6A] to-transparent w-full" />

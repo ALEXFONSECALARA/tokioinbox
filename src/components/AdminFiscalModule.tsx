@@ -1121,7 +1121,7 @@ export const AdminFiscalModule: React.FC<AdminFiscalModuleProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase font-bold text-[10px] tracking-wider border-b border-slate-800">
+                <thead className="bg-slate-950/95 text-slate-400 uppercase font-bold text-[10px] tracking-wider border-b border-slate-800">
                   <tr>
                     <th className="py-3 px-4">Doc / Nº</th>
                     <th className="py-3 px-4">Pedido</th>
@@ -1661,7 +1661,7 @@ export const AdminFiscalModule: React.FC<AdminFiscalModuleProps> = ({
 
       {/* Modal de Cancelamento Formal SEFAZ */}
       {cancelModalDoc && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto my-auto p-6 space-y-4">
             <h4 className="text-base font-bold text-rose-300 flex items-center gap-2">
               <Ban className="w-5 h-5 text-rose-400" />

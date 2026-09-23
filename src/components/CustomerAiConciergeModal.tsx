@@ -131,7 +131,7 @@ export const CustomerAiConciergeModal: React.FC<CustomerAiConciergeModalProps> =
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="modal-viewport fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-xl bg-[#0E121B] border border-[#E3BD6A]/30 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col h-[650px] max-h-[92vh]">
         {/* Header */}
         <div className="px-5 py-4 bg-gradient-to-r from-[#121622] via-[#0E121B] to-[#0A0D14] border-b border-[#E3BD6A]/20 flex items-center justify-between">

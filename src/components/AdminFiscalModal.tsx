@@ -14,7 +14,7 @@ export const AdminFiscalModal: React.FC<AdminFiscalModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div className="modal-viewport fixed inset-0 z-[80] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="w-full max-w-md max-h-[92vh] overflow-y-auto my-auto rounded-3xl border border-amber-500/30 bg-[#0E121B] p-6 shadow-2xl">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">

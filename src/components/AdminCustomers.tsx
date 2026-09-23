@@ -268,7 +268,7 @@ export const AdminCustomers: React.FC = () => {
 
       {/* Edit Notes Modal */}
       {selectedCustomer && (
-        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto my-auto p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-white">
@@ -310,7 +310,7 @@ export const AdminCustomers: React.FC = () => {
 
       {/* Add New Customer Modal */}
       {isAddingNew && (
-        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
           <form
             onSubmit={handleCreateCustomer}
             className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto my-auto p-5 space-y-4"

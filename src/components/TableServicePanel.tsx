@@ -133,24 +133,33 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
 
-  // Sincroniza o cadastro de mesas do restaurante com o estado operacional do salão.
-  // Não cria mesas fictícias fora do cadastro: usa exatamente as mesas configuradas.
+  // Sincroniza o cadastro REAL de mesas com o estado operacional.
+  // Regra importante: se activeTables existir, ele é a fonte de verdade.
+  // A versão anterior sempre reintroduzia 1..30 e anulava exclusões feitas no modal.
   useEffect(() => {
-    const configured = Array.isArray(restaurant?.activeTables)
-      ? restaurant.activeTables.filter((n) => Number.isInteger(n) && n > 0)
-      : [];
-    // O salão inicia com 30 mesas padrão (1 a 30), preservando mesas adicionais
-    // que já tenham pedidos ativos para evitar qualquer perda de dados.
-    const defaultTables = Array.from({ length: 30 }, (_, i) => i + 1);
-    const normalized = Array.from(new Set([...defaultTables, ...configured])).sort((a, b) => a - b);
-    if (!normalized.length) return;
+    const hasConfiguredTables = Array.isArray(restaurant?.activeTables);
+    const configured = hasConfiguredTables
+      ? restaurant.activeTables.filter((n) => Number.isInteger(n) && n > 0 && n <= 999)
+      : Array.from({ length: 30 }, (_, i) => i + 1);
+
+    const normalized = Array.from(new Set(configured)).sort((a, b) => a - b);
+
     setTables((prev) => {
       const byId = new Map(prev.map((t) => [t.id, t]));
-      const next = normalized.map((id) => byId.get(id) || ({ id, capacity: 4, label: `Mesa ${id}` } as TableState));
-      const same = prev.length === next.length && prev.every((t, i) => t.id === next[i].id);
+      const next = normalized.map(
+        (id) => byId.get(id) || ({ id, capacity: 4, label: `Mesa ${id}` } as TableState)
+      );
+      const same =
+        prev.length === next.length &&
+        prev.every((t, i) => t.id === next[i].id);
       return same ? prev : next;
     });
-  }, [restaurant?.activeTables, setTables]);
+
+    // Se a mesa selecionada foi removida do cadastro, limpa a seleção.
+    if (activeTableId !== null && !normalized.includes(activeTableId)) {
+      setActiveTableId(null);
+    }
+  }, [restaurant?.activeTables, setTables, activeTableId]);
 
   const restaurantMenuItems = useMemo(
     () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
@@ -683,22 +692,58 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   });
 
   const openTableManager = () => {
-    const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : [];
-    const normalized = Array.from(new Set(configured.filter((n) => Number.isInteger(n) && n > 0))).sort((a, b) => a - b);
-    setTableDraft(normalized.length ? normalized : Array.from({ length: 30 }, (_, i) => i + 1));
+    const hasConfiguredTables = Array.isArray(restaurant?.activeTables);
+    const configured = hasConfiguredTables
+      ? (restaurant?.activeTables || [])
+      : Array.from({ length: 30 }, (_, i) => i + 1);
+    const normalized = Array.from(
+      new Set(configured.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))
+    ).sort((a, b) => a - b);
+
+    // Se o cadastro foi zerado, abrir o modal deve continuar mostrando zero,
+    // e não recriar 30 mesas automaticamente.
+    setTableDraft(normalized);
     setShowTableManager(true);
   };
 
   const saveTableManager = () => {
     if (!restaurant?.slug) return;
-    const next = Array.from(new Set(tableDraft.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))).sort((a, b) => a - b);
-    if (!next.length) {
-      showToast('Cadastre pelo menos uma mesa.', 'warning');
+
+    const next = Array.from(
+      new Set(tableDraft.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))
+    ).sort((a, b) => a - b);
+
+    // Nunca remove silenciosamente uma mesa que ainda possui comanda ativa.
+    const activeTableIds = new Set(
+      Object.entries(tableOrdersMap)
+        .filter(([, tableOrders]) =>
+          tableOrders.some((o) => o.status !== 'entregue' && o.status !== 'cancelado')
+        )
+        .map(([table]) => Number(table))
+    );
+    const blocked = [...activeTableIds].filter((id) => !next.includes(id));
+    if (blocked.length) {
+      showToast(
+        `Não é possível excluir Mesa ${blocked.join(', ')} enquanto houver pedido ativo. Feche ou transfira a comanda primeiro.`,
+        'warning',
+        5000
+      );
       return;
     }
+
     updateRestaurantConfig(restaurant.slug, { activeTables: next });
+    setTables((prev) =>
+      next.map(
+        (id) => prev.find((table) => table.id === id) || ({ id, capacity: 4, label: `Mesa ${id}` } as TableState)
+      )
+    );
     setShowTableManager(false);
-    showToast(`${next.length} mesas cadastradas com sucesso.`, 'success');
+    showToast(
+      next.length
+        ? `${next.length} mesas cadastradas e atualizadas.`
+        : 'Cadastro de mesas zerado. Você pode adicionar novas mesas quando quiser.',
+      'success'
+    );
   };
 
   return (
@@ -1029,7 +1074,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
       {/* Active Table Drawer / Modal */}
       {activeTableId && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-end animate-fadeIn">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex justify-end animate-fadeIn">
           <div className="w-full max-w-xl bg-stone-900 border-l border-stone-800 h-full flex flex-col shadow-2xl overflow-hidden">
             {/* Drawer Header */}
             <div className="p-4 sm:p-5 bg-stone-950 border-b border-stone-800 flex items-center justify-between">
@@ -1578,7 +1623,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
       {/* Thermal Pre-Bill Print Simulation Modal */}
       {showPrintModal && activeTableId && (
-        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white text-black font-mono w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-2xl p-6 space-y-4 text-xs shadow-2xl my-auto">
             {/* Destaque Máximo no Topo da Comanda / Pré-Conta */}
             <div className="bg-neutral-950 text-white p-3 rounded-xl text-center space-y-0.5">
@@ -1663,7 +1708,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
       {/* Transfer Orders to Another Table Modal */}
       {showTransferModal && activeTableId && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 w-full max-w-md max-h-[92vh] overflow-y-auto space-y-5 shadow-2xl my-auto">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1736,7 +1781,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
       {/* QR Code Acrylic Stand Modal */}
       {showQrPlatesModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 w-full max-w-lg space-y-5 shadow-2xl my-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1844,7 +1889,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
       {/* Shift History Modal */}
       {showShiftHistoryModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 w-full max-w-xl space-y-5 shadow-2xl my-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1946,26 +1991,94 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
       )}
 
       {showTableManager && (
-        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#111624] border border-amber-500/30 rounded-3xl shadow-2xl p-5">
-            <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="modal-viewport fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="modal-surface w-full max-w-3xl max-h-[calc(100dvh-24px)] overflow-y-auto bg-[#111624] border border-amber-500/40 rounded-2xl sm:rounded-3xl shadow-2xl p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-lg font-black text-white">Cadastro de Mesas</h3>
-                <p className="text-xs text-slate-400 mt-1">Cadastre, remova ou restaure as 30 mesas do salão.</p>
+                <h3 className="text-lg sm:text-xl font-black text-white">Cadastro de Mesas</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Adicione, remova e atualize as mesas deste restaurante. A alteração é aplicada ao salão imediatamente.
+                </p>
               </div>
-              <button onClick={() => setShowTableManager(false)} className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowTableManager(false)} className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white shrink-0" aria-label="Fechar">
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {tableDraft.map((num) => (
-                <button key={num} type="button" onClick={() => setTableDraft((prev) => prev.filter((n) => n !== num))} className="min-w-12 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-black text-sm hover:bg-rose-900/40 hover:border-rose-500/40">
-                  Mesa {num} ×
-                </button>
-              ))}
+
+            <div className="rounded-2xl border border-slate-800 bg-[#0B0F18] p-3 mb-4">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-300">Mesas cadastradas</span>
+                <span className="text-[11px] font-black text-amber-400">{tableDraft.length} mesa(s)</span>
+              </div>
+
+              {tableDraft.length ? (
+                <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 gap-2">
+                  {tableDraft.map((num) => {
+                    const hasActiveOrder = (tableOrdersMap[num] || []).some(
+                      (o) => o.status !== 'entregue' && o.status !== 'cancelado'
+                    );
+                    return (
+                      <button
+                        key={num}
+                        type="button"
+                        disabled={hasActiveOrder}
+                        onClick={() => setTableDraft((prev) => prev.filter((n) => n !== num))}
+                        title={hasActiveOrder ? 'Mesa com pedido ativo: feche ou transfira a comanda antes de excluir.' : `Remover Mesa ${num}`}
+                        className={`min-h-12 rounded-xl border text-xs font-black transition-all ${
+                          hasActiveOrder
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 cursor-not-allowed'
+                            : 'bg-slate-800 border-slate-700 text-white hover:bg-rose-900/40 hover:border-rose-500/50'
+                        }`}
+                      >
+                        <span className="block">Mesa {num}</span>
+                        <span className="text-[9px] opacity-70">
+                          {hasActiveOrder ? 'EM USO' : 'REMOVER ×'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-xs text-slate-500">
+                  Nenhuma mesa cadastrada. Use “Adicionar Mesa” para começar.
+                </div>
+              )}
             </div>
-            <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-4">
-              <button type="button" onClick={() => setTableDraft(Array.from({ length: 30 }, (_, i) => i + 1))} className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs">Restaurar 30 Mesas</button>
-              <button type="button" onClick={() => { const max = tableDraft.length ? Math.max(...tableDraft) : 0; setTableDraft([...tableDraft, max + 1]); }} className="px-4 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs border border-slate-700">+ Adicionar Mesa</button>
-              <button type="button" onClick={saveTableManager} className="ml-auto px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs">Salvar Cadastro</button>
+
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-800 pt-4">
+              <button
+                type="button"
+                onClick={() => setTableDraft(Array.from({ length: 30 }, (_, i) => i + 1))}
+                className="px-3 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs"
+              >
+                Restaurar 30
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const max = tableDraft.length ? Math.max(...tableDraft) : 0;
+                  let candidate = max + 1;
+                  while (tableDraft.includes(candidate)) candidate += 1;
+                  setTableDraft((prev) => [...prev, candidate].sort((a, b) => a - b));
+                }}
+                className="px-3 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs border border-slate-700"
+              >
+                + Adicionar Mesa
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableDraft([])}
+                className="px-3 py-2.5 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/30 font-bold text-xs"
+              >
+                Remover Todas Livres
+              </button>
+              <button
+                type="button"
+                onClick={saveTableManager}
+                className="ml-auto px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs"
+              >
+                Salvar / Atualizar
+              </button>
             </div>
           </div>
         </div>

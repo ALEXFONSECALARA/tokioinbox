@@ -560,7 +560,7 @@ export const AdminCashRegister: React.FC = () => {
       )}
 
       {isConfirmingClose && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#151922] border border-slate-700 rounded-3xl max-w-md w-full max-h-[92vh] overflow-y-auto my-auto p-6 shadow-2xl space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto">
               <Lock className="w-6 h-6" />

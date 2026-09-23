@@ -135,7 +135,7 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
 
           {/* Order Modality Segmented Controller */}
           <div className="mt-5 pt-5 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 w-full sm:w-auto">
+            <div className="flex items-center gap-1 bg-slate-950/95 p-1 rounded-xl border border-slate-800 w-full sm:w-auto">
               <button
                 onClick={() => {
                   setOrderType('delivery');
@@ -233,7 +233,7 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
 
       {/* Table Selection Modal */}
       {showTableSelector && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full max-h-[92vh] overflow-y-auto my-auto p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -284,7 +284,7 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
 
       {/* Restaurant Info Modal */}
       {showInfoModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div className="modal-viewport fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto my-auto p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">

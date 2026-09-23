@@ -79,7 +79,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ item: propItem, prod
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+    <div className="modal-viewport fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
         {/* Header Image */}
         <div className="relative h-56 sm:h-64 w-full bg-slate-800 overflow-hidden">
@@ -93,7 +93,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ item: propItem, prod
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-slate-950/80 hover:bg-slate-900 text-white border border-slate-700/60 backdrop-blur-md flex items-center justify-center transition-all shadow-md"
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-slate-950/95 hover:bg-slate-900 text-white border border-slate-700/60 backdrop-blur-md flex items-center justify-center transition-all shadow-md"
           >
             <X className="w-5 h-5" />
           </button>

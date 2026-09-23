@@ -60,7 +60,7 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-xl animate-in fade-in duration-200">
+    <div className="modal-viewport fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/95 backdrop-blur-xl animate-in fade-in duration-200">
       <div
         className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl bg-[#050505] border border-[#E3BD6A]/40 shadow-[0_24px_80px_rgba(0,0,0,0.95)] overflow-hidden"
         style={{
