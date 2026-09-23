@@ -32,6 +32,8 @@ import {
   Banknote,
   History,
   Smartphone,
+  SlidersHorizontal,
+  ChevronDown,
 } from 'lucide-react';
 import { BRAND_NAME } from '../config/brand';
 import { getRestaurantPath, getQrCodeImageUrl } from '../utils/urlRouting';
@@ -109,6 +111,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [transferTargetTable, setTransferTargetTable] = useState<number>(1);
   const [showShiftHistoryModal, setShowShiftHistoryModal] = useState(false);
   const [showTableManager, setShowTableManager] = useState(false);
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [tableDraft, setTableDraft] = useState<number[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro'>('pix');
   const [cashReceived, setCashReceived] = useState('');
@@ -759,14 +762,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <button
-              onClick={openTableManager}
-              className="px-3 py-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-xs font-black hover:bg-amber-500/25 transition-colors"
-              title="Cadastrar e configurar mesas"
-            >
-              <span className="hidden sm:inline">Cadastro de Mesas</span>
-              <span className="sm:hidden">Mesas</span>
-            </button>
+
             <div className="w-10 h-10 rounded-xl bg-stone-800 border border-amber-500/30 flex items-center justify-center overflow-hidden shadow-md">
               {restaurant?.logo ? (
                 <img src={restaurant.logo} alt={restaurant.name} className="w-full h-full object-cover" />
@@ -808,44 +804,38 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
             </div>
           </div>
 
-          {/* Actions: Placas QR, Histórico, Lock, Switch Admin */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowQrPlatesModal(true)}
-              className="px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 text-xs font-semibold border border-stone-700 flex items-center gap-1.5 transition-colors"
-              title="Gerar e Imprimir Placas QR Code das Mesas"
-            >
-              <QrCode className="w-4 h-4 text-amber-400" />
-              <span className="hidden sm:inline">Placas QR</span>
+          {/* Ferramentas administrativas fora do fluxo de venda */}
+          <div className="relative flex items-center gap-2">
+            <button type="button" onClick={() => setShowToolsMenu((v) => !v)} className={`px-3 py-2 rounded-xl text-xs font-black border flex items-center gap-1.5 transition-colors ${showToolsMenu ? 'bg-amber-500 text-slate-950 border-amber-300' : 'bg-stone-900 hover:bg-stone-800 text-stone-300 border-stone-700'}`}>
+              <SlidersHorizontal className="w-4 h-4" /> Ferramentas <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showToolsMenu ? 'rotate-180' : ''}`} />
             </button>
-
-            <button
-              onClick={() => setShowShiftHistoryModal(true)}
-              className="px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 text-xs font-semibold border border-stone-700 flex items-center gap-1.5 transition-colors"
-              title="Ver Histórico de Mesas Fechadas Hoje"
-            >
-              <History className="w-4 h-4 text-amber-400" />
-              <span className="hidden sm:inline">Turno ({shiftHistory.length})</span>
-            </button>
-
-            {onOpenAdmin && (
-              <button
-                onClick={onOpenAdmin}
-                className="px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 text-xs font-semibold border border-stone-700 flex items-center gap-1.5 transition-colors"
-                title="Ir para o Painel Administrativo Geral"
-              >
-                <ChefHat className="w-4 h-4 text-amber-400" />
-                <span className="hidden sm:inline">KDS / Admin</span>
-              </button>
+            {showToolsMenu && (
+              <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl border border-slate-700 bg-[#0D131F] shadow-2xl p-2 z-[80]">
+                <div className="px-3 py-2 text-[9px] uppercase tracking-[.18em] font-black text-slate-500">Ferramentas — fora da venda</div>
+                <button type="button" onClick={() => { setShowToolsMenu(false); openTableManager(); }} className="w-full text-left px-3 py-3 rounded-xl hover:bg-amber-500/10 text-white flex items-center gap-3">
+                  <SlidersHorizontal className="w-4 h-4 text-amber-400" />
+                  <span><b className="block text-xs">Cadastro de Mesas</b><small className="text-[10px] text-slate-500">Adicionar, excluir e atualizar</small></span>
+                </button>
+                <button type="button" onClick={() => { setShowToolsMenu(false); setShowQrPlatesModal(true); }} className="w-full text-left px-3 py-3 rounded-xl hover:bg-slate-800 text-white flex items-center gap-3">
+                  <QrCode className="w-4 h-4 text-amber-400" />
+                  <span><b className="block text-xs">Placas QR</b><small className="text-[10px] text-slate-500">Impressão das placas das mesas</small></span>
+                </button>
+                <button type="button" onClick={() => { setShowToolsMenu(false); setShowShiftHistoryModal(true); }} className="w-full text-left px-3 py-3 rounded-xl hover:bg-slate-800 text-white flex items-center gap-3">
+                  <History className="w-4 h-4 text-sky-400" />
+                  <span><b className="block text-xs">Histórico do Turno</b><small className="text-[10px] text-slate-500">Mesas fechadas e movimentações</small></span>
+                </button>
+                <button type="button" onClick={() => { setShowToolsMenu(false); handleLockPanel(); }} className="w-full text-left px-3 py-3 rounded-xl hover:bg-rose-500/10 text-white flex items-center gap-3">
+                  <Lock className="w-4 h-4 text-rose-400" />
+                  <span><b className="block text-xs">Bloquear Salão</b><small className="text-[10px] text-slate-500">Proteção do painel</small></span>
+                </button>
+                {onOpenAdmin && (
+                  <button type="button" onClick={() => { setShowToolsMenu(false); onOpenAdmin(); }} className="w-full text-left px-3 py-3 rounded-xl hover:bg-slate-800 text-white flex items-center gap-3">
+                    <ChefHat className="w-4 h-4 text-violet-400" />
+                    <span><b className="block text-xs">Painel Administrativo</b><small className="text-[10px] text-slate-500">Configurações e gestão</small></span>
+                  </button>
+                )}
+              </div>
             )}
-            <button
-              onClick={handleLockPanel}
-              className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors"
-              title="Bloquear painel com senha"
-            >
-              <Lock className="w-4 h-4" />
-              <span className="hidden sm:inline">Bloquear Salão</span>
-            </button>
           </div>
         </div>
       </header>

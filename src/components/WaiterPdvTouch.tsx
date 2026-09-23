@@ -140,6 +140,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [tableModalOption, setTableModalOption] = useState<number | null>(null);
   const [showSwitchTableModal, setShowSwitchTableModal] = useState(false);
   const [showTableManagerModal, setShowTableManagerModal] = useState(false);
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [tableDraft, setTableDraft] = useState<number[]>([]);
   const [newTableNumber, setNewTableNumber] = useState('');
   const [editingTableNumber, setEditingTableNumber] = useState<number | null>(null);
@@ -366,8 +367,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       return {
         key: 'pronto' as const,
         label: 'Pronto / Servir',
-        badgeColor: 'bg-amber-400 text-slate-950 font-black border-amber-300 shadow-md',
-        cardBg: 'bg-amber-500/15 border-amber-500/60 hover:border-amber-400 animate-pulse',
+        badgeColor: 'bg-white text-slate-950 font-black border-white shadow-md',
+        cardBg: 'bg-white/[.06] border-white/40 hover:border-white animate-pulse',
         dot: 'bg-amber-400 animate-ping',
         hasOrder: true,
       };
@@ -376,8 +377,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       return {
         key: 'aguardando' as const,
         label: 'Aguardando',
-        badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
-        cardBg: 'bg-[#12192A] border-sky-500/30 hover:border-sky-400',
+        badgeColor: 'bg-white text-slate-950 font-black border-white',
+        cardBg: 'bg-white/[.05] border-white/30 hover:border-white',
         dot: 'bg-sky-400',
         hasOrder: true,
       };
@@ -386,18 +387,18 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       return {
         key: 'atendimento' as const,
         label: 'Em Atendimento',
-        badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
-        cardBg: 'bg-[#141829] border-indigo-500/40 hover:border-indigo-400',
-        dot: 'bg-indigo-400',
+        badgeColor: 'bg-white text-slate-950 font-black border-white',
+        cardBg: 'bg-white/[.05] border-white/30 hover:border-white',
+        dot: 'bg-white',
         hasOrder: true,
       };
     }
     return {
       key: 'fechamento' as const,
       label: 'Fechamento',
-      badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-      cardBg: 'bg-[#181326] border-purple-500/40 hover:border-purple-400',
-      dot: 'bg-purple-400',
+      badgeColor: 'bg-red-500 text-white font-black border-red-400',
+      cardBg: 'bg-red-500/[.08] border-red-500/50 hover:border-red-400',
+      dot: 'bg-red-500',
       hasOrder: true,
     };
   };
@@ -919,14 +920,33 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
             />
           </div>
 
-          {onOpenAdmin && (
+          <div className="relative">
             <button
-              onClick={onOpenAdmin}
-              className="text-xs font-bold px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all hidden sm:block"
+              type="button"
+              onClick={() => setShowToolsMenu((v) => !v)}
+              className={`text-xs font-black px-3 py-2 rounded-xl border transition-all flex items-center gap-1.5 ${showToolsMenu ? 'bg-amber-500 text-slate-950 border-amber-300' : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'}`}
+              title="Ferramentas do salão"
             >
-              Painel Admin
+              <SlidersHorizontal className="w-4 h-4" />
+              <span>Ferramentas</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showToolsMenu ? 'rotate-180' : ''}`} />
             </button>
-          )}
+            {showToolsMenu && (
+              <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl border border-slate-700 bg-[#0D131F] shadow-2xl p-2 z-[80]">
+                <div className="px-3 py-2 text-[9px] uppercase tracking-[.18em] font-black text-slate-500">Ferramentas — fora da venda</div>
+                <button type="button" onClick={() => { setShowToolsMenu(false); openTableManager(); }} className="w-full text-left px-3 py-3 rounded-xl hover:bg-amber-500/10 text-white flex items-center gap-3">
+                  <SlidersHorizontal className="w-4 h-4 text-amber-400" />
+                  <span><b className="block text-xs">Cadastro de Mesas</b><small className="text-[10px] text-slate-500">Adicionar, excluir e atualizar</small></span>
+                </button>
+                {onOpenAdmin && (
+                  <button type="button" onClick={() => { setShowToolsMenu(false); onOpenAdmin(); }} className="w-full text-left px-3 py-3 rounded-xl hover:bg-slate-800 text-white flex items-center gap-3">
+                    <Layers className="w-4 h-4 text-violet-400" />
+                    <span><b className="block text-xs">Painel Administrativo</b><small className="text-[10px] text-slate-500">Configurações, usuários e sistema</small></span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -1028,7 +1048,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* ========================================================================= */}
       {/* 4. CONTEÚDO PRINCIPAL (TELAS SEPARADAS) */}
       {/* ========================================================================= */}
-      <main className="flex-1 min-h-0 overflow-y-auto max-w-7xl w-full mx-auto p-4 sm:p-6 pb-24 lg:pb-6">
+      <main className={`flex-1 min-h-0 max-w-7xl w-full mx-auto p-3 sm:p-4 lg:p-5 pb-4 ${currentScreen === 'mesas' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {/* --------------------------------------------------------------------- */}
         {/* TELA 1: MESAS */}
         {/* --------------------------------------------------------------------- */}
@@ -1074,42 +1094,30 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               </div>
             </div>
 
-            {/* Controles de cadastro + canvas responsivo */}
-            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 bg-[#0F1522] border border-slate-800 rounded-2xl p-3 shadow-lg">
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={openTableManager} className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs uppercase shadow-lg shadow-amber-500/20 hover:bg-amber-400 active:scale-95 transition-all">
-                  <Plus className="w-4 h-4 inline mr-1" /> Incluir Mesa
-                </button>
-                <button type="button" onClick={openTableManager} className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 font-black text-xs uppercase hover:border-red-400 hover:text-red-300 active:scale-95 transition-all">
-                  <Minus className="w-4 h-4 inline mr-1" /> Excluir Mesa
-                </button>
-              </div>
-              <div className="text-[11px] text-slate-500">Cadastro rápido: adicione, altere ou remova mesas no modal.</div>
-            </div>
-
-            <div className="table-isometric-canvas rounded-3xl border border-slate-800/90 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,.08),transparent_42%),#080C14] p-3 sm:p-5 overflow-auto min-h-[420px] max-h-[calc(100dvh-19rem)]">
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4 min-w-[720px] xl:min-w-0">
+            {/* Cadastro removido do fluxo de venda: fica em Ferramentas no topo. */}
+            <div className="table-isometric-canvas rounded-3xl border border-slate-800/90 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,.08),transparent_42%),#080C14] p-2 sm:p-3 overflow-hidden h-[calc(100dvh-17rem)] min-h-0">
+              <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 sm:gap-3 h-full auto-rows-fr">
                 {tableNumbers.map((tableNum) => {
                   const status = getTableStatus(tableNum);
                   const order = activeOrdersByTable[tableNum];
                   if (tableFilter !== 'todos' && status.key !== tableFilter) return null;
                   const isCurrent = selectedTable === tableNum;
+                  const closed = status.key === 'fechamento';
+                  const inUse = status.key !== 'livre';
                   return (
-                    <button key={tableNum} type="button" onClick={() => handleSelectTable(tableNum)} className={`group relative min-h-[168px] rounded-2xl border-2 p-3 text-left overflow-hidden transition-all active:scale-[.98] ${status.cardBg} ${isCurrent ? 'ring-4 ring-amber-400/80 shadow-[0_0_35px_rgba(245,158,11,.28)]' : 'shadow-xl'}`}>
+                    <button key={tableNum} type="button" onClick={() => handleSelectTable(tableNum)} className={`group relative min-h-0 h-full rounded-2xl border-2 p-2 text-left overflow-hidden transition-all active:scale-[.98] ${status.cardBg} ${isCurrent ? 'ring-2 ring-amber-400/90 shadow-[0_0_28px_rgba(245,158,11,.25)]' : 'shadow-lg'}`}>
                       <div className="absolute inset-0 bg-gradient-to-b from-white/[.035] to-transparent pointer-events-none" />
-                      <img src={getTableVisual(status.key)} alt={`Mesa ${tableNum} ${status.label}`} className="absolute left-1/2 top-[48%] -translate-x-1/2 -translate-y-1/2 w-[126px] h-[88px] object-contain opacity-90 drop-shadow-[0_18px_18px_rgba(0,0,0,.45)] transition-transform duration-300 group-hover:scale-105" />
-                      <div className="relative z-10 flex items-start justify-between">
+                      <div className="relative z-10 flex items-start justify-between gap-1">
                         <div>
-                          <div className="text-2xl font-black text-white font-mono leading-none">{tableNum}</div>
-                          <div className="text-[9px] text-slate-500 uppercase font-black tracking-[.16em] mt-1">Mesa</div>
+                          <div className="text-xl sm:text-2xl font-black text-white font-mono leading-none">{tableNum}</div>
+                          <div className="text-[8px] text-slate-500 uppercase font-black tracking-[.14em] mt-0.5">Mesa</div>
                         </div>
-                        <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase border ${status.badgeColor}`}>
-                          {status.key === 'livre' ? 'ABERTA LIVRE' : status.key === 'fechamento' ? 'FECHADA EM USO' : 'ABERTA EM USO'}
-                        </span>
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${closed ? 'bg-red-500' : inUse ? 'bg-white' : 'bg-emerald-500'}`} />
                       </div>
-                      <div className="absolute left-3 right-3 bottom-3 z-10 flex items-center justify-between border-t border-white/10 pt-2">
-                        <span className={`text-[10px] font-bold ${status.hasOrder ? 'text-amber-300' : 'text-emerald-400'}`}>{status.label}</span>
-                        {order ? <span className="text-[10px] font-mono font-black text-amber-400">R$ {order.total.toFixed(2)}</span> : <Plus className="w-4 h-4 text-emerald-400" />}
+                      <img src={getTableVisual(status.key)} alt={`Mesa ${tableNum}`} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[88%] max-w-[120px] h-auto object-contain opacity-95 drop-shadow-[0_12px_14px_rgba(0,0,0,.5)] transition-transform duration-300 group-hover:scale-105" />
+                      <div className="absolute left-2 right-2 bottom-2 z-10 flex items-center justify-between gap-1 border-t border-white/10 pt-1.5">
+                        <span className={`text-[9px] sm:text-[10px] font-black uppercase truncate ${closed ? 'text-red-400' : inUse ? 'text-white' : 'text-emerald-400'}`}>{closed ? 'FECHADA' : inUse ? 'EM USO' : 'ABERTA'}</span>
+                        {order ? <span className="text-[9px] font-mono font-black text-amber-400 truncate">R$ {order.total.toFixed(2)}</span> : <Plus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
                       </div>
                     </button>
                   );
