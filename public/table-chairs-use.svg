@@ -1,10 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 170">
-<ellipse cx="120" cy="146" rx="92" ry="15" fill="#000" opacity=".34"/>
-<path d="M55 78 120 43l65 35-65 35z" fill="#3B3F46" stroke="#FFFFFF" stroke-width="4"/><path d="M55 78v24l65 36v-25zM185 78v24l-65 36v-25z" fill="#20242A" stroke="#E5E7EB" stroke-width="3"/>
-<g fill="#30343A" stroke="#FFFFFF" stroke-width="3"><path d="M17 69q0-13 13-13h20v31H30q-13 0-13-18z"/><path d="M190 56h20q13 0 13 13t-13 18h-20z"/><path d="M99 18h42q8 0 8 8v20H91V26q0-8 8-8z"/><path d="M100 131h40v17q0 9-9 9h-22q-9 0-9-9z"/></g>
-<circle cx="78" cy="63" r="9" fill="#F0B58C"/><path d="M69 73q9-8 18 0v15H69z" fill="#FFFFFF"/><circle cx="162" cy="64" r="9" fill="#E8A67B"/><path d="M153 74q9-8 18 0v15h-18z" fill="#D1D5DB"/>
-<g fill="#FFFFFF"><ellipse cx="105" cy="69" rx="8" ry="5"/><ellipse cx="120" cy="76" rx="8" ry="5"/><ellipse cx="135" cy="69" rx="8" ry="5"/></g>
-<rect x="133" y="50" width="22" height="13" rx="2" fill="#111827" stroke="#FFFFFF" stroke-width="2" transform="rotate(12 144 56)"/>
-<path d="M123 25v20" stroke="#FFFFFF" stroke-width="3"/><path d="M113 25h20l-4 9h-12z" fill="#FFFFFF"/><circle cx="123" cy="42" r="4" fill="#FFFFFF" opacity=".9"/>
-<text x="120" y="112" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="12" font-weight="900">ABERTA EM USO</text>
-</svg>
+<defs><filter id="s"><feDropShadow dx="0" dy="8" stdDeviation="7" flood-opacity=".42"/></filter></defs>
+<rect x="22" y="18" width="196" height="132" rx="28" fill="#0b2f55" stroke="#2d7dcc" stroke-width="3"/>
+<ellipse cx="120" cy="149" rx="82" ry="9" fill="#000" opacity=".3"/>
+<g filter="url(#s)">
+ <path d="M58 73 120 43l62 30-62 32z" fill="#dbeafe" stroke="#fff" stroke-width="4"/>
+ <path d="M58 73v22l62 34V106zM182 73v22l-62 34v-23z" fill="#bfdbfe" stroke="#fff" stroke-width="3"/>
+ <circle cx="91" cy="61" r="10" fill="#fff"/><path d="M82 77c2-9 16-9 18 0" fill="#fff"/>
+ <circle cx="149" cy="61" r="10" fill="#fff"/><path d="M140 77c2-9 16-9 18 0" fill="#fff"/>
+ <circle cx="120" cy="61" r="7" fill="#fff" opacity=".9"/>
+ <path d="M74 103h-12v24h12M166 103h12v24h-12" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+</g></svg>

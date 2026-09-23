@@ -1,7 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 170">
-<ellipse cx="120" cy="146" rx="90" ry="14" fill="#000" opacity=".32"/>
-<path d="M55 77 120 42l65 35-65 35z" fill="#123D2B" stroke="#22C55E" stroke-width="4"/><path d="M55 77v24l65 35v-24zM185 77v24l-65 35v-24z" fill="#0B2A1D" stroke="#16A34A" stroke-width="3"/>
-<g fill="#14532D" stroke="#22C55E" stroke-width="3"><path d="M20 68q0-13 13-13h18v30H33q-13 0-13-17z"/><path d="M190 55h18q13 0 13 13t-13 17h-18z"/><path d="M101 18h38q9 0 9 9v17h-56V27q0-9 9-9z"/><path d="M101 130h38v18q0 9-9 9h-20q-9 0-9-9z"/></g>
-<circle cx="120" cy="70" r="11" fill="#22C55E"/><path d="m114 70 5 5 10-12" fill="none" stroke="#052E16" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="120" y="112" text-anchor="middle" fill="#4ADE80" font-family="Arial" font-size="12" font-weight="900">ABERTA LIVRE</text>
-</svg>
+<defs><filter id="s"><feDropShadow dx="0" dy="7" stdDeviation="6" flood-opacity=".35"/></filter></defs>
+<ellipse cx="120" cy="150" rx="88" ry="10" fill="#000" opacity=".28"/>
+<g filter="url(#s)">
+ <path d="M55 70 120 38l65 32-65 35z" fill="#fff" stroke="#dbe4ee" stroke-width="4"/>
+ <path d="M55 70v24l65 35V105zM185 70v24l-65 35v-24z" fill="#e9eef5" stroke="#cbd5e1" stroke-width="3"/>
+ <path d="M72 104h-13v24h13M168 104h13v24h-13" fill="#fff" stroke="#dbe4ee" stroke-width="4"/>
+ <circle cx="120" cy="70" r="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/>
+</g></svg>
