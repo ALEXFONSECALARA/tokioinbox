@@ -11,7 +11,8 @@ interface CaixaModuleProps {
  */
 export const CaixaModule: React.FC<CaixaModuleProps> = ({ onBackToApp }) => {
   return (
-    <div className="w-full h-full min-h-screen bg-[#07090E]">
+    // "h-full" apenas — sem min-h-screen (ver correção em CashierStationView).
+    <div className="w-full h-full bg-[#07090E]">
       <CashierStationView onBackToApp={onBackToApp} />
     </div>
   );
