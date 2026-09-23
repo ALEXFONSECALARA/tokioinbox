@@ -104,8 +104,8 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
   const isWidth58mm = printerSettings?.paperWidth === '58mm';
 
   return (
-    <div className="modal-viewport fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full overflow-hidden shadow-2xl my-auto animate-in fade-in duration-200">
+    <div className="modal-viewport fixed inset-0 z-[110] bg-slate-950/95 backdrop-blur-sm flex items-stretch sm:items-center justify-center p-0 sm:p-4 overflow-hidden">
+      <div className="bg-slate-900 border border-slate-800 rounded-none sm:rounded-3xl max-w-xl w-full h-full sm:h-auto sm:max-h-[calc(100dvh-32px)] min-h-0 overflow-hidden shadow-2xl flex flex-col animate-in fade-in duration-200">
         {/* Header */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/70">
           <div className="flex items-center gap-2.5">
@@ -178,6 +178,7 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
           </div>
         </div>
 
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {/* AI INSIGHTS CARD */}
         {aiAnalysis && (
           <div className="mx-4 mt-3 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950/30 border border-amber-500/40 rounded-2xl p-3.5 space-y-2.5 shadow-lg">
@@ -270,7 +271,7 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
         )}
 
         {/* THERMAL PAPER VISUAL CONTAINER */}
-        <div className="p-4 bg-slate-950/95 max-h-[50vh] overflow-y-auto">
+        <div className="p-4 bg-slate-950/95">
           <div
             id="thermal-receipt-body"
             className={`bg-amber-50 text-slate-900 font-mono text-xs p-5 rounded-md shadow-inner border border-amber-200/60 mx-auto ${
@@ -444,6 +445,8 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
               <p>Impressão Térmica ESC/POS Inteligente</p>
             </div>
           </div>
+        </div>
+
         </div>
 
         {/* Footer Actions */}

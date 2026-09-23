@@ -558,12 +558,12 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
             {/* Recebimento Presencial — modal único, centralizado e sem scroll externo */}
             {selectedOrder && (
               <div
-                className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-3 lg:p-4"
+                className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-stretch justify-end p-0 sm:p-2 lg:p-3"
                 role="dialog"
                 aria-modal="true"
                 aria-label={`Recebimento Presencial Mesa ${selectedOrder.tableNumber || ''}`}
               >
-                <div className="w-full max-w-5xl h-[calc(100dvh-16px)] sm:h-[calc(100dvh-24px)] max-h-[900px] min-h-0 bg-[#121622] border-2 border-amber-500/60 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-fadeIn">
+                <div className="w-full sm:w-[min(460px,94vw)] lg:w-[min(500px,42vw)] h-full sm:h-[calc(100dvh-16px)] lg:h-[calc(100dvh-24px)] max-h-[100dvh] sm:max-h-[900px] min-h-0 bg-[#121622] border-2 border-amber-500/60 rounded-none sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-fadeIn sm:ml-auto">
                   {/* Cabeçalho fixo */}
                   <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 p-3 sm:p-3.5">
                     <div className="min-w-0">

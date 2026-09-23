@@ -137,6 +137,14 @@ export const AdminUsers: React.FC = () => {
           can_print_tickets: false,
         });
         break;
+      case 'garcom':
+        setPermissions({ can_view_orders: true, can_create_orders: true, can_edit_orders: true, can_change_status: true, can_view_menu: true, can_print_tickets: true });
+        break;
+      case 'sushi_bar':
+      case 'bar':
+      case 'cozinha':
+        setPermissions({ can_view_orders: true, can_change_status: true, can_view_menu: true, can_configure_alerts: true, can_print_tickets: true });
+        break;
     }
   };
 
@@ -501,7 +509,7 @@ export const AdminUsers: React.FC = () => {
                   required={!editUser}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-medium focus:border-amber-500 outline-none"
                 />
               </div>
@@ -542,69 +550,41 @@ export const AdminUsers: React.FC = () => {
                 </div>
               </div>
 
-              {/* Permissions Checklist */}
+              {/* Permissions Checklist: ferramentas que este colaborador pode usar */}
               <div className="pt-2 border-t border-slate-800 space-y-2">
-                <label className="block text-slate-300 font-bold">Permissões Customizadas:</label>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <label className="flex items-center gap-2 p-2 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissions.can_view_orders}
-                      onChange={(e) => setPermissions((p) => ({ ...p, can_view_orders: e.target.checked }))}
-                      className="accent-amber-500"
-                    />
-                    <span>Visualizar Pedidos</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-2 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissions.can_change_status}
-                      onChange={(e) => setPermissions((p) => ({ ...p, can_change_status: e.target.checked }))}
-                      className="accent-amber-500"
-                    />
-                    <span>Alterar Status</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-2 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissions.can_print_tickets}
-                      onChange={(e) => setPermissions((p) => ({ ...p, can_print_tickets: e.target.checked }))}
-                      className="accent-amber-500"
-                    />
-                    <span>Imprimir Comandas</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-2 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissions.can_configure_alerts}
-                      onChange={(e) => setPermissions((p) => ({ ...p, can_configure_alerts: e.target.checked }))}
-                      className="accent-amber-500"
-                    />
-                    <span>Configurar Sons</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-2 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissions.can_edit_menu}
-                      onChange={(e) => setPermissions((p) => ({ ...p, can_edit_menu: e.target.checked }))}
-                      className="accent-amber-500"
-                    />
-                    <span>Editar Cardápio</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-2 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissions.can_delete_orders}
-                      onChange={(e) => setPermissions((p) => ({ ...p, can_delete_orders: e.target.checked }))}
-                      className="accent-amber-500"
-                    />
-                    <span className="text-rose-300">Excluir Pedidos</span>
-                  </label>
+                <label className="block text-slate-300 font-bold">Ferramentas permitidas:</label>
+                <p className="text-[10px] text-slate-500">Marque somente as funções que este usuário poderá abrir e executar. O servidor continua validando cada operação.</p>
+                <div className="grid grid-cols-2 gap-2 text-[11px] max-h-56 overflow-y-auto pr-1">
+                  {[
+                    ['can_view_orders','Visualizar pedidos'],
+                    ['can_create_orders','Criar / lançar pedidos'],
+                    ['can_edit_orders','Editar pedidos'],
+                    ['can_cancel_orders','Cancelar pedidos'],
+                    ['can_change_status','Aceitar / alterar status'],
+                    ['can_view_menu','Consultar cardápio'],
+                    ['can_edit_menu','Editar cardápio'],
+                    ['can_change_prices','Alterar preços'],
+                    ['can_manage_categories','Gerenciar categorias'],
+                    ['can_manage_users','Gerenciar usuários'],
+                    ['can_manage_permissions','Gerenciar permissões'],
+                    ['can_configure_alerts','Configurar alertas/sons'],
+                    ['can_connect_devices','Conectar dispositivos'],
+                    ['can_view_reports','Ver relatórios'],
+                    ['can_configure_restaurant','Configurar restaurante'],
+                    ['can_manage_notifications','Gerenciar notificações'],
+                    ['can_delete_orders','Excluir pedidos'],
+                    ['can_print_tickets','Imprimir comandas'],
+                  ].map(([key,label]) => (
+                    <label key={key} className="flex items-center gap-2 p-2 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean((permissions as any)[key])}
+                        onChange={(e) => setPermissions((p) => ({ ...p, [key]: e.target.checked }))}
+                        className="accent-amber-500"
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
 

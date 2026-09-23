@@ -14,7 +14,6 @@ import {
   MapPin,
   UtensilsCrossed,
   Receipt,
-  Store,
 } from 'lucide-react';
 
 interface OrderTrackerModalProps {
@@ -32,7 +31,7 @@ const ORDER_STEPS: { status: OrderStatus; label: string; icon: any; desc: string
   {
     status: 'aceito',
     label: 'Confirmado',
-    icon: Store,
+    icon: CheckCircle2,
     desc: 'Restaurante confirmou e aceitou o pedido',
   },
   {
@@ -58,6 +57,12 @@ const ORDER_STEPS: { status: OrderStatus; label: string; icon: any; desc: string
     label: 'Entregue',
     icon: CheckCircle2,
     desc: 'Pedido entregue com sucesso! Bom apetite!',
+  },
+  {
+    status: 'finalizado',
+    label: 'Finalizado',
+    icon: CheckCircle2,
+    desc: 'Pedido encerrado e finalizado pelo restaurante.',
   },
 ];
 
@@ -106,6 +111,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
         return 4;
       case 'entregue':
         return 5;
+      case 'finalizado':
+        return 6;
       case 'cancelado':
         return -1;
       default:
@@ -168,7 +175,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-2xl shadow">
-                    {restaurant?.emoji || '🍱'}
+                    <Receipt className="w-5 h-5 text-amber-400" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">

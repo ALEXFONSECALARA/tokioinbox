@@ -69,9 +69,6 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
                   alt={restaurant.name}
                   className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-amber-400/80 shadow-[0_0_15px_rgba(245,158,11,0.3)]"
                 />
-                <span className="absolute -bottom-2 -right-2 text-2xl filter drop-shadow">
-                  {restaurant.emoji}
-                </span>
               </div>
 
               <div>

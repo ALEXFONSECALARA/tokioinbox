@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { OperationalWorkflowModal } from './OperationalWorkflowModal';
 import { useStore } from '../context/StoreContext';
-import { canAccessArea } from '../painel/access';
+import { UserPermissions } from '../types/restaurant';
 
 export type OperationalEnvironment =
   | 'cliente'
@@ -49,14 +49,31 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
   // Perfis e áreas liberadas seguem exatamente os nomes do servidor (ver painel/access.ts).
   // Sem usuário logado nada é exibido: esta barra só existe dentro do painel autenticado.
   const role = currentUser?.role;
-  const canAccessPdv = canAccessArea(role, 'pdv');
+  const permissions = (currentUser?.permissions || {}) as Partial<UserPermissions>;
+  const canUse = (area: string) => {
+    if (!role) return false;
+    switch (area) {
+      case 'pdv':
+      case 'balcao': return Boolean(permissions.can_create_orders);
+      case 'delivery':
+      case 'kanban': return Boolean(permissions.can_view_orders);
+      case 'caixa': return Boolean(permissions.can_view_orders && permissions.can_change_status);
+      case 'cozinha':
+      case 'sushibar':
+      case 'bar':
+        return Boolean(permissions.can_view_orders && permissions.can_change_status);
+      case 'admin': return Boolean(permissions.can_manage_users || permissions.can_manage_permissions || role === 'super_admin' || role === 'administrador');
+      default: return false;
+    }
+  };
+  const canAccessPdv = canUse('pdv');
   const canAccessCliente = Boolean(role); // abre o cardápio público em outra tela
-  const canAccessBalcao = canAccessArea(role, 'balcao');
-  const canAccessDelivery = canAccessArea(role, 'delivery');
-  const canAccessCaixa = canAccessArea(role, 'caixa');
-  const canAccessProducao = canAccessArea(role, 'cozinha') || canAccessArea(role, 'sushibar') || canAccessArea(role, 'bar');
-  const canAccessAdmin = canAccessArea(role, 'admin');
-  const canAccessKanban = canAccessArea(role, 'kanban');
+  const canAccessBalcao = canUse('balcao');
+  const canAccessDelivery = canUse('delivery');
+  const canAccessCaixa = canUse('caixa');
+  const canAccessProducao = canUse('cozinha') || canUse('sushibar') || canUse('bar');
+  const canAccessAdmin = canUse('admin');
+  const canAccessKanban = canUse('kanban');
 
   // Check if current view is a production station
   const isProducaoActive =

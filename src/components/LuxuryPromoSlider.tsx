@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { RestaurantSlug } from '../types/restaurant';
+import { useStore } from '../context/StoreContext';
 import { Sparkles, ChevronLeft, ChevronRight, ArrowRight, Flame, Clock, Award } from 'lucide-react';
 
 interface SlideData {
@@ -107,16 +108,21 @@ interface LuxuryPromoSliderProps {
 }
 
 export const LuxuryPromoSlider: React.FC<LuxuryPromoSliderProps> = ({ onSelectRestaurant }) => {
+  const { restaurants } = useStore();
+  const visibleSlides = PROMO_SLIDES.filter((slide) => {
+    const restaurant = restaurants[slide.restaurantSlug];
+    return Boolean(restaurant && restaurant.isActive !== false && restaurant.vitrineStatus !== 'OCULTO' && restaurant.isActiveInVitrine !== false);
+  });
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const nextSlide = () => {
-    setCurrentIdx((prev) => (prev + 1) % PROMO_SLIDES.length);
+    setCurrentIdx((prev) => (prev + 1) % Math.max(visibleSlides.length, 1));
   };
 
   const prevSlide = () => {
-    setCurrentIdx((prev) => (prev - 1 + PROMO_SLIDES.length) % PROMO_SLIDES.length);
+    setCurrentIdx((prev) => (prev - 1 + Math.max(visibleSlides.length, 1)) % Math.max(visibleSlides.length, 1));
   };
 
   useEffect(() => {
@@ -132,9 +138,14 @@ export const LuxuryPromoSlider: React.FC<LuxuryPromoSliderProps> = ({ onSelectRe
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isHovered, currentIdx]);
+  }, [isHovered, currentIdx, visibleSlides.length]);
 
-  const slide = PROMO_SLIDES[currentIdx];
+  useEffect(() => {
+    if (currentIdx >= visibleSlides.length) setCurrentIdx(0);
+  }, [currentIdx, visibleSlides.length]);
+
+  if (visibleSlides.length === 0) return null;
+  const slide = visibleSlides[currentIdx];
 
   return (
     <div
@@ -144,7 +155,7 @@ export const LuxuryPromoSlider: React.FC<LuxuryPromoSliderProps> = ({ onSelectRe
     >
       {/* Background Image with Cinematic Overlay & Parallax feel */}
       <div className="relative h-72 sm:h-96 w-full overflow-hidden">
-        {PROMO_SLIDES.map((s, idx) => (
+        {visibleSlides.map((s, idx) => (
           <div
             key={s.id}
             className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
@@ -177,7 +188,7 @@ export const LuxuryPromoSlider: React.FC<LuxuryPromoSliderProps> = ({ onSelectRe
             <div className="flex items-center gap-2 bg-[#14110E]/80 backdrop-blur-md px-3 py-1 rounded-full border border-[#C5A880]/20 text-[#F5F5F5] text-[11px] font-mono">
               <span className="text-[#C5A880] font-bold">0{currentIdx + 1}</span>
               <span className="text-stone-600">/</span>
-              <span className="text-stone-400">0{PROMO_SLIDES.length}</span>
+              <span className="text-stone-400">0{visibleSlides.length}</span>
             </div>
           </div>
 
