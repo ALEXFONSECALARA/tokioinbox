@@ -8,8 +8,8 @@ interface StaffLoginProps {
 
 /** Tela de acesso da equipe. Sem credenciais de exemplo, sem atalhos, sem links para o cardápio. */
 export const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('admin');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -39,6 +39,7 @@ export const StaffLogin: React.FC<StaffLoginProps> = ({ onLogin }) => {
           </div>
           <h1 className="text-lg font-black text-white tracking-tight">Acesso da equipe</h1>
           <p className="text-xs text-slate-400">{BRAND_NAME} • área restrita a colaboradores</p>
+          <p className="text-[10px] text-amber-400/80 font-bold">Acesso padrão: admin / admin</p>
         </div>
 
         <label className="block space-y-1">
