@@ -1042,6 +1042,14 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       if (res.status === 304 || !res.ok) return;
       const data = await res.json();
       if (!data?.success || !data.restaurants || !Array.isArray(data.menuItems)) return;
+      // Nunca substitui um catálogo válido por uma resposta pública vazia/incompleta.
+      // Isso evita que o cardápio cliente fique sem restaurante após deploy/restart.
+      const serverRestaurants = Object.values(data.restaurants as Record<string, RestaurantConfig>);
+      if (serverRestaurants.length === 0) {
+        console.warn('[CATALOG] /api/public/catalog retornou 0 restaurantes; mantendo catálogo local.');
+        setCatalogLoaded(true);
+        return;
+      }
       catalogEtagRef.current = res.headers.get('ETag');
       applyingServerCatalogRef.current = true;
       setRestaurants(data.restaurants);
@@ -2619,16 +2627,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     setAppliedCoupon(null);
   };
 
-  // Nunca deixa o cardápio público receber `undefined` como restaurante ativo.
-  // O catálogo do servidor pode chegar vazio/atrasado durante o primeiro carregamento;
-  // nesse intervalo usamos, nesta ordem, o restaurante selecionado, japones, o primeiro
-  // disponível ou o restaurante padrão inicial. Isso evita crash em RestaurantHeader,
-  // MenuSection e demais componentes que dependem de currentRestaurant.
-  const currentRestaurant =
-    restaurants[activeRestaurantSlug] ||
-    restaurants.japones ||
-    Object.values(restaurants)[0] ||
-    INITIAL_RESTAURANTS.japones;
+  const currentRestaurant = restaurants[activeRestaurantSlug] || restaurants.japones;
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.subtotal || 0), 0);
   const cartDiscount = appliedCoupon
