@@ -1127,56 +1127,129 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
   }, [catalogLoaded, restaurants]);
 
   // ===========================================================================
-  // CLIENTE: acompanha somente os PRÓPRIOS pedidos (id + token secreto deste aparelho)
-  // ===========================================================================
+  // CLIENTE: acompanha somente os PRÓPRIOS pedidos em tempo real.
+  // Usa SSE autenticado por ticket temporário (somente id + token do próprio
+  // pedido) e mantém uma consulta lenta como fallback para redes que não
+  // suportam SSE. Assim RECEBIDO -> ACEITO -> PREPARO -> PRONTO -> ENTREGA ->
+  // ENTREGUE -> FINALIZADO chega ao cliente sem esperar o próximo ciclo.
   useEffect(() => {
     if (isStaffMode) return undefined;
     let stopped = false;
-    let timer: any = null;
+    let pollTimer: any = null;
+    let ticketTimer: any = null;
+    let customerEventSource: EventSource | null = null;
 
-    const tick = async () => {
-      if (timer) clearTimeout(timer);
+    const syncMyOrders = async () => {
       const mine = readMyOrders();
-      let nextDelay = 25000;
-      if (mine.length > 0) {
-        try {
-          const res = await fetch('/api/public/orders/lookup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: mine }),
+      if (mine.length === 0) return;
+      try {
+        const res = await fetch('/api/public/orders/lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: mine }),
+        });
+        if (!res.ok || stopped) return;
+        const data = await res.json();
+        if (Array.isArray(data.orders)) {
+          setOrders((prev) => {
+            const map = new Map<string, Order>(prev.map((o): [string, Order] => [o.id, o]));
+            data.orders.forEach((o: Order) => map.set(o.id, o));
+            return Array.from(map.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           });
-          if (res.ok && !stopped) {
-            const data = await res.json();
-            if (Array.isArray(data.orders)) {
-              setOrders((prev) => {
-                const map = new Map<string, Order>(prev.map((o): [string, Order] => [o.id, o]));
-                data.orders.forEach((o: Order) => map.set(o.id, o));
-                return Array.from(map.values()).sort(
-                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-                );
-              });
-              const hasActive = data.orders.some((o: Order) => !['entregue', 'finalizado', 'cancelado'].includes(o.status));
-              nextDelay = hasActive ? 8000 : 60000;
-            }
-          }
-        } catch {
-          /* sem rede: tenta de novo depois */
+          setLastSyncTime(new Date());
         }
+      } catch {
+        /* fallback silencioso */
       }
-      if (!stopped) timer = setTimeout(tick, nextDelay);
     };
 
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') tick();
+    const openCustomerStream = async () => {
+      if (stopped || typeof EventSource === 'undefined') return;
+      const mine = readMyOrders();
+      if (mine.length === 0) return;
+
+      try {
+        if (customerEventSource) customerEventSource.close();
+        const ticketRes = await fetch('/api/public/orders/stream-ticket', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: mine }),
+        });
+        if (!ticketRes.ok || stopped) return;
+        const { ticket } = await ticketRes.json();
+        if (!ticket || stopped) return;
+
+        customerEventSource = new EventSource(`/api/public/orders/stream?ticket=${encodeURIComponent(ticket)}`);
+        customerEventSource.onopen = () => setIsOnline(true);
+        customerEventSource.onmessage = (event) => {
+          if (!event.data || event.data.startsWith(':')) return;
+          try {
+            const parsed = JSON.parse(event.data);
+            if (parsed.event === 'connected') return;
+            if (parsed.order?.id) {
+              const incoming = parsed.order as Order;
+              setOrders((prev) => {
+                const idx = prev.findIndex((o) => o.id === incoming.id);
+                if (idx < 0) return [incoming, ...prev];
+                const next = [...prev];
+                next[idx] = incoming;
+                return next;
+              });
+              setLastSyncTime(new Date());
+              window.dispatchEvent(new CustomEvent('nx-my-order-updated', { detail: incoming }));
+            }
+          } catch {
+            /* ignora evento inválido */
+          }
+        };
+        customerEventSource.onerror = () => {
+          if (customerEventSource) {
+            customerEventSource.close();
+            customerEventSource = null;
+          }
+        };
+      } catch {
+        /* polling continua ativo */
+      }
     };
-    tick();
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('nx-my-orders-changed', tick);
+
+    const schedulePoll = () => {
+      if (pollTimer) clearTimeout(pollTimer);
+      if (stopped) return;
+      pollTimer = setTimeout(async () => {
+        await syncMyOrders();
+        schedulePoll();
+      }, 20000);
+    };
+
+    const refresh = () => {
+      if (document.visibilityState === 'visible') {
+        syncMyOrders();
+        openCustomerStream();
+      }
+    };
+
+    const restartStream = () => {
+      if (ticketTimer) clearTimeout(ticketTimer);
+      ticketTimer = setTimeout(() => {
+        openCustomerStream();
+        restartStream();
+      }, 45_000);
+    };
+
+    refresh();
+    schedulePoll();
+    restartStream();
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('nx-my-orders-changed', refresh);
+
     return () => {
       stopped = true;
-      if (timer) clearTimeout(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('nx-my-orders-changed', tick);
+      if (pollTimer) clearTimeout(pollTimer);
+      if (ticketTimer) clearTimeout(ticketTimer);
+      if (customerEventSource) customerEventSource.close();
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('nx-my-orders-changed', refresh);
     };
   }, [isStaffMode]);
 
