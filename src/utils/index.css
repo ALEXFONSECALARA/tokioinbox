@@ -192,3 +192,50 @@ body.painel-app-shell #root > * {
 }
 
 
+
+/* ============================================================
+   PDV v3 — auditoria visual / responsividade
+   ============================================================ */
+html, body, #root {
+  min-height: 100%;
+}
+
+button, input, select, textarea {
+  touch-action: manipulation;
+}
+
+.modal-viewport {
+  height: 100dvh;
+  min-height: 100vh;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modal-surface {
+  box-sizing: border-box;
+  width: min(100%, 1100px);
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.admin-compact-tabs > button {
+  padding: 0.35rem 0.55rem !important;
+  font-size: 10px !important;
+  line-height: 1.15 !important;
+  gap: 0.3rem !important;
+}
+
+@media (max-width: 900px) {
+  .modal-surface {
+    max-height: calc(100dvh - 16px);
+    border-radius: 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-compact-tabs > button {
+    padding: 0.35rem 0.45rem !important;
+    font-size: 9px !important;
+  }
+}
