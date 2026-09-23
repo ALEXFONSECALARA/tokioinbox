@@ -8,7 +8,7 @@ import { ProductModal } from '../../components/ProductModal';
 import { OrderTrackerModal } from '../../components/OrderTrackerModal';
 import { useStore } from '../../context/StoreContext';
 import { MenuItem, Order } from '../../types/restaurant';
-import { ShoppingBag, ArrowLeft, Utensils, QrCode } from 'lucide-react';
+import { ShoppingBag, ArrowLeft, QrCode } from 'lucide-react';
 
 interface ClienteModuleProps {
   tableNumber?: number | null;
@@ -64,7 +64,6 @@ export const ClienteModule: React.FC<ClienteModuleProps> = ({
             </button>
           )}
           <div className="flex items-center gap-2">
-            <span className="text-2xl">{currentRestaurant?.emoji || '🍣'}</span>
             <div>
               <h1 className="text-sm font-black tracking-tight text-white uppercase">
                 {currentRestaurant?.name || 'Cardápio Digital'}
