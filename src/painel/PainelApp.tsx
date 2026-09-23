@@ -11,8 +11,6 @@ import {
   StaffRole,
   areaFromPathname,
   areasForRole,
-  canAccessArea,
-  defaultAreaForRole,
 } from './access';
 
 /**
@@ -41,6 +39,27 @@ const ENV_TO_AREA: Partial<Record<OperationalEnvironment, StaffArea>> = {
   bar: 'bar',
   admin: 'admin',
 };
+
+
+function allowedAreasForUser(user: any): StaffArea[] {
+  const roleAreas = areasForRole(user?.role);
+  const p = user?.permissions || {};
+  return roleAreas.filter((a) => {
+    switch (a) {
+      case 'admin': return Boolean(p.can_manage_users || p.can_manage_permissions || user?.role === 'super_admin' || user?.role === 'administrador');
+      case 'pdv':
+      case 'balcao': return Boolean(p.can_create_orders);
+      case 'delivery':
+      case 'kanban': return Boolean(p.can_view_orders);
+      case 'caixa': return Boolean(p.can_view_orders && p.can_change_status);
+      case 'cozinha':
+      case 'sushibar':
+      case 'bar':
+      case 'courier': return Boolean(p.can_view_orders && p.can_change_status);
+      default: return false;
+    }
+  });
+}
 
 const AREA_TO_ENV: Record<StaffArea, OperationalEnvironment> = {
   admin: 'admin',
@@ -127,7 +146,7 @@ export function PainelApp() {
   useEffect(() => {
     if (!currentUser) return;
     if (area === null) {
-      const def = defaultAreaForRole(role);
+      const def = allowedAreasForUser(currentUser)[0] || null;
       if (def) goArea(def);
     }
   }, [currentUser?.id, area]);
@@ -141,13 +160,13 @@ export function PainelApp() {
       return;
     }
     const target = ENV_TO_AREA[env];
-    if (!target || !canAccessArea(role, target)) return;
+    if (!target || !allowedAreasForUser(currentUser).includes(target)) return;
     if (target === 'admin' && subOption) setAdminInitialTab(subOption);
     goArea(target);
   };
 
   const backToStart = () => {
-    const def = defaultAreaForRole(role);
+    const def = allowedAreasForUser(currentUser)[0] || null;
     if (def && area !== def) goArea(def);
     else setArea(null);
   };
@@ -156,7 +175,7 @@ export function PainelApp() {
     return <StaffLogin onLogin={loginUser} />;
   }
 
-  const allowed = areasForRole(role);
+  const allowed = allowedAreasForUser(currentUser);
   const logoutChip = (
     <button
       onClick={() => {
@@ -174,7 +193,7 @@ export function PainelApp() {
   );
 
   // Área inexistente ou sem permissão
-  if (!area || !canAccessArea(role, area)) {
+  if (!area || !allowed.includes(area)) {
     return (
       <div className="min-h-screen bg-[#07090E] flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-[#0E121B] border border-rose-500/30 rounded-3xl p-6 sm:p-8 text-center space-y-4">
@@ -228,14 +247,14 @@ export function PainelApp() {
       screen = (
         <SalaoModule
           onBackToApp={backToStart}
-          onOpenAdmin={canAccessArea(role, 'admin') ? () => goArea('admin') : undefined}
+          onOpenAdmin={allowed.includes('admin') ? () => goArea('admin') : undefined}
           onNavigateToEnvironment={handleNavigateEnvironment}
         />
       );
       break;
     case 'balcao':
       screen = withBar(
-        <BalcaoModule onBackToApp={backToStart} onOpenAdmin={canAccessArea(role, 'admin') ? () => goArea('admin') : undefined} />
+        <BalcaoModule onBackToApp={backToStart} onOpenAdmin={allowed.includes('admin') ? () => goArea('admin') : undefined} />
       );
       break;
     case 'delivery':
