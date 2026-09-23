@@ -21,7 +21,7 @@ export const ProducaoModule: React.FC<ProducaoModuleProps> = ({
   const [selectedStation, setSelectedStation] = useState<ProductionStation>(initialStation);
 
   return (
-    <div className="w-full h-full min-h-screen bg-[#07090E] flex flex-col">
+    <div className="w-full h-full bg-[#07090E] flex flex-col">
       {/* Top Station Selector Tab */}
       <div className="bg-[#090D16] border-b border-slate-800 px-4 py-2.5 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
