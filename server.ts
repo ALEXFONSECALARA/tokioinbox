@@ -5,6 +5,7 @@ import express from 'express';
 import compression from 'compression';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import {
@@ -1069,6 +1070,38 @@ interface SSEOrderClient {
 }
 let sseOrderClients: SSEOrderClient[] = [];
 
+// Clientes públicos: recebem apenas atualizações dos próprios pedidos.
+// O ticket é temporário e associa cada conexão aos pares id + token secreto
+// já entregues ao cliente no momento da criação do pedido. Nenhum token é
+// enviado no SSE.
+interface PublicSSETicket { ids: Set<string>; expiresAt: number }
+interface PublicSSEClient { id: string; res: express.Response; orderIds: Set<string> }
+const publicSSETickets = new Map<string, PublicSSETicket>();
+let publicSSEClients: PublicSSEClient[] = [];
+
+function issuePublicStreamTicket(items: Array<{ id: string; t: string }>): string | null {
+  const now = Date.now();
+  for (const [key, value] of publicSSETickets) {
+    if (value.expiresAt < now) publicSSETickets.delete(key);
+  }
+  const validIds = new Set<string>();
+  for (const item of items.slice(0, 30)) {
+    const order = getOrderForTracking(String(item?.id || ''), String(item?.t || ''));
+    if (order) validIds.add(order.id);
+  }
+  if (validIds.size === 0) return null;
+  const ticket = crypto.randomBytes(24).toString('hex');
+  publicSSETickets.set(ticket, { ids: validIds, expiresAt: Date.now() + 60_000 });
+  return ticket;
+}
+
+function consumePublicStreamTicket(ticket: string): PublicSSETicket | null {
+  const data = publicSSETickets.get(ticket);
+  publicSSETickets.delete(ticket);
+  if (!data || data.expiresAt < Date.now()) return null;
+  return data;
+}
+
 export function broadcastOrdersUpdate(eventType: string, order?: any) {
   // Somente colaboradores autenticados recebem o stream; nunca envia o token de rastreio.
   const safeOrder = order ? toStaffView(order) : undefined;
@@ -1079,6 +1112,24 @@ export function broadcastOrdersUpdate(eventType: string, order?: any) {
     lastModified: getOrdersLastModified(),
     timestamp: new Date().toISOString(),
   });
+
+  // Atualiza clientes públicos somente quando o pedido pertence à lista
+  // autorizada pelo ticket temporário. A visão pública nunca contém token.
+  if (order?.id) {
+    const customerPayload = JSON.stringify({
+      event: eventType,
+      order: toCustomerView(order),
+      timestamp: new Date().toISOString(),
+    });
+    publicSSEClients = publicSSEClients.filter((client) => {
+      try {
+        if (client.orderIds.has(order.id)) client.res.write(`data: ${customerPayload}\n\n`);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }
 
   sseOrderClients.forEach((client) => {
     try {
@@ -1143,6 +1194,42 @@ app.get('/api/orders/stream', (req, res) => {
   req.on('close', () => {
     clearInterval(heartbeat);
     sseOrderClients = sseOrderClients.filter((c) => c.id !== clientId);
+  });
+});
+
+app.post('/api/public/orders/stream-ticket', rateLimit({ key: 'public-stream-ticket', max: 30, windowMs: 60 * 1000 }), (req, res) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items.filter((x: any) => x && x.id && x.t).slice(0, 30) : [];
+    const ticket = issuePublicStreamTicket(items);
+    if (!ticket) return res.status(401).json({ success: false, error: 'Nenhum pedido rastreável encontrado.' });
+    res.json({ success: true, ticket });
+  } catch {
+    res.status(400).json({ success: false, error: 'Não foi possível iniciar o rastreamento em tempo real.' });
+  }
+});
+
+app.get('/api/public/orders/stream', (req, res) => {
+  const data = consumePublicStreamTicket(String(req.query.ticket || ''));
+  if (!data) return res.status(401).json({ success: false, error: 'Ticket de rastreamento inválido ou expirado.' });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const clientId = `public-sse-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const client: PublicSSEClient = { id: clientId, res, orderIds: data.ids };
+  publicSSEClients.push(client);
+  res.write(`data: ${JSON.stringify({ event: 'connected', clientId, timestamp: new Date().toISOString() })}\n\n`);
+
+  const heartbeat = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    publicSSEClients = publicSSEClients.filter((c) => c.id !== clientId);
   });
 });
 
