@@ -129,6 +129,23 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     return Array.from(map.values()).sort((a, b) => a.tableNumber - b.tableNumber);
   }, [mesaOrders]);
 
+  // Fonte única dos dados exibidos no recebimento. Para mesa, sempre usa os
+  // pedidos ativos atuais do store (e não o snapshot de selectedOrder), para
+  // que itens recém-lançados apareçam imediatamente no Caixa.
+  const selectedFinancialOrders = useMemo(() => {
+    if (!selectedOrder) return [] as Order[];
+    if (selectedOrder.orderType === 'mesa' && selectedOrder.tableNumber) {
+      return mesaOrders.filter((o) => o.tableNumber === selectedOrder.tableNumber);
+    }
+    return [selectedOrder];
+  }, [selectedOrder, mesaOrders]);
+
+  const selectedOrderItems = useMemo(() => {
+    return selectedFinancialOrders.flatMap((order) =>
+      order.items.map((item) => ({ ...item, orderId: order.id }))
+    );
+  }, [selectedFinancialOrders]);
+
   // Financial summary of the shift
   const deliveredOrders = orders.filter((o) => o.status === 'entregue' || o.status === 'pronto' || o.status === 'finalizado');
   const revenueDinheiro = deliveredOrders
@@ -154,13 +171,8 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   // Selected Order / Table financial calculation
   const subtotalSelected = useMemo(() => {
     if (!selectedOrder) return 0;
-    // If it's a table order, sum all active orders of that table
-    if (selectedOrder.orderType === 'mesa' && selectedOrder.tableNumber) {
-      const related = mesaOrders.filter((o) => o.tableNumber === selectedOrder.tableNumber);
-      return related.reduce((acc, curr) => acc + curr.subtotal, 0);
-    }
-    return selectedOrder.subtotal || selectedOrder.total;
-  }, [selectedOrder, mesaOrders]);
+    return selectedFinancialOrders.reduce((acc, curr) => acc + (curr.subtotal || curr.total || 0), 0);
+  }, [selectedOrder, selectedFinancialOrders]);
 
   const serviceFee = includeServiceFee ? subtotalSelected * 0.1 : 0;
   const finalTotal = Math.max(0, subtotalSelected + serviceFee - discountAmount);
@@ -233,19 +245,43 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     }
 
     if (selectedOrder.orderType === 'mesa' && selectedOrder.tableNumber) {
-      // Close all orders of that table
-      const related = mesaOrders.filter((o) => o.tableNumber === selectedOrder.tableNumber);
-      for (const ord of related) {
+      // Uma mesa pode possuir mais de uma comanda/pedido. O fechamento é
+      // distribuído proporcionalmente para não gravar o total/taxa/desconto
+      // inteiro em cada pedido (o que duplicava o faturamento no histórico).
+      const related = selectedFinancialOrders;
+      const baseSubtotal = related.reduce((sum, ord) => sum + (ord.subtotal || 0), 0) || 1;
+      let allocatedTotal = 0;
+      let allocatedService = 0;
+      let allocatedDiscount = 0;
+
+      for (let index = 0; index < related.length; index += 1) {
+        const ord = related[index];
+        const isLast = index === related.length - 1;
+        const share = (ord.subtotal || 0) / baseSubtotal;
+        const orderServiceFee = isLast
+          ? Number((serviceFee - allocatedService).toFixed(2))
+          : Number((serviceFee * share).toFixed(2));
+        const orderDiscount = isLast
+          ? Number((discountAmount - allocatedDiscount).toFixed(2))
+          : Number((discountAmount * share).toFixed(2));
+        const orderTotal = isLast
+          ? Number((finalTotal - allocatedTotal).toFixed(2))
+          : Number(Math.max(0, (ord.subtotal || 0) + orderServiceFee - orderDiscount).toFixed(2));
+
         await closeTableOrder({
           orderId: ord.id,
           tableNumber: selectedOrder.tableNumber,
           paymentMethod,
-          discount: discountAmount,
-          serviceFee,
-          total: finalTotal,
+          discount: orderDiscount,
+          serviceFee: orderServiceFee,
+          total: orderTotal,
           splitCount,
           operatorName: currentUser?.name || 'Operador Caixa',
         });
+
+        allocatedTotal += orderTotal;
+        allocatedService += orderServiceFee;
+        allocatedDiscount += orderDiscount;
       }
       playAlertSound('sound1', 0.8);
       showToast(`Conta da Mesa ${selectedOrder.tableNumber} recebida e fechada com sucesso!`, 'success');
@@ -439,12 +475,12 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
       </header>
 
       {/* Main Content Area — único container com rolagem interna da tela */}
-      <main className="max-w-7xl mx-auto p-4 lg:p-8 flex-1 min-h-0 w-full overflow-y-auto">
+      <main className={`max-w-7xl mx-auto p-4 lg:p-8 flex-1 min-h-0 w-full ${selectedOrder && activeTab === 'mesas' ? 'overflow-hidden' : 'overflow-y-auto'}`}> 
         {/* VIEW 1: CONTAS DA MESA */}
         {activeTab === 'mesas' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left: Tables List */}
-            <div className={`${selectedOrder ? 'lg:col-span-6' : 'lg:col-span-12'} space-y-4`}>
+            <div className="lg:col-span-12 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-black text-amber-400 uppercase tracking-wider flex items-center gap-2">
                   <Utensils className="w-4 h-4" />
@@ -519,242 +555,182 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
               )}
             </div>
 
-            {/* Right: Payment & Split Checkout Panel */}
+            {/* Recebimento Presencial — modal único, centralizado e sem scroll externo */}
             {selectedOrder && (
-              // Painel de recebimento — agora com altura própria travada ao
-              // viewport (não depende só da rolagem geral do <main>): fica
-              // "grudado" (sticky) ao rolar a lista de mesas, com cabeçalho
-              // e botão de confirmar SEMPRE visíveis, e só o meio (valores/
-              // forma de pagamento) rola internamente quando não couber.
-              <div className="lg:col-span-6 bg-[#121622] border-2 border-amber-500/60 rounded-3xl shadow-2xl animate-fadeIn flex flex-col overflow-hidden lg:sticky lg:top-3 h-[calc(100dvh-132px)] max-h-[90dvh] min-h-0">
-                <div className="shrink-0 flex items-center justify-between gap-3 border-b border-slate-800 p-3.5 pb-2.5">
-                  <div>
-                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest block">
-                      Recebimento Presencial
-                    </span>
-                    <h3 className="text-lg font-black text-white flex items-center gap-2">
-                      <span>MESA {selectedOrder.tableNumber}</span>
-                      <span className="text-xs font-normal text-slate-400">({selectedOrder.customerName})</span>
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 ml-auto">
-                    <span className="hidden sm:inline text-[9px] uppercase font-black text-slate-500 mr-1">Parcelas</span>
-                    {[1,2,3,4,5,6].map((num) => (
-                      <button key={num} type="button" onClick={() => setSplitCount(num)} className={`w-7 h-7 rounded-lg text-[10px] font-black border ${splitCount === num ? 'bg-amber-500 text-slate-950 border-amber-300' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>{num}x</button>
-                    ))}
-                    <button
-                      onClick={() => setTicketOrder(selectedOrder)}
-                      className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 text-xs font-bold flex items-center gap-1.5"
-                      title="Imprimir conferência de mesa para o cliente"
-                    >
-                      <Printer className="w-4 h-4" />
-                      <span>Conferência</span>
-                    </button>
-
-                    <button
-                      onClick={() => setSelectedOrder(null)}
-                      className="text-xs text-slate-400 hover:text-white px-2 py-1"
-                    >
-                      Fechar
-                    </button>
-                  </div>
-                </div>
-
-                {/* Corpo com rolagem interna própria */}
-                <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
-                <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-[#0E121C] px-3 py-2">
-                  <div className="min-w-0"><span className="text-[10px] uppercase font-black text-slate-500">Itens da comanda</span><p className="text-xs text-slate-300 truncate">Adicione produtos diretamente do cardápio</p></div>
-                  <button type="button" onClick={() => setShowAddItemModal(true)} className="shrink-0 px-3 py-2 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-black flex items-center gap-1.5 hover:bg-sky-500/25"><Plus className="w-3.5 h-3.5" /> Inserir item</button>
-                </div>
-
-                {/* Service Fee (10%) and Discount */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-white block">Taxa Serviço 10%</span>
-                      <span className="text-[10px] text-slate-400">R$ {serviceFee.toFixed(2)}</span>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={includeServiceFee}
-                      onChange={(e) => setIncludeServiceFee(e.target.checked)}
-                      className="w-5 h-5 rounded text-amber-500 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-white block">Desconto</span>
-                      <span className="text-[10px] text-emerald-400">
-                        {discountAmount > 0 ? `- R$ ${discountAmount.toFixed(2)}` : 'Sem desconto'}
+              <div
+                className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-3 lg:p-4"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Recebimento Presencial Mesa ${selectedOrder.tableNumber || ''}`}
+              >
+                <div className="w-full max-w-5xl h-[calc(100dvh-16px)] sm:h-[calc(100dvh-24px)] max-h-[900px] min-h-0 bg-[#121622] border-2 border-amber-500/60 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-fadeIn">
+                  {/* Cabeçalho fixo */}
+                  <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 p-3 sm:p-3.5">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest block">
+                        Recebimento Presencial
                       </span>
+                      <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2 min-w-0">
+                        <span className="shrink-0">MESA {selectedOrder.tableNumber}</span>
+                        <span className="text-xs font-normal text-slate-400 truncate">({selectedOrder.customerName || `Mesa ${selectedOrder.tableNumber}`})</span>
+                      </h3>
+                      <p className="text-[10px] text-slate-500 truncate">
+                        Garçom: <span className="text-slate-300">{selectedOrder.waiterName || 'Salão'}</span>
+                      </p>
                     </div>
-                    {isDiscountAuthorized ? (
+
+                    <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
+                      <span className="hidden md:inline text-[9px] uppercase font-black text-slate-500 mr-1">Parcelas</span>
+                      {[1,2,3,4,5,6].map((num) => (
+                        <button key={num} type="button" onClick={() => setSplitCount(num)} className={`w-7 h-7 rounded-lg text-[10px] font-black border ${splitCount === num ? 'bg-amber-500 text-slate-950 border-amber-300' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>{num}x</button>
+                      ))}
                       <button
-                        onClick={() => {
-                          const val = prompt('Informe o valor do desconto em R$:', '5.00');
-                          if (val) setDiscountAmount(parseFloat(val) || 0);
-                        }}
-                        className="text-xs font-bold text-amber-400 underline"
+                        type="button"
+                        onClick={() => setTicketOrder(selectedOrder)}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 text-xs font-bold flex items-center gap-1.5"
+                        title="Imprimir conferência de mesa para o cliente"
                       >
-                        Ajustar
+                        <Printer className="w-4 h-4" />
+                        <span className="hidden sm:inline">Conferência</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrder(null)}
+                        className="text-xs text-slate-400 hover:text-white px-2 py-1"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ÚNICA área rolável do modal */}
+                  <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-[#0E121C] px-3 py-2">
+                      <div className="min-w-0">
+                        <span className="text-[10px] uppercase font-black text-slate-500">Itens da comanda</span>
+                        <p className="text-xs text-slate-300 truncate">Mesa {selectedOrder.tableNumber} • {selectedOrderItems.length} item(ns)</p>
+                      </div>
+                      <button type="button" onClick={() => setShowAddItemModal(true)} className="shrink-0 px-3 py-2 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-black flex items-center gap-1.5 hover:bg-sky-500/25">
+                        <Plus className="w-3.5 h-3.5" /> Inserir item
+                      </button>
+                    </div>
+
+                    {selectedOrderItems.length > 0 ? (
+                      <div className="rounded-2xl border border-slate-800 bg-[#0E121C] overflow-hidden">
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 border-b border-slate-800 text-[9px] uppercase font-black text-slate-500">
+                          <span>Produto</span><span>Qtd.</span><span>Total</span>
+                        </div>
+                        <div className="divide-y divide-slate-800/70">
+                          {selectedOrderItems.map((item, index) => (
+                            <div key={`${item.orderId}-${item.id}-${index}`} className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-3 py-2">
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-white truncate">{item.name}</p>
+                                {item.notes && <p className="text-[9px] text-slate-500 truncate">{item.notes}</p>}
+                              </div>
+                              <span className="text-xs text-slate-300 font-mono">{item.quantity}x</span>
+                              <span className="text-xs text-amber-400 font-black font-mono whitespace-nowrap">R$ {item.totalPrice.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     ) : (
-                      <button
-                        onClick={() => setIsAuthorizingDiscount(true)}
-                        className="text-xs font-bold text-slate-400 hover:text-amber-400 flex items-center gap-1"
-                      >
-                        <Lock className="w-3 h-3" />
-                        <span>Liberar</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Manager Password Prompt if requested */}
-                {isAuthorizingDiscount && (
-                  <div className="bg-amber-950/40 border border-amber-500/40 p-3 rounded-2xl space-y-2">
-                    <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                      <ShieldAlert className="w-4 h-4" />
-                      <span>Senha de Gerente para Desconto</span>
-                    </span>
-                    <div className="flex gap-2">
-                      <input
-                        type="password"
-                        placeholder="Senha do gerente..."
-                        value={discountPassword}
-                        onChange={(e) => setDiscountPassword(e.target.value)}
-                        className="flex-1 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl text-xs text-white"
-                      />
-                      <button
-                        onClick={handleAuthorizeDiscount}
-                        className="px-3 py-1.5 bg-amber-500 text-slate-950 text-xs font-black rounded-xl"
-                      >
-                        Autorizar
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Financial Summary */}
-                <div className="bg-[#0E121C] p-4 rounded-2xl border border-slate-800 space-y-1.5 text-xs font-mono">
-                  <div className="flex justify-between text-slate-400">
-                    <span>Subtotal Consumido:</span>
-                    <span>R$ {subtotalSelected.toFixed(2)}</span>
-                  </div>
-                  {includeServiceFee && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Serviço (10%):</span>
-                      <span>+ R$ {serviceFee.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {discountAmount > 0 && (
-                    <div className="flex justify-between text-emerald-400">
-                      <span>Desconto Gerente:</span>
-                      <span>- R$ {discountAmount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-base font-black text-amber-400 pt-2 border-t border-slate-800">
-                    <span>TOTAL A PAGAR:</span>
-                    <span>R$ {finalTotal.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                {/* Payment Methods */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase block">
-                    Forma de Pagamento
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('cartao_credito')}
-                      className={`p-2.5 rounded-xl text-xs font-bold border flex flex-col items-center gap-1 transition-all ${
-                        paymentMethod === 'cartao_credito'
-                          ? 'bg-sky-500/20 text-sky-300 border-sky-500'
-                          : 'bg-slate-800/60 text-slate-400 border-slate-800'
-                      }`}
-                    >
-                      <CreditCard className="w-4 h-4" />
-                      <span>Crédito</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('cartao_debito')}
-                      className={`p-2.5 rounded-xl text-xs font-bold border flex flex-col items-center gap-1 transition-all ${
-                        paymentMethod === 'cartao_debito'
-                          ? 'bg-sky-500/20 text-sky-300 border-sky-500'
-                          : 'bg-slate-800/60 text-slate-400 border-slate-800'
-                      }`}
-                    >
-                      <CreditCard className="w-4 h-4" />
-                      <span>Débito</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('pix')}
-                      className={`p-2.5 rounded-xl text-xs font-bold border flex flex-col items-center gap-1 transition-all ${
-                        paymentMethod === 'pix'
-                          ? 'bg-teal-500/20 text-teal-300 border-teal-500'
-                          : 'bg-slate-800/60 text-slate-400 border-slate-800'
-                      }`}
-                    >
-                      <QrCode className="w-4 h-4" />
-                      <span>PIX</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('dinheiro')}
-                      className={`p-2.5 rounded-xl text-xs font-bold border flex flex-col items-center gap-1 transition-all ${
-                        paymentMethod === 'dinheiro'
-                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
-                          : 'bg-slate-800/60 text-slate-400 border-slate-800'
-                      }`}
-                    >
-                      <DollarSign className="w-4 h-4" />
-                      <span>Dinheiro</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Cash Change Calculator */}
-                {paymentMethod === 'dinheiro' && (
-                  <div className="bg-[#141A28] p-3.5 rounded-2xl border border-emerald-500/30 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-emerald-300">Valor Entregue pelo Cliente:</span>
-                      <input
-                        type="text"
-                        placeholder="R$ 0,00"
-                        value={cashReceived}
-                        onChange={(e) => setCashReceived(e.target.value)}
-                        className="w-32 text-right bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl font-mono text-sm text-white focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                    {cashReceivedNum > 0 && (
-                      <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-800">
-                        <span className="text-slate-400">Troco a Devolver:</span>
-                        <span className="font-mono font-black text-emerald-400 text-sm">
-                          R$ {changeDue.toFixed(2)}
-                        </span>
+                      <div className="rounded-2xl border border-slate-800 bg-[#0E121C] p-6 text-center text-xs text-slate-500">
+                        Nenhum item registrado nesta comanda.
                       </div>
                     )}
-                  </div>
-                )}
-                </div>
 
-                {/* Botão de confirmação — rodapé fixo, sempre visível */}
-                <div className="shrink-0 p-3 pt-2 border-t border-slate-800 bg-[#101622]">
-                  <button
-                    onClick={handleConfirmPayment}
-                    className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-950/40 active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span>Confirmar Recebimento &amp; Liberar Mesa</span>
-                  </button>
+                    {/* Taxa de serviço e desconto permanecem no corpo, que é a única área rolável. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Taxa Serviço 10%</span>
+                          <span className="text-[10px] text-slate-400">R$ {serviceFee.toFixed(2)}</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={includeServiceFee}
+                          onChange={(e) => setIncludeServiceFee(e.target.checked)}
+                          className="w-5 h-5 rounded text-amber-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Desconto</span>
+                          <span className="text-[10px] text-emerald-400">{discountAmount > 0 ? `- R$ ${discountAmount.toFixed(2)}` : 'Sem desconto'}</span>
+                        </div>
+                        {isDiscountAuthorized ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = prompt('Informe o valor do desconto em R$:', '5.00');
+                              if (val) setDiscountAmount(parseFloat(val) || 0);
+                            }}
+                            className="text-xs font-bold text-amber-400 underline"
+                          >Ajustar</button>
+                        ) : (
+                          <button type="button" onClick={() => setIsAuthorizingDiscount(true)} className="text-xs font-bold text-slate-400 hover:text-amber-400 flex items-center gap-1">
+                            <Lock className="w-3 h-3" /><span>Liberar</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {isAuthorizingDiscount && (
+                      <div className="bg-amber-950/40 border border-amber-500/40 p-3 rounded-2xl space-y-2">
+                        <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5"><ShieldAlert className="w-4 h-4" /><span>Senha de Gerente para Desconto</span></span>
+                        <div className="flex gap-2">
+                          <input type="password" placeholder="Senha do gerente..." value={discountPassword} onChange={(e) => setDiscountPassword(e.target.value)} className="flex-1 min-w-0 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl text-xs text-white" />
+                          <button type="button" onClick={handleAuthorizeDiscount} className="px-3 py-1.5 bg-amber-500 text-slate-950 text-xs font-black rounded-xl">Autorizar</button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="bg-[#0E121C] p-3 sm:p-4 rounded-2xl border border-slate-800 space-y-1.5 text-xs font-mono">
+                      <div className="flex justify-between text-slate-400"><span>Subtotal Consumido:</span><span>R$ {subtotalSelected.toFixed(2)}</span></div>
+                      {includeServiceFee && <div className="flex justify-between text-slate-400"><span>Serviço (10%):</span><span>+ R$ {serviceFee.toFixed(2)}</span></div>}
+                      {discountAmount > 0 && <div className="flex justify-between text-emerald-400"><span>Desconto Gerente:</span><span>- R$ {discountAmount.toFixed(2)}</span></div>}
+                      <div className="flex justify-between text-base font-black text-amber-400 pt-2 border-t border-slate-800"><span>TOTAL A PAGAR:</span><span>R$ {finalTotal.toFixed(2)}</span></div>
+                    </div>
+                  </div>
+
+                  {/* Rodapé fixo: pagamento + dinheiro/troco + confirmação nunca entram no scroll. */}
+                  <div className="shrink-0 border-t border-slate-800 bg-[#101622] p-2.5 sm:p-3">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">Forma de Pagamento</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
+                      <button type="button" onClick={() => setPaymentMethod('cartao_credito')} className={`py-2 px-2 rounded-xl text-[10px] sm:text-xs font-bold border flex items-center justify-center gap-1.5 transition-all ${paymentMethod === 'cartao_credito' ? 'bg-sky-500/20 text-sky-300 border-sky-500' : 'bg-slate-800/60 text-slate-400 border-slate-800'}`}>
+                        <CreditCard className="w-4 h-4" /><span>Crédito</span>
+                      </button>
+                      <button type="button" onClick={() => setPaymentMethod('cartao_debito')} className={`py-2 px-2 rounded-xl text-[10px] sm:text-xs font-bold border flex items-center justify-center gap-1.5 transition-all ${paymentMethod === 'cartao_debito' ? 'bg-sky-500/20 text-sky-300 border-sky-500' : 'bg-slate-800/60 text-slate-400 border-slate-800'}`}>
+                        <CreditCard className="w-4 h-4" /><span>Débito</span>
+                      </button>
+                      <button type="button" onClick={() => setPaymentMethod('pix')} className={`py-2 px-2 rounded-xl text-[10px] sm:text-xs font-bold border flex items-center justify-center gap-1.5 transition-all ${paymentMethod === 'pix' ? 'bg-teal-500/20 text-teal-300 border-teal-500' : 'bg-slate-800/60 text-slate-400 border-slate-800'}`}>
+                        <QrCode className="w-4 h-4" /><span>PIX</span>
+                      </button>
+                      <button type="button" onClick={() => setPaymentMethod('dinheiro')} className={`py-2 px-2 rounded-xl text-[10px] sm:text-xs font-bold border flex items-center justify-center gap-1.5 transition-all ${paymentMethod === 'dinheiro' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500' : 'bg-slate-800/60 text-slate-400 border-slate-800'}`}>
+                        <DollarSign className="w-4 h-4" /><span>Dinheiro</span>
+                      </button>
+                    </div>
+
+                    {paymentMethod === 'dinheiro' && (
+                      <div className="mt-1.5 bg-[#141A28] px-3 py-2 rounded-xl border border-emerald-500/30">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] sm:text-xs font-bold text-emerald-300">Valor Entregue:</span>
+                          <input type="text" inputMode="decimal" placeholder="R$ 0,00" value={cashReceived} onChange={(e) => setCashReceived(e.target.value)} className="w-28 sm:w-32 text-right bg-slate-900 border border-slate-700 px-2.5 py-1 rounded-lg font-mono text-sm text-white focus:outline-none focus:border-emerald-500" />
+                        </div>
+                        {cashReceivedNum > 0 && <div className="flex items-center justify-between text-[10px] pt-1 mt-1 border-t border-slate-800"><span className="text-slate-400">Troco:</span><span className="font-mono font-black text-emerald-400 text-sm">R$ {changeDue.toFixed(2)}</span></div>}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleConfirmPayment}
+                      className="mt-1.5 w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-950/40 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle2 className="w-5 h-5" />
+                      <span>Confirmar Recebimento &amp; Liberar Mesa</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
