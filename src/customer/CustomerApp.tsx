@@ -349,7 +349,7 @@ export function CustomerApp() {
               NEXORO FOOD SYSTEM
             </div>
             <div className="text-xs sm:text-sm font-semibold text-[#C5A880]">
-              MAIS QUE PEDIDOS, UMA EXPERIÊNCIA COMPLETA. • Cozinhas Nobres em Pedido Único
+              © 2025-2026 NEXORO FOOD SYSTEM. Todos os direitos reservados.
             </div>
           </div>
         </div>
