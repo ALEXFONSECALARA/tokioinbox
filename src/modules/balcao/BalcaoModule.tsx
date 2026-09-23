@@ -15,7 +15,7 @@ export const BalcaoModule: React.FC<BalcaoModuleProps> = ({
   onOpenAdmin,
 }) => {
   return (
-    <div className="w-full h-full min-h-screen bg-[#07090E]">
+    <div className="w-full h-full bg-[#07090E]">
       <CounterTouchView
         onBackToApp={onBackToApp}
         onOpenAdmin={onOpenAdmin}
