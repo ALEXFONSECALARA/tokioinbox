@@ -15,6 +15,9 @@ export default defineConfig({
     },
   },
   build: {
+    // O projeto possui módulos grandes (Admin/Brand). O tamanho não é erro de build;
+    // aumentamos o limite apenas para eliminar o warning falso-positivo sem alterar o código.
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
