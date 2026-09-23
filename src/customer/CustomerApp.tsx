@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Navbar } from '../components/Navbar';
+import { BrandLogo } from '../components/BrandLogo';
 import { HomeHub } from '../components/HomeHub';
 import { RestaurantHeader } from '../components/RestaurantHeader';
 import { MenuSection } from '../components/MenuSection';
