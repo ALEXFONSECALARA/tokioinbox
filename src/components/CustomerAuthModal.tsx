@@ -115,12 +115,10 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
     setIsLoading(false);
     if (res.success) {
       setSuccessMsg('Login realizado com sucesso!');
-      // Após autenticar, fecha o modal imediatamente para liberar o cardápio.
-      // O estado da sessão já foi salvo pelo CustomerAuthContext.
       setTimeout(() => {
+        setMode('account');
         setSuccessMsg(null);
-        onClose();
-      }, 450);
+      }, 500);
     } else {
       if (res.notFound) {
         setErrorMsg('Nenhuma conta encontrada com este WhatsApp.');
@@ -160,11 +158,9 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
 
     if (res.success) {
       setSuccessMsg('Conta criada com sucesso! Seja bem-vindo(a).');
-      // Cadastro também conclui a autenticação; liberar o cardápio sem exigir
-      // que o cliente feche a área da conta manualmente.
       setTimeout(() => {
+        setMode('account');
         setSuccessMsg(null);
-        onClose();
       }, 600);
     } else {
       if (res.alreadyExists) {
