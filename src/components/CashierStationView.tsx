@@ -29,6 +29,9 @@ import {
   Package,
   Utensils,
   ShieldAlert,
+  X,
+  Plus,
+  Search as SearchIcon,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
 
@@ -47,12 +50,18 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     updateOrderStatus,
     showToast,
     restaurants,
+    menuItems,
+    activeRestaurantSlug,
+    appendItemsToTableOrder,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'mesas' | 'delivery' | 'retirada' | 'movimentacoes'>('mesas');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [ticketOrder, setTicketOrder] = useState<Order | null>(null);
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+  const [itemSearch, setItemSearch] = useState('');
+  const [addingItemId, setAddingItemId] = useState<string | null>(null);
 
   // Payment dialog state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cartao_credito');
@@ -172,6 +181,45 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
       showToast('Desconto autorizado com sucesso pelo Gerente!', 'success');
     } else {
       showToast('Senha de gerente incorreta. Use 1234 para teste.', 'error');
+    }
+  };
+
+  const cashierMenuItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    return menuItems
+      .filter((item) => item.restaurantSlug === activeRestaurantSlug && item.available !== false)
+      .filter((item) => !q || item.name.toLowerCase().includes(q))
+      .slice(0, 40);
+  }, [menuItems, activeRestaurantSlug, itemSearch]);
+
+  const handleAddCatalogItem = async (item: any) => {
+    if (!selectedOrder?.tableNumber) return;
+    setAddingItemId(item.id);
+    try {
+      const res = await appendItemsToTableOrder({
+        tableNumber: selectedOrder.tableNumber,
+        restaurantSlug: activeRestaurantSlug,
+        restaurantName: restaurants[activeRestaurantSlug]?.name,
+        items: [{
+          id: item.id,
+          name: item.name,
+          quantity: 1,
+          unitPrice: item.price,
+          station: item.station,
+        }],
+        customerName: selectedOrder.customerName || `Mesa ${selectedOrder.tableNumber}`,
+        waiterName: selectedOrder.waiterName || currentUser?.name || 'Caixa',
+        idempotencyKey: `cashier-${selectedOrder.tableNumber}-${item.id}-${Date.now()}`,
+      });
+      if (res.success) {
+        showToast(`${item.name} adicionado à Mesa ${selectedOrder.tableNumber}.`, 'success');
+        setShowAddItemModal(false);
+        setItemSearch('');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Não foi possível adicionar o item.', 'error');
+    } finally {
+      setAddingItemId(null);
     }
   };
 
@@ -478,8 +526,8 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
               // "grudado" (sticky) ao rolar a lista de mesas, com cabeçalho
               // e botão de confirmar SEMPRE visíveis, e só o meio (valores/
               // forma de pagamento) rola internamente quando não couber.
-              <div className="lg:col-span-6 bg-[#121622] border-2 border-amber-500/60 rounded-3xl shadow-2xl animate-fadeIn flex flex-col overflow-hidden lg:sticky lg:top-4 lg:max-h-[calc(100vh-140px)]">
-                <div className="shrink-0 flex items-center justify-between border-b border-slate-800 p-5 pb-3">
+              <div className="lg:col-span-6 bg-[#121622] border-2 border-amber-500/60 rounded-3xl shadow-2xl animate-fadeIn flex flex-col overflow-hidden lg:sticky lg:top-3 h-[calc(100dvh-132px)] max-h-[90dvh] min-h-0">
+                <div className="shrink-0 flex items-center justify-between gap-3 border-b border-slate-800 p-3.5 pb-2.5">
                   <div>
                     <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest block">
                       Recebimento Presencial
@@ -490,7 +538,11 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                     </h3>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span className="hidden sm:inline text-[9px] uppercase font-black text-slate-500 mr-1">Parcelas</span>
+                    {[1,2,3,4,5,6].map((num) => (
+                      <button key={num} type="button" onClick={() => setSplitCount(num)} className={`w-7 h-7 rounded-lg text-[10px] font-black border ${splitCount === num ? 'bg-amber-500 text-slate-950 border-amber-300' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>{num}x</button>
+                    ))}
                     <button
                       onClick={() => setTicketOrder(selectedOrder)}
                       className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 text-xs font-bold flex items-center gap-1.5"
@@ -511,34 +563,9 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
 
                 {/* Corpo com rolagem interna própria */}
                 <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
-                {/* Split Bill Calculator */}
-                <div className="bg-[#181E2E] p-3.5 rounded-2xl border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Split className="w-4 h-4 text-amber-400" />
-                      <span>Dividir Conta por Pessoas</span>
-                    </span>
-                    <span className="text-xs font-mono font-bold text-amber-400">
-                      R$ {valuePerPerson.toFixed(2)} / pessoa
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {[1, 2, 3, 4, 5, 6].map((num) => (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() => setSplitCount(num)}
-                        className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all ${
-                          splitCount === num
-                            ? 'bg-amber-500 text-slate-950 font-black'
-                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        {num}x
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-[#0E121C] px-3 py-2">
+                  <div className="min-w-0"><span className="text-[10px] uppercase font-black text-slate-500">Itens da comanda</span><p className="text-xs text-slate-300 truncate">Adicione produtos diretamente do cardápio</p></div>
+                  <button type="button" onClick={() => setShowAddItemModal(true)} className="shrink-0 px-3 py-2 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-black flex items-center gap-1.5 hover:bg-sky-500/25"><Plus className="w-3.5 h-3.5" /> Inserir item</button>
                 </div>
 
                 {/* Service Fee (10%) and Discount */}
@@ -720,10 +747,10 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                 </div>
 
                 {/* Botão de confirmação — rodapé fixo, sempre visível */}
-                <div className="shrink-0 p-5 pt-3 border-t border-slate-800">
+                <div className="shrink-0 p-3 pt-2 border-t border-slate-800 bg-[#101622]">
                   <button
                     onClick={handleConfirmPayment}
-                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-950/40 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-950/40 active:scale-95 transition-all flex items-center justify-center gap-2"
                   >
                     <CheckCircle2 className="w-5 h-5" />
                     <span>Confirmar Recebimento &amp; Liberar Mesa</span>
@@ -731,6 +758,30 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {showAddItemModal && selectedOrder?.tableNumber && (
+          <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3">
+            <div className="w-full max-w-2xl max-h-[88dvh] bg-[#101622] border border-slate-700 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+              <div className="shrink-0 p-4 border-b border-slate-800 flex items-center justify-between">
+                <div><h3 className="text-base font-black text-white">Inserir item do cardápio</h3><p className="text-[10px] text-slate-500">Mesa {selectedOrder.tableNumber} • toque no produto para lançar 1 unidade</p></div>
+                <button type="button" onClick={() => { setShowAddItemModal(false); setItemSearch(''); }} className="w-9 h-9 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="shrink-0 p-3 border-b border-slate-800">
+                <div className="relative"><SearchIcon className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" /><input autoFocus value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Buscar produto do cardápio..." className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-[#0A0F18] border border-slate-700 text-white text-xs outline-none focus:border-amber-400" /></div>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {cashierMenuItems.map((item) => (
+                    <button key={item.id} type="button" disabled={addingItemId === item.id} onClick={() => handleAddCatalogItem(item)} className="text-left p-3 rounded-xl border border-slate-800 bg-[#0B1019] hover:border-amber-500/50 disabled:opacity-50 flex items-center justify-between gap-3">
+                      <span className="min-w-0"><b className="block text-xs text-white truncate">{item.name}</b><small className="text-[10px] text-amber-400 font-black">R$ {item.price.toFixed(2)}</small></span><Plus className="w-4 h-4 text-amber-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+                {!cashierMenuItems.length && <div className="py-12 text-center text-xs text-slate-500">Nenhum item disponível encontrado.</div>}
+              </div>
+            </div>
           </div>
         )}
 
