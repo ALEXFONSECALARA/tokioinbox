@@ -2619,7 +2619,16 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     setAppliedCoupon(null);
   };
 
-  const currentRestaurant = restaurants[activeRestaurantSlug] || restaurants.japones;
+  // Nunca deixa o cardápio público receber `undefined` como restaurante ativo.
+  // O catálogo do servidor pode chegar vazio/atrasado durante o primeiro carregamento;
+  // nesse intervalo usamos, nesta ordem, o restaurante selecionado, japones, o primeiro
+  // disponível ou o restaurante padrão inicial. Isso evita crash em RestaurantHeader,
+  // MenuSection e demais componentes que dependem de currentRestaurant.
+  const currentRestaurant =
+    restaurants[activeRestaurantSlug] ||
+    restaurants.japones ||
+    Object.values(restaurants)[0] ||
+    INITIAL_RESTAURANTS.japones;
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.subtotal || 0), 0);
   const cartDiscount = appliedCoupon
