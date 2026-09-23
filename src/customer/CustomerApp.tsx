@@ -28,7 +28,7 @@ import { ShoppingBag, Clock, Utensils, Sparkles, User } from 'lucide-react';
 type CustomerView = 'home' | 'menu' | 'client_table';
 
 // Primeiros segmentos de caminho que NÃO são restaurantes
-const RESERVED_SEGMENTS = new Set(['login', 'cadastro', 'minha-conta', 'meus-pedidos', 'pedido', 'mesa', 'restaurantes', 'api', 'assets']);
+const RESERVED_SEGMENTS = new Set(['login', 'cadastro', 'minha-conta', 'meus-pedidos', 'pedido', 'mesa', 'restaurantes', 'cliente', 'api', 'assets']);
 
 function parseTableFromLocation(): { table: number; restaurantSegment?: string; accessToken?: string } | null {
   if (typeof window === 'undefined') return null;
