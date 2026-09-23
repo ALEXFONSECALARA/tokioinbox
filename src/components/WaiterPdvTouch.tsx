@@ -85,6 +85,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     restaurants,
     currentUser,
     showToast,
+    updateRestaurantConfig,
   } = useStore();
 
   // ---------------------------------------------------------------------
@@ -138,6 +139,11 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [tableFilter, setTableFilter] = useState<'todos' | 'livre' | 'atendimento' | 'pronto' | 'fechamento'>('todos');
   const [tableModalOption, setTableModalOption] = useState<number | null>(null);
   const [showSwitchTableModal, setShowSwitchTableModal] = useState(false);
+  const [showTableManagerModal, setShowTableManagerModal] = useState(false);
+  const [tableDraft, setTableDraft] = useState<number[]>([]);
+  const [newTableNumber, setNewTableNumber] = useState('');
+  const [editingTableNumber, setEditingTableNumber] = useState<number | null>(null);
+  const [editingTableValue, setEditingTableValue] = useState('');
 
   // Screen 2: Cardápio PDV Filters & Search
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -171,20 +177,18 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [waiterNotes, setWaiterNotes] = useState<string>('');
   const [isClosingTable, setIsClosingTable] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [isFinalizeExpanded, setIsFinalizeExpanded] = useState(false);
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
 
   // Fonte única: mesas cadastradas/configuradas no restaurante. Nunca limitar por quantidade fixa.
   const tableNumbers = useMemo(() => {
-    const hasConfiguredTables = Array.isArray(restaurant?.activeTables);
-    const configured = hasConfiguredTables
-      ? (restaurant?.activeTables || [])
+    const configured = Array.isArray(restaurant?.activeTables)
+      ? restaurant.activeTables
       : Array.from({ length: 30 }, (_, i) => i + 1);
     const activeFromOrders = orders
       .filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber))
       .map((o) => Number(o.tableNumber));
-    // Cadastro é a fonte principal. Mesas com pedidos ativos continuam visíveis
-    // para evitar perda de acesso à comanda, mesmo que alguém tenha tentado removê-las.
     return Array.from(new Set([...configured, ...activeFromOrders]))
       .filter((n) => Number.isInteger(n) && n > 0 && n <= 999)
       .sort((a, b) => a - b);
@@ -192,8 +196,73 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
   const getTableVisual = (statusKey: string) => {
     if (statusKey === 'livre') return '/table-chairs-open.svg';
-    if (statusKey === 'ocupada' || statusKey === 'atendimento' || statusKey === 'aguardando') return '/table-chairs-use.svg';
+    if (statusKey === 'ocupada' || statusKey === 'atendimento' || statusKey === 'aguardando' || statusKey === 'pronto') return '/table-chairs-use.svg';
     return '/table-chairs-closed.svg';
+  };
+
+  const openTableManager = () => {
+    const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : Array.from({ length: 30 }, (_, i) => i + 1);
+    setTableDraft(Array.from(new Set(configured.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))).sort((a, b) => a - b));
+    setNewTableNumber('');
+    setEditingTableNumber(null);
+    setEditingTableValue('');
+    setShowTableManagerModal(true);
+  };
+
+  const saveTableManager = () => {
+    if (!restaurant?.slug) return;
+    const next = Array.from(new Set(tableDraft.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))).sort((a, b) => a - b);
+    const activeIds = new Set(orders.filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber) && o.status !== 'entregue' && o.status !== 'cancelado').map((o) => Number(o.tableNumber)));
+    const blocked = [...activeIds].filter((id) => !next.includes(id));
+    if (blocked.length) {
+      showToast(`Não é possível excluir Mesa ${blocked.join(', ')} enquanto houver comanda ativa.`, 'warning', 5000);
+      return;
+    }
+    updateRestaurantConfig(restaurant.slug, { activeTables: next });
+    setShowTableManagerModal(false);
+    showToast(`${next.length} mesa(s) cadastrada(s)/atualizada(s).`, 'success');
+  };
+
+  const addTableToDraft = () => {
+    const value = Number(newTableNumber);
+    if (!Number.isInteger(value) || value < 1 || value > 999) {
+      showToast('Informe um número de mesa entre 1 e 999.', 'warning');
+      return;
+    }
+    if (tableDraft.includes(value)) {
+      showToast(`Mesa ${value} já está cadastrada.`, 'info');
+      return;
+    }
+    setTableDraft((prev) => [...prev, value].sort((a, b) => a - b));
+    setNewTableNumber('');
+  };
+
+  const startEditTable = (table: number) => {
+    setEditingTableNumber(table);
+    setEditingTableValue(String(table));
+  };
+
+  const applyEditTable = () => {
+    if (editingTableNumber === null) return;
+    const value = Number(editingTableValue);
+    if (!Number.isInteger(value) || value < 1 || value > 999 || (tableDraft.includes(value) && value !== editingTableNumber)) {
+      showToast('Número inválido ou já utilizado.', 'warning');
+      return;
+    }
+    setTableDraft((prev) => prev.map((n) => (n === editingTableNumber ? value : n)).sort((a, b) => a - b));
+    if (selectedTable === editingTableNumber) setSelectedTable(value);
+    setEditingTableNumber(null);
+    setEditingTableValue('');
+  };
+
+  const removeTableFromDraft = (table: number) => {
+    const active = activeOrdersByTable[table];
+    if (active) {
+      showToast(`Mesa ${table} possui comanda ativa e não pode ser excluída.`, 'warning', 5000);
+      return;
+    }
+    setTableDraft((prev) => prev.filter((n) => n !== table));
+    if (selectedTable === table) setSelectedTable(null);
   };
   const restaurantMenuItems = useMemo(
     () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
@@ -466,13 +535,9 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const handleSelectTable = (tableNum: number) => {
     const status = getTableStatus(tableNum);
     setSelectedTable(tableNum);
-
+    setTableModalOption(tableNum);
     if (status.key === 'livre') {
-      setCurrentScreen('cardapio');
-      playAlertSound('sound1', 0.4);
-      showToast(`Mesa ${tableNum} aberta. Cardápio PDV pronto para venda!`, 'info');
-    } else {
-      setTableModalOption(tableNum);
+      playAlertSound('sound1', 0.25);
     }
   };
 
@@ -1009,75 +1074,51 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               </div>
             </div>
 
-            {/* Grid de Mesas — cards compactos para caber o máximo de mesas
-                possível na tela sem cortar e sem depender de rolagem grande
-                (mais colunas + cards mais baixos que a versão anterior) */}
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2.5">
-              {tableNumbers.map((tableNum) => {
-                const status = getTableStatus(tableNum);
-                const order = activeOrdersByTable[tableNum];
+            {/* Controles de cadastro + canvas responsivo */}
+            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 bg-[#0F1522] border border-slate-800 rounded-2xl p-3 shadow-lg">
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={openTableManager} className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs uppercase shadow-lg shadow-amber-500/20 hover:bg-amber-400 active:scale-95 transition-all">
+                  <Plus className="w-4 h-4 inline mr-1" /> Incluir Mesa
+                </button>
+                <button type="button" onClick={openTableManager} className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 font-black text-xs uppercase hover:border-red-400 hover:text-red-300 active:scale-95 transition-all">
+                  <Minus className="w-4 h-4 inline mr-1" /> Excluir Mesa
+                </button>
+              </div>
+              <div className="text-[11px] text-slate-500">Cadastro rápido: adicione, altere ou remova mesas no modal.</div>
+            </div>
 
-                // Filter logic
-                if (tableFilter !== 'todos' && status.key !== tableFilter) {
-                  return null;
-                }
-
-                const isCurrent = selectedTable === tableNum;
-
-                return (
-                  <button
-                    key={tableNum}
-                    type="button"
-                    onClick={() => handleSelectTable(tableNum)}
-                    className={`min-h-[92px] p-2.5 rounded-2xl border-2 text-left flex flex-col justify-between transition-all active:scale-95 shadow-lg relative overflow-hidden group ${
-                      status.cardBg
-                    } ${isCurrent ? 'ring-4 ring-amber-400/80' : ''}`}
-                  >
-                    {/* Imagem de mesa + cadeiras: reforça visualmente livre/em uso/fechamento */}
-                    <img
-                      src={getTableVisual(status.key)}
-                      alt=""
-                      aria-hidden="true"
-                      className="absolute inset-0 m-auto w-[72px] h-[52px] object-contain opacity-25 pointer-events-none"
-                    />
-
-                    {/* Top row: Mesa Number & Status Indicator */}
-                    <div className="relative z-10 flex items-start justify-between w-full">
-                      <span className="text-xl font-black text-white font-mono tracking-tight leading-none drop-shadow-md">
-                        {tableNum}
-                      </span>
-                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${status.dot}`} />
-                    </div>
-                    <span className="relative z-10 text-[9px] text-slate-400 font-bold uppercase tracking-wider -mt-1">
-                      Mesa
-                    </span>
-
-                    {/* Bottom Info: Order items or Free status */}
-                    <div className="relative z-10 mt-1.5 pt-1.5 border-t border-slate-800/80 w-full">
-                      {order ? (
-                        <div className="space-y-0">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-slate-400 font-medium">
-                              {order.items.length} it.
-                            </span>
-                            <span className="font-mono font-black text-amber-400">
-                              R$ {order.total.toFixed(0)}
-                            </span>
-                          </div>
+            <div className="table-isometric-canvas rounded-3xl border border-slate-800/90 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,.08),transparent_42%),#080C14] p-3 sm:p-5 overflow-auto min-h-[420px] max-h-[calc(100dvh-19rem)]">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4 min-w-[720px] xl:min-w-0">
+                {tableNumbers.map((tableNum) => {
+                  const status = getTableStatus(tableNum);
+                  const order = activeOrdersByTable[tableNum];
+                  if (tableFilter !== 'todos' && status.key !== tableFilter) return null;
+                  const isCurrent = selectedTable === tableNum;
+                  return (
+                    <button key={tableNum} type="button" onClick={() => handleSelectTable(tableNum)} className={`group relative min-h-[168px] rounded-2xl border-2 p-3 text-left overflow-hidden transition-all active:scale-[.98] ${status.cardBg} ${isCurrent ? 'ring-4 ring-amber-400/80 shadow-[0_0_35px_rgba(245,158,11,.28)]' : 'shadow-xl'}`}>
+                      <div className="absolute inset-0 bg-gradient-to-b from-white/[.035] to-transparent pointer-events-none" />
+                      <img src={getTableVisual(status.key)} alt={`Mesa ${tableNum} ${status.label}`} className="absolute left-1/2 top-[48%] -translate-x-1/2 -translate-y-1/2 w-[126px] h-[88px] object-contain opacity-90 drop-shadow-[0_18px_18px_rgba(0,0,0,.45)] transition-transform duration-300 group-hover:scale-105" />
+                      <div className="relative z-10 flex items-start justify-between">
+                        <div>
+                          <div className="text-2xl font-black text-white font-mono leading-none">{tableNum}</div>
+                          <div className="text-[9px] text-slate-500 uppercase font-black tracking-[.16em] mt-1">Mesa</div>
                         </div>
-                      ) : (
-                        <div className="flex items-center justify-between text-[10px] text-emerald-400 font-bold">
-                          <span>Livre</span>
-                          <Plus className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-transform" />
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+                        <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase border ${status.badgeColor}`}>
+                          {status.key === 'livre' ? 'ABERTA LIVRE' : status.key === 'fechamento' ? 'FECHADA EM USO' : 'ABERTA EM USO'}
+                        </span>
+                      </div>
+                      <div className="absolute left-3 right-3 bottom-3 z-10 flex items-center justify-between border-t border-white/10 pt-2">
+                        <span className={`text-[10px] font-bold ${status.hasOrder ? 'text-amber-300' : 'text-emerald-400'}`}>{status.label}</span>
+                        {order ? <span className="text-[10px] font-mono font-black text-amber-400">R$ {order.total.toFixed(2)}</span> : <Plus className="w-4 h-4 text-emerald-400" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
+
 
         {/* --------------------------------------------------------------------- */}
         {/* TELA 2: CARDÁPIO PDV (VENDA RÁPIDA TOUCH, SPLIT OU FLUIDO) */}
@@ -1990,72 +2031,50 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               </div>
             </div>
 
-            {/* Configurações Financeiras: Desconto & Taxa de Serviço */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Desconto */}
-              <div className="bg-[#111624] border border-slate-800 rounded-3xl p-4 shadow-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Percent className="w-4 h-4 text-amber-400" />
-                    <span>Desconto Autorizado (R$)</span>
-                  </label>
-                  {discountAmount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setDiscountAmount(0)}
-                      className="text-[10px] text-red-400 hover:underline"
-                    >
-                      Remover
-                    </button>
-                  )}
+            {/* Finalizar Comanda — ferramentas financeiras recolhidas por padrão */}
+            <div className="bg-[#111624] border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
+              <button type="button" onClick={() => setIsFinalizeExpanded((v) => !v)} className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/[.02]">
+                <div>
+                  <span className="text-sm font-black text-white uppercase tracking-wider">Finalizar Comanda</span>
+                  <p className="text-[10px] text-slate-500 mt-1">Taxa de serviço, desconto e forma de pagamento</p>
                 </div>
-                <input
-                  type="number"
-                  min="0"
-                  max={tableSubtotal}
-                  value={discountAmount || ''}
-                  onChange={(e) => setDiscountAmount(Math.max(0, Number(e.target.value)))}
-                  placeholder="0,00"
-                  className="w-full p-3 bg-[#181E2E] border border-slate-700 rounded-xl text-sm text-white font-mono font-bold focus:outline-none focus:border-amber-500"
-                />
-                <div className="flex gap-2">
-                  {[5, 10, 15, 20].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setDiscountAmount(val)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-bold active:scale-95"
-                    >
-                      R$ {val}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-black text-amber-400 font-mono">R$ {finalBillTotal.toFixed(2)}</span>
+                  <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isFinalizeExpanded ? 'rotate-180' : ''}`} />
                 </div>
-              </div>
+              </button>
 
-              {/* Taxa de Serviço 10% */}
-              <div className="bg-[#111624] border border-slate-800 rounded-3xl p-4 shadow-xl space-y-2 flex flex-col justify-between">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-300 uppercase tracking-wider">
-                    Taxa de Serviço (10%)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setServiceFeeEnabled((v) => !v)}
-                    className={`px-3 py-1 rounded-lg text-xs font-black transition-all active:scale-95 ${
-                      serviceFeeEnabled
-                        ? 'bg-emerald-500 text-slate-950 font-black'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {serviceFeeEnabled ? 'Ativada' : 'Dispensada'}
-                  </button>
+              <div className="px-4 sm:px-5 pb-4">
+                <div className="flex items-center justify-between py-3 border-t border-slate-800">
+                  <span className="text-[11px] uppercase font-black text-slate-400">TOTAL A PAGAR</span>
+                  <span className="text-xl font-black text-amber-400 font-mono">R$ {finalBillTotal.toFixed(2)}</span>
                 </div>
-                <div className="text-lg font-black font-mono text-emerald-400">
-                  + R$ {serviceFeeAmount.toFixed(2)}
-                </div>
-                <p className="text-[10px] text-slate-500">
-                  Opcional, pode ser removida a pedido do cliente
-                </p>
+
+                {isFinalizeExpanded && (
+                  <div className="space-y-3 pt-2">
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div className="rounded-2xl bg-[#0B1019] border border-slate-800 p-3 space-y-2">
+                        <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-black text-slate-400">Desconto</span>{discountAmount > 0 && <button type="button" onClick={() => setDiscountAmount(0)} className="text-[10px] text-red-400">Remover</button>}</div>
+                        <input type="number" min="0" max={tableSubtotal} value={discountAmount || ''} onChange={(e) => setDiscountAmount(Math.max(0, Number(e.target.value)))} placeholder="0,00" className="w-full p-2.5 bg-[#181E2E] border border-slate-700 rounded-xl text-sm text-white font-mono" />
+                        <div className="flex gap-1.5">{[5,10,15,20].map((val) => <button key={val} type="button" onClick={() => setDiscountAmount(val)} className="px-2 py-1 rounded-lg bg-slate-800 text-[9px] text-slate-300 font-bold">R$ {val}</button>)}</div>
+                      </div>
+
+                      <div className="rounded-2xl bg-[#0B1019] border border-slate-800 p-3 space-y-2">
+                        <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-black text-slate-400">Taxa de Serviço 10%</span><button type="button" onClick={() => setServiceFeeEnabled((v) => !v)} className={`px-2.5 py-1 rounded-lg text-[9px] font-black ${serviceFeeEnabled ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>{serviceFeeEnabled ? 'Ativada' : 'Dispensada'}</button></div>
+                        <div className="text-lg font-black font-mono text-emerald-400">+ R$ {serviceFeeAmount.toFixed(2)}</div>
+                        <p className="text-[9px] text-slate-500">Opcional e removível conforme a operação.</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-[#0B1019] border border-slate-800 p-3 space-y-2">
+                      <span className="text-[10px] uppercase font-black text-slate-400">Forma de Pagamento</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[{key:'pix',label:'PIX',icon:QrCode,color:'text-emerald-400'},{key:'credito',label:'Crédito',icon:CreditCard,color:'text-sky-400'},{key:'debito',label:'Débito',icon:CreditCard,color:'text-amber-400'},{key:'dinheiro',label:'Dinheiro',icon:DollarSign,color:'text-emerald-300'}].map((pm) => { const Icon=pm.icon; const isSel=paymentMethod===pm.key; return <button key={pm.key} type="button" onClick={() => setPaymentMethod(pm.key)} className={`min-h-[46px] p-2 rounded-xl border flex items-center justify-center gap-1.5 text-[10px] font-black ${isSel ? 'bg-amber-500 text-slate-950 border-amber-300' : 'bg-[#181E2E] border-slate-700 text-slate-300'}`}><Icon className={`w-4 h-4 ${isSel ? 'text-slate-950' : pm.color}`} />{pm.label}</button>; })}
+                      </div>
+                      {paymentMethod === 'dinheiro' && <div className="pt-2 border-t border-slate-800 flex items-center gap-2"><input type="text" value={cashGiven} onChange={(e) => setCashGiven(e.target.value)} placeholder="Valor recebido" className="flex-1 p-2.5 bg-[#181E2E] border border-slate-700 rounded-xl text-sm font-mono text-white" />{cashChange > 0 && <span className="text-xs font-black text-emerald-300">Troco R$ {cashChange.toFixed(2)}</span>}</div>}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2166,33 +2185,19 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               )}
             </div>
 
-            {/* Total Final e Botão de Confirmação & Liberação de Mesa */}
-            <div className="bg-[#111624] border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between text-base">
-                <span className="text-slate-300 font-bold">TOTAL A PAGAR:</span>
-                <span className="text-3xl font-black text-amber-400 font-mono">
-                  R$ {finalBillTotal.toFixed(2)}
-                </span>
+            {/* Ação principal: cobrar. Ações secundárias ficam discretas no rodapé. */}
+            <div className="bg-[#111624] border border-slate-800 rounded-3xl p-4 shadow-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400 font-black uppercase">Total a pagar</span>
+                <span className="text-2xl font-black text-amber-400 font-mono">R$ {finalBillTotal.toFixed(2)}</span>
               </div>
-
-              <button
-                type="button"
-                onClick={handleCloseTableAction}
-                disabled={isClosingTable || tableItems.length === 0}
-                className="w-full py-4 bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-400 hover:brightness-110 disabled:opacity-50 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer"
-              >
-                {isClosingTable ? (
-                  <>
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>PROCESSANDO PAGAMENTO...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span>CONFIRMAR PAGAMENTO & LIBERAR MESA</span>
-                  </>
-                )}
+              <button type="button" onClick={handleCloseTableAction} disabled={isClosingTable || tableItems.length === 0} className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:brightness-110 disabled:opacity-50 text-slate-950 font-black text-sm uppercase rounded-2xl shadow-xl flex items-center justify-center gap-2">
+                {isClosingTable ? <><RefreshCw className="w-5 h-5 animate-spin" /> PROCESSANDO...</> : <><CheckCircle2 className="w-5 h-5" /> COBRAR MESA</>}
               </button>
+              <div className="flex items-center justify-end gap-3 pt-1">
+                <button type="button" onClick={() => setCurrentScreen('pedido')} className="text-[10px] font-bold text-slate-500 hover:text-slate-300">Cancelar</button>
+                <button type="button" onClick={handleSaveDraft} disabled={!draftItems.length} className="px-3 py-1.5 rounded-lg border border-slate-600 text-[10px] font-black text-slate-300 disabled:opacity-40">Salvar</button>
+              </div>
             </div>
           </div>
         )}
@@ -2523,102 +2528,93 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 7. MODAL DE AÇÃO DA MESA OCUPADA (TELA 1) */}
+      {/* 7. MODAL DETALHES DA MESA */}
       {/* ========================================================================= */}
-      {tableModalOption !== null && (
-        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#121622] border border-slate-800 rounded-3xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 animate-fadeIn my-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <span className="text-lg font-black text-white font-mono">
-                  MESA #{tableModalOption}
-                </span>
-                <span className="text-xs text-slate-400 block">
-                  Selecione a ação desejada para esta mesa:
-                </span>
+      {tableModalOption !== null && (() => {
+        const table = tableModalOption;
+        const order = activeOrdersByTable[table];
+        const status = getTableStatus(table);
+        const tableItems = order?.items || [];
+        const totalItems = tableItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+        return (
+          <div className="modal-viewport fixed inset-0 z-[80] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+            <div className="w-full max-w-6xl h-[min(94dvh,900px)] bg-[#0D121D] border border-slate-700/80 rounded-3xl shadow-[0_30px_100px_rgba(0,0,0,.7)] overflow-hidden flex flex-col">
+              <div className="shrink-0 px-4 sm:px-6 py-3 border-b border-slate-800 bg-[#101622] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-lg sm:text-xl font-black text-white uppercase">Detalhes da Mesa {table}</div>
+                  <div className="text-[11px] text-slate-400">{status.label} • {order ? `${totalItems} itens na comanda` : 'sem comanda ativa'}</div>
+                </div>
+                <button type="button" onClick={() => setTableModalOption(null)} className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:border-amber-400 flex items-center justify-center" aria-label="Fechar">
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setTableModalOption(null)}
-                className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-800/60"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-5">
+                <div className="grid lg:grid-cols-[1.15fr_.85fr] gap-5">
+                  <div className="rounded-3xl border border-slate-800 bg-[#090D15] min-h-[330px] flex items-center justify-center overflow-hidden relative">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(245,158,11,.12),transparent_48%)]" />
+                    <img src={getTableVisual(status.key)} alt={`Representação visual da Mesa ${table}`} className="relative z-10 w-[min(82%,560px)] h-auto max-h-[430px] object-contain drop-shadow-[0_30px_35px_rgba(0,0,0,.65)] scale-125" />
+                    <div className="absolute left-5 top-5 z-20 px-3 py-1.5 rounded-full bg-black/60 border border-amber-400/30 text-amber-300 text-[10px] font-black uppercase">Mesa {table} • {status.label}</div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-2xl bg-[#141B29] border border-slate-800 p-3"><span className="text-[9px] uppercase text-slate-500 font-black">Cliente</span><div className="text-sm font-black text-white mt-1">{order?.customerName || `Mesa ${table}`}</div></div>
+                      <div className="rounded-2xl bg-[#141B29] border border-slate-800 p-3"><span className="text-[9px] uppercase text-slate-500 font-black">Garçom</span><div className="text-sm font-black text-white mt-1">{waiterName}</div></div>
+                      <div className="rounded-2xl bg-[#141B29] border border-slate-800 p-3"><span className="text-[9px] uppercase text-slate-500 font-black">Itens</span><div className="text-sm font-black text-white mt-1">{totalItems}</div></div>
+                      <div className="rounded-2xl bg-[#141B29] border border-slate-800 p-3"><span className="text-[9px] uppercase text-slate-500 font-black">Total</span><div className="text-sm font-black text-amber-400 mt-1">R$ {(order?.total || 0).toFixed(2)}</div></div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-800 bg-[#0A0F18] overflow-hidden">
+                      <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between"><span className="text-xs font-black uppercase text-white">Comanda</span><span className="text-[10px] text-slate-500">{order?.id || 'Sem pedido'}</span></div>
+                      <div className="max-h-[300px] overflow-y-auto p-3 space-y-2">
+                        {tableItems.length ? tableItems.map((item, idx) => (
+                          <div key={`${item.name}-${idx}`} className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-[#121927] border border-slate-800">
+                            <div className="min-w-0"><div className="text-xs font-black text-white truncate">{item.quantity}x {item.name}</div><div className="text-[10px] text-slate-500">{item.station || 'produção'}</div></div>
+                            <span className="text-xs font-mono font-black text-amber-400">R$ {(item.totalPrice || item.unitPrice * item.quantity).toFixed(2)}</span>
+                          </div>
+                        )) : <div className="py-10 text-center text-xs text-slate-500">Nenhum item lançado nesta mesa.</div>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="shrink-0 border-t border-slate-800 bg-[#0B1019] px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                <div className="text-sm font-black text-white">TOTAL: <span className="text-amber-400 font-mono">R$ {(order?.total || 0).toFixed(2)}</span></div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('cardapio'); }} className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-black">Adicionar Itens</button>
+                  <button type="button" disabled={!order} onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('fechamento'); }} className="px-5 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black uppercase disabled:opacity-40">Cobrar Mesa</button>
+                </div>
+              </div>
             </div>
+          </div>
+        );
+      })()}
 
-            <div className="space-y-2.5">
-              {/* Opção 1: Abrir Cardápio PDV */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTable(tableModalOption);
-                  setTableModalOption(null);
-                  setCurrentScreen('cardapio');
-                }}
-                className="w-full p-4 bg-[#181E2E] hover:bg-[#1E2538] border border-slate-700 rounded-2xl text-left flex items-center justify-between group transition-all active:scale-98"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black">
-                    <Plus className="w-5 h-5" />
+      {/* ========================================================================= */}
+      {/* 7B. MODAL CADASTRO DE MESAS */}
+      {/* ========================================================================= */}
+      {showTableManagerModal && (
+        <div className="modal-viewport fixed inset-0 z-[90] bg-black/92 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+          <div className="w-full max-w-3xl max-h-[94dvh] bg-[#101622] border border-slate-700 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="shrink-0 p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between"><div><h3 className="text-lg font-black text-white">Cadastro de Mesas</h3><p className="text-[11px] text-slate-500">Inclua, exclua e atualize os números sem sair do PDV.</p></div><button type="button" onClick={() => setShowTableManagerModal(false)} className="w-10 h-10 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center"><X className="w-5 h-5" /></button></div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+              <div className="flex flex-col sm:flex-row gap-2"><input value={newTableNumber} onChange={(e) => setNewTableNumber(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && addTableToDraft()} inputMode="numeric" placeholder="Número da nova mesa" className="flex-1 px-4 py-3 rounded-xl bg-[#0A0F18] border border-slate-700 text-white outline-none focus:border-amber-400" /><button type="button" onClick={addTableToDraft} className="px-5 py-3 rounded-xl bg-amber-500 text-slate-950 font-black text-xs uppercase"><Plus className="w-4 h-4 inline mr-1" /> Incluir</button></div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                {tableDraft.map((table) => (
+                  <div key={table} className="rounded-xl border border-slate-800 bg-[#0B1019] p-2 flex items-center justify-between gap-2">
+                    {editingTableNumber === table ? <input autoFocus value={editingTableValue} onChange={(e) => setEditingTableValue(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && applyEditTable()} className="w-16 bg-slate-900 rounded-lg px-2 py-1 text-white text-sm font-mono" /> : <span className="font-black text-white">Mesa {table}</span>}
+                    <div className="flex gap-1">
+                      {editingTableNumber === table ? <button type="button" onClick={applyEditTable} className="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950"><Check className="w-3.5 h-3.5 mx-auto" /></button> : <button type="button" onClick={() => startEditTable(table)} className="w-7 h-7 rounded-lg bg-slate-800 text-slate-300"><Edit3 className="w-3.5 h-3.5 mx-auto" /></button>}
+                      <button type="button" onClick={() => removeTableFromDraft(table)} className="w-7 h-7 rounded-lg bg-red-500/10 text-red-300 border border-red-500/20"><Trash2 className="w-3.5 h-3.5 mx-auto" /></button>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-sm font-black text-white block">Adicionar Novos Itens</span>
-                    <span className="text-xs text-slate-400">
-                      Abrir cardápio e lançar mais rodadas
-                    </span>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-amber-400" />
-              </button>
-
-              {/* Opção 2: Revisar Pedido / Comanda */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTable(tableModalOption);
-                  setTableModalOption(null);
-                  setCurrentScreen('pedido');
-                }}
-                className="w-full p-4 bg-[#181E2E] hover:bg-[#1E2538] border border-slate-700 rounded-2xl text-left flex items-center justify-between group transition-all active:scale-98"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-black">
-                    <Layers className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-sm font-black text-white block">Ver Itens / Comanda</span>
-                    <span className="text-xs text-slate-400">
-                      Acompanhar itens nas praças de produção
-                    </span>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-indigo-400" />
-              </button>
-
-              {/* Opção 3: Fechamento da Mesa */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTable(tableModalOption);
-                  setTableModalOption(null);
-                  setCurrentScreen('fechamento');
-                }}
-                className="w-full p-4 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 rounded-2xl text-left flex items-center justify-between group transition-all active:scale-98"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-black">
-                    <Receipt className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-sm font-black text-emerald-300 block">Fechar Conta da Mesa</span>
-                    <span className="text-xs text-emerald-400/80">
-                      Pagamento, divisão e liberação
-                    </span>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-emerald-400" />
-              </button>
+                ))}
+              </div>
+              {!tableDraft.length && <div className="py-12 text-center rounded-2xl border border-dashed border-slate-700 text-slate-500 text-sm">Nenhuma mesa cadastrada. Adicione a primeira acima.</div>}
             </div>
+            <div className="shrink-0 border-t border-slate-800 p-3 flex justify-end gap-2"><button type="button" onClick={() => setShowTableManagerModal(false)} className="px-4 py-2 text-xs font-bold text-slate-400">Cancelar</button><button type="button" onClick={saveTableManager} className="px-5 py-2 rounded-xl border border-amber-400 text-amber-300 text-xs font-black">Salvar alterações</button></div>
           </div>
         </div>
       )}
