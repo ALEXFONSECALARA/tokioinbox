@@ -2627,7 +2627,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     setAppliedCoupon(null);
   };
 
-  const currentRestaurant = restaurants[activeRestaurantSlug] || restaurants.japones;
+  const currentRestaurant = restaurants[activeRestaurantSlug] || restaurants.japones || Object.values(restaurants)[0] || INITIAL_RESTAURANTS.japones;
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.subtotal || 0), 0);
   const cartDiscount = appliedCoupon
