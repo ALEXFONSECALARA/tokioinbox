@@ -90,22 +90,28 @@ export function initializeCatalog(): Catalog {
         throw new Error('estrutura inválida');
       }
       if (!Array.isArray(parsed.coupons)) parsed.coupons = DEFAULT_COUPONS;
-      // Migração de mesas: o salão padrão possui 30 mesas. Mantém mesas existentes e adiciona as faltantes.
+      // Migração de mesas: só cria as 30 mesas padrão quando o campo ainda NÃO existe.
+      // [] é um cadastro válido e significa "nenhuma mesa cadastrada".
+      // Nunca recriar 1..30 depois que o administrador zerar/excluir o cadastro.
       let tablesMigrated = false;
       for (const [slug, restaurant] of Object.entries(parsed.restaurants || {})) {
-        const existing = Array.isArray((restaurant as any).activeTables) ? (restaurant as any).activeTables : [];
-        // Migração segura: todo restaurante começa com as mesas 1 a 30.
-        // Mesas adicionais já existentes também são preservadas.
-        const normalized = Array.from(
-          new Set(
-            existing
-              .filter((n: any) => Number.isInteger(n) && n > 0)
-              .concat(Array.from({ length: 30 }, (_, i) => i + 1))
-          )
-        ).sort((a: number, b: number) => a - b);
-        if (JSON.stringify(existing) !== JSON.stringify(normalized)) {
-          (parsed.restaurants as any)[slug] = { ...(restaurant as any), activeTables: normalized };
+        const rawTables = (restaurant as any).activeTables;
+        if (rawTables === undefined || rawTables === null) {
+          (parsed.restaurants as any)[slug] = {
+            ...(restaurant as any),
+            activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
+          };
           tablesMigrated = true;
+          continue;
+        }
+        if (Array.isArray(rawTables)) {
+          const normalized = Array.from(new Set(
+            rawTables.filter((n: any) => Number.isInteger(n) && n > 0 && n <= 999)
+          )).sort((a: number, b: number) => a - b);
+          if (JSON.stringify(rawTables) !== JSON.stringify(normalized)) {
+            (parsed.restaurants as any)[slug] = { ...(restaurant as any), activeTables: normalized };
+            tablesMigrated = true;
+          }
         }
       }
       if (tablesMigrated) {
