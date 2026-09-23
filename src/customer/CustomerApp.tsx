@@ -65,7 +65,13 @@ export function CustomerApp() {
 
   const initialTable = useRef(parseTableFromLocation()).current;
   const hasSignedTableEntry = Boolean(initialTable?.table && initialTable?.accessToken && initialTable?.restaurantSegment);
-  const [view, setView] = useState<CustomerView>(hasSignedTableEntry ? 'client_table' : 'home');
+  // A raiz do domínio é o único endereço público oficial do cardápio online.
+  // /cardapio não é mais uma rota pública do cliente.
+  const publicMenuEntry = typeof window !== 'undefined' &&
+    (window.location.pathname.replace(/\/+$/, '') === '');
+  const [view, setView] = useState<CustomerView>(
+    hasSignedTableEntry ? 'client_table' : publicMenuEntry ? 'menu' : 'home'
+  );
   const [clientTableNumber] = useState<number>(initialTable?.table || 1);
   const [clientTableAccessToken] = useState<string | undefined>(initialTable?.accessToken);
 
@@ -90,6 +96,20 @@ export function CustomerApp() {
       return null;
     })()
   );
+
+  // A raiz do domínio é a entrada pública do cardápio.
+  // Ela não deve ficar presa na vitrine inicial nem depender de um slug na URL.
+  useEffect(() => {
+    if (!publicMenuEntry || initialTable) return;
+    const available = Object.values(restaurants).find((r) =>
+      r && r.isActive !== false && r.vitrineStatus !== 'OCULTO' && r.isActiveInVitrine !== false
+    );
+    if (available) {
+      setActiveRestaurantSlug(available.slug);
+      setView('menu');
+      if (!sessionStorage.getItem(`splash_dismissed_${available.slug}`)) setShowSplash(true);
+    }
+  }, [restaurants, publicMenuEntry, initialTable]);
 
   useEffect(() => {
     const seg = pendingPathRef.current;
@@ -186,10 +206,19 @@ export function CustomerApp() {
         {view === 'home' ? (
           <HomeHub onSelectRestaurant={handleSelectRestaurant} onOpenTracker={openTracker} />
         ) : (
-          <div className="space-y-6">
-            <RestaurantHeader allowTableOrders={hasSignedTableEntry} />
-            <MenuSection onSelectProduct={(item) => setSelectedProduct(item)} />
-          </div>
+          currentRestaurant ? (
+            <div className="space-y-6">
+              <RestaurantHeader restaurant={currentRestaurant} allowTableOrders={hasSignedTableEntry} />
+              <MenuSection restaurantSlug={currentRestaurant.slug} onSelectProduct={(item) => setSelectedProduct(item)} />
+            </div>
+          ) : (
+            <div className="min-h-[50vh] flex items-center justify-center">
+              <div className="text-center rounded-2xl border border-amber-500/20 bg-black/40 p-8">
+                <div className="text-amber-300 font-black text-lg">Carregando cardápio...</div>
+                <div className="text-slate-400 text-sm mt-2">Aguarde a conexão com o catálogo do restaurante.</div>
+              </div>
+            </div>
+          )
         )}
       </main>
 
