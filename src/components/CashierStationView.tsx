@@ -473,8 +473,13 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
 
             {/* Right: Payment & Split Checkout Panel */}
             {selectedOrder && (
-              <div className="lg:col-span-6 bg-[#121622] border-2 border-amber-500/60 rounded-3xl p-5 shadow-2xl space-y-4 animate-fadeIn">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              // Painel de recebimento — agora com altura própria travada ao
+              // viewport (não depende só da rolagem geral do <main>): fica
+              // "grudado" (sticky) ao rolar a lista de mesas, com cabeçalho
+              // e botão de confirmar SEMPRE visíveis, e só o meio (valores/
+              // forma de pagamento) rola internamente quando não couber.
+              <div className="lg:col-span-6 bg-[#121622] border-2 border-amber-500/60 rounded-3xl shadow-2xl animate-fadeIn flex flex-col overflow-hidden lg:sticky lg:top-4 lg:max-h-[calc(100vh-140px)]">
+                <div className="shrink-0 flex items-center justify-between border-b border-slate-800 p-5 pb-3">
                   <div>
                     <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest block">
                       Recebimento Presencial
@@ -504,6 +509,8 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                   </div>
                 </div>
 
+                {/* Corpo com rolagem interna própria */}
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
                 {/* Split Bill Calculator */}
                 <div className="bg-[#181E2E] p-3.5 rounded-2xl border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between">
@@ -710,15 +717,18 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                     )}
                   </div>
                 )}
+                </div>
 
-                {/* Action Confirmation Button */}
-                <button
-                  onClick={handleConfirmPayment}
-                  className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-950/40 active:scale-95 transition-all flex items-center justify-center gap-2"
-                >
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span>Confirmar Recebimento &amp; Liberar Mesa</span>
-                </button>
+                {/* Botão de confirmação — rodapé fixo, sempre visível */}
+                <div className="shrink-0 p-5 pt-3 border-t border-slate-800">
+                  <button
+                    onClick={handleConfirmPayment}
+                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-950/40 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span>Confirmar Recebimento &amp; Liberar Mesa</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
