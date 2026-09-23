@@ -2319,10 +2319,11 @@ async function startServer() {
   // Verifica se o diretório de dados persistentes parece "novo" em produção — sintoma
   // direto do bug de senha/usuários resetando a cada deploy (ver server/dataDir.ts).
   checkDataPersistence();
-  // Falha rápido se os dados estiverem inconsistentes (em vez de subir com dados de exemplo)
+  // Inicializa apenas o catálogo público no boot.
+  // Pedidos e usuários são inicializados sob demanda pelas próprias funções.
+  // Isso evita que uma base de pedidos/usuários corrompida ou um disco lento
+  // impeça o servidor HTTP de subir e provoque 502 no Render.
   initializeCatalog();
-  initializeOrders();
-  countActiveUsers(); // inicializa usuários e aplica a migração de senhas padrão
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
