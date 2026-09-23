@@ -18,7 +18,7 @@ interface AdminModuleProps {
  */
 export const AdminModule: React.FC<AdminModuleProps> = ({ onBackToApp, initialTab }) => {
   return (
-    <div className="w-full h-full min-h-screen bg-[#07090E]">
+    <div className="w-full h-full bg-[#07090E]">
       <AdminLayout onBackToApp={onBackToApp} initialTab={initialTab} />
     </div>
   );
