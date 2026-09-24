@@ -213,6 +213,16 @@ html, body, #root {
   min-height: 100dvh;
 }
 
+/* Suporte a "safe area" (notch/ilha dinâmica/barra de gestos) — evita que
+   cabeçalhos e barras fixas do cardápio do cliente fiquem cortados ou
+   colados na borda em iPhones e outros aparelhos com tela não retangular. */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 button, input, select, textarea {
   touch-action: manipulation;
 }
