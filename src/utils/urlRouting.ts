@@ -160,6 +160,13 @@ export function getWhatsAppShareUrl(restaurant: RestaurantConfig, customUrl: str
 /**
  * Generates a public QR Code image URL via quick API or SVG
  */
+/**
+ * @deprecated Não usar mais. Dependia de um serviço externo
+ * (api.qrserver.com) que podia falhar/ser bloqueado, fazendo o QR Code não
+ * aparecer. Use `QrCodeImage` (componente) ou `generateQrCodeDataUrl`
+ * (função) de `src/components/QrCodeImage.tsx`, que geram o QR localmente
+ * no navegador, sem depender de internet de terceiros.
+ */
 export function getQrCodeImageUrl(url: string, size = 300): string {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(
     url
