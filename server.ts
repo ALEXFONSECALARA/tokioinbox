@@ -828,6 +828,8 @@ app.post('/api/print-agent/jobs', authenticateStaffOrAgent, (req, res) => {
       success: true,
       deduplicated: result.deduplicated,
       job: result.job,
+      jobs: result.jobs,
+      printerCount: result.jobs.length,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -1324,7 +1326,7 @@ app.post('/api/orders', publicWriteLimiter, optionalStaffAuth, (req, res) => {
       const tableNumber = Number(payload?.tableNumber);
       const tableToken = typeof payload?.tableAccessToken === 'string' ? payload.tableAccessToken : undefined;
       if (!verifyTableAccessToken(tableToken, restaurantSlug, tableNumber)) {
-        return res.status(403).json({ success: false, error: 'Pedido de mesa permitido somente pelo QR Code da mesa.' });
+        return res.status(403).json({ success: false, error: 'Senha/QR desta mesa inválido ou expirado. Peça uma nova senha à equipe.' });
       }
     }
     const authCust = getAuthenticatedCustomer(req);
@@ -1462,7 +1464,7 @@ app.post('/api/orders/table/append', publicWriteLimiter, optionalStaffAuth, (req
       return res.status(403).json({ success: false, error: 'Seu usuário não tem acesso a este restaurante.' });
     }
     if (!isStaff && !verifyTableAccessToken(tableAccessToken, scopedRestaurantSlug, Number(tableNumber))) {
-      return res.status(403).json({ success: false, error: 'Mesa protegida: use o QR Code original desta mesa.' });
+      return res.status(403).json({ success: false, error: 'Senha/QR desta mesa inválido ou expirado. Peça uma nova senha à equipe.' });
     }
 
     if (!tableNumber || typeof tableNumber !== 'number') {
@@ -1746,7 +1748,7 @@ app.post('/api/orders/batch', publicWriteLimiter, optionalStaffAuth, (req, res) 
         if (String(payload?.orderType || '').toLowerCase().includes('mesa')) {
           const tableNumber = Number(payload?.tableNumber);
           if (!verifyTableAccessToken(payload?.tableAccessToken, slug, tableNumber)) {
-            return res.status(403).json({ success: false, error: 'Pedido de mesa permitido somente pelo QR Code da mesa.' });
+            return res.status(403).json({ success: false, error: 'Senha/QR desta mesa inválido ou expirado. Peça uma nova senha à equipe.' });
           }
         }
         delete payload.customerId;
