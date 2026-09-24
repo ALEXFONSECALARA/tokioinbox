@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { normalizePhone } from './phoneUtils';
 import { getRestaurant, getCoupon, priceLine, restaurantExists, assertCanAcceptNewOrder } from './catalogService';
 import { secureToken } from './security';
+import { markTableSessionClosed } from './tableAccessService';
 
 export interface OrderItemOption {
   groupId: string;
@@ -1180,6 +1181,10 @@ export function closeTableOrderTransactional(params: {
 
   ordersCache[idx] = updatedOrder;
   persistOrdersSync();
+
+  // Expira imediatamente a senha/QR do cliente para esta mesa: a partir daqui
+  // qualquer pedido novo nessa mesa exige uma nova senha emitida pela equipe.
+  markTableSessionClosed(currentOrder.restaurantSlug, params.tableNumber);
 
   console.log(`[TABLE CLOSED] Mesa ${params.tableNumber} fechada com sucesso. Pedido ${updatedOrder.shortCode} finalizado/entregue.`);
   return updatedOrder;

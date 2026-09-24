@@ -38,7 +38,7 @@ let registeredPrinters: ThermalPrinterDevice[] = [
   {
     id: 'prn-cx-01',
     name: 'Térmica Caixa Balcão (Epson TM-T20X)',
-    station: 'CAIXA',
+    stations: ['CAIXA'],
     restaurantSlug: 'japones',
     connectionType: 'USB',
     paperWidth: '80mm',
@@ -49,7 +49,7 @@ let registeredPrinters: ThermalPrinterDevice[] = [
   {
     id: 'prn-cz-01',
     name: 'Térmica Cozinha Quente (Bematech MP-4200)',
-    station: 'COZINHA',
+    stations: ['COZINHA'],
     restaurantSlug: 'japones',
     connectionType: 'REDE_TCP',
     ipAddress: '192.168.1.150',
@@ -62,7 +62,7 @@ let registeredPrinters: ThermalPrinterDevice[] = [
   {
     id: 'prn-sb-01',
     name: 'Térmica Sushi Bar (Daruma DR800)',
-    station: 'SUSHI_BAR',
+    stations: ['SUSHI_BAR'],
     restaurantSlug: 'japones',
     connectionType: 'USB',
     paperWidth: '80mm',
@@ -73,7 +73,7 @@ let registeredPrinters: ThermalPrinterDevice[] = [
   {
     id: 'prn-cx-02',
     name: 'Térmica Caixa Geral (Epson TM-T20X)',
-    station: 'CAIXA',
+    stations: ['CAIXA'],
     restaurantSlug: 'italiano',
     connectionType: 'USB',
     paperWidth: '80mm',
@@ -84,7 +84,7 @@ let registeredPrinters: ThermalPrinterDevice[] = [
   {
     id: 'prn-cz-02',
     name: 'Térmica Cozinha Massas & Forno',
-    station: 'COZINHA',
+    stations: ['COZINHA'],
     restaurantSlug: 'italiano',
     connectionType: 'REDE_TCP',
     ipAddress: '192.168.1.155',
@@ -107,6 +107,18 @@ function initializePrinters() {
   } catch (error) {
     console.error('[PRINT] cadastro de impressoras inválido:', error);
   }
+
+  // Compatibilidade: cadastros antigos salvos com "station" (string única)
+  // são migrados automaticamente para "stations" (array), sem perder o
+  // roteamento já configurado por ninguém precisar recadastrar nada.
+  registeredPrinters = registeredPrinters.map((p: any) => {
+    if (Array.isArray(p.stations) && p.stations.length > 0) return p;
+    if (p.station) {
+      const { station, ...rest } = p;
+      return { ...rest, stations: [station] };
+    }
+    return { ...p, stations: p.stations || [] };
+  });
 }
 function persistPrinters() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -117,7 +129,10 @@ function persistPrinters() {
 initializePrinters();
 
 /**
- * Queue a print job with anti-duplication protection
+ * Queue a print job with anti-duplication protection.
+ * Se mais de uma impressora estiver marcada para a mesma estação (ou uma
+ * impressora estiver marcada para várias estações), o pedido é enviado para
+ * TODAS elas — não só para a primeira encontrada.
  */
 export function enqueuePrintJob(params: {
   orderId: string;
@@ -125,42 +140,55 @@ export function enqueuePrintJob(params: {
   restaurantSlug: RestaurantSlug;
   station: PrintStation;
   rawEscPos?: string;
-}): { job: PrintJob; deduplicated: boolean } {
+}): { job: PrintJob; deduplicated: boolean; jobs: PrintJob[] } {
   initializePrintQueue();
   const { orderId, orderShortCode, restaurantSlug, station, rawEscPos } = params;
   const contentHash = crypto.createHash('sha256').update(rawEscPos || '').digest('hex');
-  const idempotencyHash = `${orderId}-${station}-${restaurantSlug}-${contentHash}`;
-
-  // Check if job already exists for this order & station
-  const existing = printJobsQueue.find((j) => j.idempotencyHash === idempotencyHash);
-  if (existing) {
-    return { job: existing, deduplicated: true };
-  }
 
   initializePrinters();
-  const assignedPrinter = registeredPrinters.find(
-    (p) => p.restaurantSlug === restaurantSlug && p.station === station && p.status === 'online'
+  const matchingPrinters = registeredPrinters.filter(
+    (p) => p.restaurantSlug === restaurantSlug && p.stations?.includes(station) && p.status === 'online'
   );
+  // Sem nenhuma impressora cadastrada/online para a estação: ainda assim
+  // registra 1 trabalho pendente (sem impressora atribuída) para não perder
+  // o pedido — ele aparece na fila como pendente até uma impressora ser
+  // cadastrada para essa estação.
+  const targets = matchingPrinters.length > 0 ? matchingPrinters : [null];
 
-  const newJob: PrintJob = {
-    jobId: `job-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    orderId,
-    orderShortCode,
-    restaurantSlug,
-    station,
-    printerId: assignedPrinter?.id,
-    printerName: assignedPrinter?.name || `Impressora ${station}`,
-    status: 'PENDENTE',
-    attempts: 0,
-    maxAttempts: 4,
-    rawEscPos,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    idempotencyHash,
-    contentHash,
-  };
+  const createdJobs: PrintJob[] = [];
+  let anyDeduplicated = false;
 
-  printJobsQueue.unshift(newJob);
+  for (const printer of targets) {
+    const idempotencyHash = `${orderId}-${station}-${restaurantSlug}-${printer?.id || 'sem-impressora'}-${contentHash}`;
+    const existing = printJobsQueue.find((j) => j.idempotencyHash === idempotencyHash);
+    if (existing) {
+      createdJobs.push(existing);
+      anyDeduplicated = true;
+      continue;
+    }
+
+    const newJob: PrintJob = {
+      jobId: `job-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      orderId,
+      orderShortCode,
+      restaurantSlug,
+      station,
+      printerId: printer?.id,
+      printerName: printer?.name || `Impressora ${station}`,
+      status: 'PENDENTE',
+      attempts: 0,
+      maxAttempts: 4,
+      rawEscPos,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      idempotencyHash,
+      contentHash,
+    };
+
+    printJobsQueue.unshift(newJob);
+    createdJobs.push(newJob);
+  }
+
   persistPrintQueue();
 
   // Keep queue size under control (last 300 jobs)
@@ -168,7 +196,7 @@ export function enqueuePrintJob(params: {
     printJobsQueue = printJobsQueue.slice(0, 300);
   }
 
-  return { job: newJob, deduplicated: false };
+  return { job: createdJobs[0], deduplicated: anyDeduplicated, jobs: createdJobs };
 }
 
 /**

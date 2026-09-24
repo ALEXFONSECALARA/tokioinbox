@@ -34,9 +34,18 @@ export async function uploadImageToCloudinary(options: {
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
   if (!cloudName || !apiKey || !apiSecret) {
+    // FALLBACK: sem Cloudinary configurado no servidor, o upload de fotos do
+    // cardápio não pode ficar bloqueado. Aceitamos a imagem diretamente (o
+    // base64 já validado no navegador, ou uma URL já pronta) e ela é salva
+    // junto do produto normalmente. Se depois o Cloudinary for configurado
+    // (variáveis de ambiente), o upload passa a usar CDN/otimização
+    // automaticamente, sem precisar mudar nada no painel.
+    if (typeof options.fileData === 'string' && options.fileData.trim()) {
+      return { success: true, url: options.fileData.trim() };
+    }
     return {
       success: false,
-      error: 'Cloudinary não está configurado no servidor (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY ou CLOUDINARY_API_SECRET ausente).',
+      error: 'Imagem inválida ou vazia.',
     };
   }
 
