@@ -14,19 +14,41 @@ import {
   Sliders,
   Send,
   ShieldCheck,
+  Plus,
+  Trash2,
+  X,
 } from 'lucide-react';
+
+const ALL_STATIONS: PrintStation[] = ['CAIXA', 'COZINHA', 'SUSHI_BAR', 'BAR', 'ENTREGA'];
 
 interface AdminPrintAgentManagerProps {
   selectedSlug: RestaurantSlug | 'all';
 }
 
 export const AdminPrintAgentManager: React.FC<AdminPrintAgentManagerProps> = ({ selectedSlug }) => {
-  const { restaurants, orders } = useStore();
+  const { restaurants, orders, currentUser, showToast } = useStore();
   const [jobs, setJobs] = useState<PrintJob[]>([]);
   const [printers, setPrinters] = useState<ThermalPrinterDevice[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [testPrintStation, setTestPrintStation] = useState<PrintStation>('CAIXA');
   const [isAgentConnected, setIsAgentConnected] = useState(true);
+
+  // Formulário de cadastro/edição de impressora — permite marcar mais de um
+  // local (estação) para a MESMA impressora receber cópias do pedido.
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingPrinterId, setEditingPrinterId] = useState<string | null>(null);
+  const [formName, setFormName] = useState('');
+  const [formStations, setFormStations] = useState<PrintStation[]>([]);
+  const [formConnectionType, setFormConnectionType] = useState<ThermalPrinterDevice['connectionType']>('USB');
+  const [formIpAddress, setFormIpAddress] = useState('');
+  const [formPort, setFormPort] = useState('9100');
+  const [formPaperWidth, setFormPaperWidth] = useState<'80mm' | '58mm'>('80mm');
+  const [formCopies, setFormCopies] = useState('1');
+  const [isSavingPrinter, setIsSavingPrinter] = useState(false);
+
+  const authHeaders: Record<string, string> = currentUser?.token
+    ? { Authorization: `Bearer ${currentUser.token}` }
+    : {};
 
   const fetchPrintData = async () => {
     setIsLoading(true);
@@ -93,6 +115,107 @@ export const AdminPrintAgentManager: React.FC<AdminPrintAgentManagerProps> = ({ 
       }
     } catch (err) {
       console.error('Retry failed:', err);
+    }
+  };
+
+  const resetPrinterForm = () => {
+    setEditingPrinterId(null);
+    setFormName('');
+    setFormStations([]);
+    setFormConnectionType('USB');
+    setFormIpAddress('');
+    setFormPort('9100');
+    setFormPaperWidth('80mm');
+    setFormCopies('1');
+  };
+
+  const openNewPrinterForm = () => {
+    resetPrinterForm();
+    setIsFormOpen(true);
+  };
+
+  const openEditPrinterForm = (printer: ThermalPrinterDevice) => {
+    setEditingPrinterId(printer.id);
+    setFormName(printer.name);
+    setFormStations(printer.stations || []);
+    setFormConnectionType(printer.connectionType);
+    setFormIpAddress(printer.ipAddress || '');
+    setFormPort(printer.port ? String(printer.port) : '9100');
+    setFormPaperWidth(printer.paperWidth);
+    setFormCopies(String(printer.copies || 1));
+    setIsFormOpen(true);
+  };
+
+  const toggleFormStation = (station: PrintStation) => {
+    setFormStations((prev) =>
+      prev.includes(station) ? prev.filter((s) => s !== station) : [...prev, station]
+    );
+  };
+
+  const handleSavePrinter = async () => {
+    if (!formName.trim()) {
+      showToast('Informe um nome para a impressora.', 'warning');
+      return;
+    }
+    if (formStations.length === 0) {
+      showToast('Marque ao menos um local (estação) para esta impressora.', 'warning');
+      return;
+    }
+    const targetSlug = selectedSlug === 'all' ? 'japones' : selectedSlug;
+    setIsSavingPrinter(true);
+    try {
+      const printerPayload: ThermalPrinterDevice = {
+        id: editingPrinterId || `prn-${Date.now().toString(36)}`,
+        name: formName.trim(),
+        stations: formStations,
+        restaurantSlug: targetSlug as RestaurantSlug,
+        connectionType: formConnectionType,
+        ipAddress: formConnectionType === 'REDE_TCP' ? formIpAddress.trim() || undefined : undefined,
+        port: formConnectionType === 'REDE_TCP' ? Number(formPort) || 9100 : undefined,
+        paperWidth: formPaperWidth,
+        status: 'online',
+        lastSeenAt: new Date().toISOString(),
+        copies: Math.max(1, Number(formCopies) || 1),
+      };
+
+      const res = await fetch('/api/print-agent/printers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify(printerPayload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Falha ao salvar impressora.');
+      }
+      showToast(
+        editingPrinterId ? 'Impressora atualizada com sucesso!' : 'Impressora cadastrada com sucesso!',
+        'success'
+      );
+      setIsFormOpen(false);
+      resetPrinterForm();
+      fetchPrintData();
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao salvar impressora.', 'error');
+    } finally {
+      setIsSavingPrinter(false);
+    }
+  };
+
+  const handleDeletePrinter = async (printer: ThermalPrinterDevice) => {
+    if (!confirm(`Excluir a impressora "${printer.name}"?`)) return;
+    try {
+      const res = await fetch(
+        `/api/print-agent/printers/${encodeURIComponent(printer.id)}?slug=${encodeURIComponent(printer.restaurantSlug)}`,
+        { method: 'DELETE', headers: { ...authHeaders } }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Falha ao excluir impressora.');
+      }
+      showToast('Impressora removida.', 'success');
+      fetchPrintData();
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao excluir impressora.', 'error');
     }
   };
 
@@ -165,6 +288,13 @@ export const AdminPrintAgentManager: React.FC<AdminPrintAgentManagerProps> = ({ 
 
           {/* Test print trigger */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={openNewPrinterForm}
+              className="py-1 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Nova Impressora</span>
+            </button>
             <select
               value={testPrintStation}
               onChange={(e) => setTestPrintStation(e.target.value as PrintStation)}
@@ -199,14 +329,171 @@ export const AdminPrintAgentManager: React.FC<AdminPrintAgentManagerProps> = ({ 
               </div>
 
               <div className="text-[11px] text-slate-400 space-y-0.5">
-                <p>Estação: <strong className="text-slate-200">{printer.station}</strong></p>
+                <p className="flex flex-wrap items-center gap-1">
+                  Locais:
+                  {(printer.stations || []).map((s) => (
+                    <span
+                      key={s}
+                      className="px-1.5 py-0.5 rounded bg-[#E3BD6A]/15 text-[#E3BD6A] font-bold text-[10px]"
+                    >
+                      {s}
+                    </span>
+                  ))}
+                </p>
                 <p>Conexão: <strong className="text-slate-200">{printer.connectionType} {printer.ipAddress ? `(${printer.ipAddress}:${printer.port})` : ''}</strong></p>
                 <p>Largura: <strong className="text-slate-200">{printer.paperWidth}</strong> • Cópias: {printer.copies}</p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={() => openEditPrinterForm(printer)}
+                  className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleDeletePrinter(printer)}
+                  className="py-1.5 px-2.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-500/30"
+                  title="Excluir impressora"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Modal: Cadastrar / Editar Impressora */}
+      {isFormOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#121622] border border-[#E3BD6A]/30 rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 shrink-0">
+              <h3 className="text-sm font-black text-white">
+                {editingPrinterId ? 'Editar Impressora' : 'Nova Impressora'}
+              </h3>
+              <button onClick={() => setIsFormOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 overflow-y-auto min-h-0">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Nome da Impressora</label>
+                <input
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="Ex.: Térmica Balcão Central"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-[#E3BD6A]/60"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1.5">
+                  Locais que recebem esta impressão (marque quantos quiser)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {ALL_STATIONS.map((station) => (
+                    <label
+                      key={station}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-bold cursor-pointer transition-colors ${
+                        formStations.includes(station)
+                          ? 'bg-[#E3BD6A]/15 border-[#E3BD6A]/50 text-[#E3BD6A]'
+                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formStations.includes(station)}
+                        onChange={() => toggleFormStation(station)}
+                        className="accent-[#E3BD6A]"
+                      />
+                      {station}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 block mb-1">Conexão</label>
+                  <select
+                    value={formConnectionType}
+                    onChange={(e) => setFormConnectionType(e.target.value as ThermalPrinterDevice['connectionType'])}
+                    className="w-full px-2.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs"
+                  >
+                    <option value="USB">USB</option>
+                    <option value="REDE_TCP">Rede (TCP/IP)</option>
+                    <option value="BLUETOOTH">Bluetooth</option>
+                    <option value="VIRTUAL">Virtual</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 block mb-1">Papel</label>
+                  <select
+                    value={formPaperWidth}
+                    onChange={(e) => setFormPaperWidth(e.target.value as '80mm' | '58mm')}
+                    className="w-full px-2.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs"
+                  >
+                    <option value="80mm">80mm</option>
+                    <option value="58mm">58mm</option>
+                  </select>
+                </div>
+              </div>
+
+              {formConnectionType === 'REDE_TCP' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-400 block mb-1">IP</label>
+                    <input
+                      value={formIpAddress}
+                      onChange={(e) => setFormIpAddress(e.target.value)}
+                      placeholder="192.168.1.150"
+                      className="w-full px-2.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-400 block mb-1">Porta</label>
+                    <input
+                      value={formPort}
+                      onChange={(e) => setFormPort(e.target.value)}
+                      placeholder="9100"
+                      className="w-full px-2.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Cópias por pedido</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formCopies}
+                  onChange={(e) => setFormCopies(e.target.value)}
+                  className="w-24 px-2.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-800 flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setIsFormOpen(false)}
+                className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSavePrinter}
+                disabled={isSavingPrinter}
+                className="flex-1 py-2 rounded-lg bg-[#E3BD6A] hover:bg-[#F5D38A] text-slate-950 text-xs font-black disabled:opacity-50"
+              >
+                {isSavingPrinter ? 'Salvando...' : 'Salvar Impressora'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Print Jobs Queue */}
       <div className="space-y-3">

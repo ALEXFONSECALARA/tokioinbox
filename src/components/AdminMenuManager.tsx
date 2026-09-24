@@ -37,6 +37,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
     addMenuItem,
     deleteMenuItem,
     showToast,
+    currentUser,
   } = useStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,7 +83,15 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
           const base64 = reader.result as string;
           const res = await fetch('/api/upload/image', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              // BUG CORRIGIDO: faltava o header Authorization — a rota
+              // /api/upload/image exige autenticação de admin (adminOnly),
+              // então TODO upload de foto falhava com 401 antes de sequer
+              // chegar ao Cloudinary. Sem isso, "aceitar fotos por upload"
+              // nunca funcionava, mesmo com tudo configurado corretamente.
+              ...(currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {}),
+            },
             body: JSON.stringify({
               image: base64,
               folder: `tokioinbox_menu_${currentRestaurantSlug}`,

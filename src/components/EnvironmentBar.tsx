@@ -148,7 +148,7 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
                   ? 'bg-sky-500 text-slate-950 font-black border-sky-300 shadow-[0_0_15px_rgba(14,165,233,0.5)]'
                   : 'bg-[#121724] border-slate-800 text-slate-300 hover:text-white hover:bg-[#181F30] hover:border-slate-700'
               }`}
-              title="🚶 BALCÃO: PDV Touch → Senha → Pedido"
+              title="🚶 BALCÃO RETIRADA: PDV Touch → Senha → Pedido"
             >
               <Store
                 className={`w-4 h-4 shrink-0 ${
@@ -157,7 +157,7 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
               />
               <div className="flex flex-col">
                 <span className="text-xs font-black tracking-wider leading-tight">
-                  🚶 BALCÃO
+                  🚶 BALCÃO RETIRADA
                 </span>
                 {!condensed && (
                   <span

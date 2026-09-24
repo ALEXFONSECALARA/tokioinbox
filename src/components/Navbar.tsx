@@ -63,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ).length;
 
   return (
-    <header className="sticky top-0 z-40 bg-[#0B0907]/95 backdrop-blur-xl border-b border-[#C5A880]/25 shadow-[0_8px_30px_rgba(0,0,0,0.85)]">
+    <header className="safe-top sticky top-0 z-40 bg-[#0B0907]/95 backdrop-blur-xl border-b border-[#C5A880]/25 shadow-[0_8px_30px_rgba(0,0,0,0.85)]">
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-3">
         {/* Breadcrumb do Cardápio — sem ícone/nome de marca no topo, conforme solicitado */}
@@ -76,7 +76,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <span className="text-xs text-stone-400">Cardápio:</span>
               <span className="text-xs font-bold text-[#C5A880] flex items-center gap-1 bg-black/60 px-2.5 py-1 rounded-lg border border-[#C5A880]/30">
-                {currentRestaurant ? `${currentRestaurant.emoji || ''} ${currentRestaurant.name}`.trim() : 'Cardápio'}
+                {currentRestaurant ? currentRestaurant.name : 'Cardápio'}
               </span>
             </button>
           )}
