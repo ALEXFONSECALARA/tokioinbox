@@ -13,7 +13,10 @@ export type PrintJobStatus =
 export interface ThermalPrinterDevice {
   id: string;
   name: string;
-  station: PrintStation;
+  /** Uma impressora pode atender mais de um local ao mesmo tempo — ex.:
+   * uma única impressora perto do balcão pode ser marcada para receber
+   * cópias de CAIXA + COZINHA + SUSHI_BAR simultaneamente. */
+  stations: PrintStation[];
   restaurantSlug: RestaurantSlug;
   connectionType: 'USB' | 'REDE_TCP' | 'BLUETOOTH' | 'VIRTUAL';
   ipAddress?: string;
