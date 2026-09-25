@@ -1158,7 +1158,7 @@ export function closeTableOrderTransactional(params: {
   const updatedHistory: StatusHistoryEntry[] = [
     ...currentOrder.statusHistory,
     {
-      status: 'entregue',
+      status: 'finalizado',
       timestamp: 'Agora mesmo',
       note: closeNote,
     },
@@ -1166,7 +1166,11 @@ export function closeTableOrderTransactional(params: {
 
   const updatedOrder: Order = {
     ...currentOrder,
-    status: 'entregue',
+    // BUG CORRIGIDO: o fechamento da mesa gravava status 'entregue', mas
+    // todos os filtros de "mesa com conta pendente" (Caixa, Kanban, Salão)
+    // só consideram a mesa paga/fechada quando status === 'finalizado'.
+    // Com 'entregue' a mesa nunca saía da lista de pendentes mesmo já paga.
+    status: 'finalizado',
     paymentMethod: params.paymentMethod,
     discount,
     deliveryFee: serviceFee, // service fee recorded in fee slot or final total
