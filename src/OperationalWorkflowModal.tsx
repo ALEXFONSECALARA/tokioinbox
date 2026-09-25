@@ -44,7 +44,7 @@ export const OperationalWorkflowModal: React.FC<OperationalWorkflowModalProps> =
   const { orders, menuItems, restaurants, activeRestaurantSlug } = useStore();
 
   const activeOrders = useMemo(() => {
-    return orders.filter((o) => o.status !== 'entregue' && o.status !== 'cancelado');
+    return orders.filter((o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado');
   }, [orders]);
 
   const stats = useMemo(() => {

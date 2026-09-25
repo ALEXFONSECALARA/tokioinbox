@@ -233,7 +233,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   // Calculate table dynamic status and totals
   const getTableStatus = (tableId: number) => {
     const tableOrders = tableOrdersMap[tableId] || [];
-    const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'cancelado');
+    const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado');
 
     if (activeOrders.length === 0) {
       return 'livre';
@@ -249,7 +249,12 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
   const getTableTotal = (tableId: number) => {
     const tableOrders = tableOrdersMap[tableId] || [];
-    const activeOrders = tableOrders.filter((o) => o.status !== 'cancelado');
+    // BUG CORRIGIDO: incluía comandas já 'finalizado'/'entregue' (já pagas)
+    // no total da mesa. Uma mesa reaberta após um fechamento anterior
+    // mostrava a conta antiga somada à nova, inflando o valor a cobrar.
+    const activeOrders = tableOrders.filter(
+      (o) => o.status !== 'cancelado' && o.status !== 'finalizado' && o.status !== 'entregue'
+    );
     return activeOrders.reduce((sum, order) => sum + (order.total || 0), 0);
   };
 
@@ -406,7 +411,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   // Close and Free Table
   const handleCloseTable = async (tableId: number) => {
     const tableOrders = tableOrdersMap[tableId] || [];
-    const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'cancelado');
+    const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado');
 
     if (activeOrders.length === 0) {
       setActiveTableId(null);
@@ -444,7 +449,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
       return;
     }
     const tableOrders = tableOrdersMap[fromTable] || [];
-    const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'cancelado');
+    const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado');
     if (activeOrders.length === 0) {
       showToast(`Mesa ${fromTable} não possui pedidos ativos para transferir.`, 'info');
       return;
@@ -721,7 +726,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     const activeTableIds = new Set(
       Object.entries(tableOrdersMap)
         .filter(([, tableOrders]) =>
-          tableOrders.some((o) => o.status !== 'entregue' && o.status !== 'cancelado')
+          tableOrders.some((o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado')
         )
         .map(([table]) => Number(table))
     );
@@ -972,7 +977,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
             const status = getTableStatus(table.id);
             const total = getTableTotal(table.id);
             const tableOrders = tableOrdersMap[table.id] || [];
-            const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'cancelado');
+            const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado');
             const totalItemsCount = activeOrders.reduce(
               (acc, o) => acc + o.items.reduce((s, it) => s + it.quantity, 0),
               0
@@ -2007,7 +2012,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                 <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 gap-2">
                   {tableDraft.map((num) => {
                     const hasActiveOrder = (tableOrdersMap[num] || []).some(
-                      (o) => o.status !== 'entregue' && o.status !== 'cancelado'
+                      (o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado'
                     );
                     return (
                       <button

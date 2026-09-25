@@ -59,7 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   // Active pending orders count
   const activeOrdersCount = orders.filter(
-    (o) => o.status !== 'entregue' && o.status !== 'cancelado'
+    (o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado'
   ).length;
 
   return (

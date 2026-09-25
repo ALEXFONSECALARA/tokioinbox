@@ -80,7 +80,7 @@ export const ClientMenuPreviewModal: React.FC<ClientMenuPreviewModalProps> = ({
 
   return (
     <div className="modal-viewport fixed inset-0 z-[70] bg-black/95 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-      <div className="w-full max-w-3xl max-h-[92vh] bg-[#0E121B] border border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="w-full max-w-3xl h-[92vh] bg-[#0E121B] border border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header fixo */}
         <div className="shrink-0 flex items-center justify-between gap-3 border-b border-slate-800 p-4 sm:p-5">
           <div className="flex items-center gap-3 min-w-0">

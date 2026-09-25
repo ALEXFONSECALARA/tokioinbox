@@ -520,7 +520,7 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
                           )}
 
                           {/* Cancel or Delete Action */}
-                          {order.status !== 'entregue' && order.status !== 'cancelado' ? (
+                          {order.status !== 'entregue' && order.status !== 'finalizado' && order.status !== 'cancelado' ? (
                             <button
                               onClick={() => handleCancel(order)}
                               className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-slate-900 transition-colors"

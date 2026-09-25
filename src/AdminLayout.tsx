@@ -1325,8 +1325,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
 
         {activeTab === 'health' && <AdminHealthCheck />}
 
-        {/* 👑 DESIGN SYSTEM & BRAND SHOWCASE FOOTER (food nexoro.png) */}
-        <NexoroBrandFooter />
+        {/* 👑 DESIGN SYSTEM & BRAND SHOWCASE — mora apenas em Configurações
+            (antes aparecia embaixo de TODAS as telas do admin, duplicando
+            o painel de cores em várias janelas). */}
+        {activeTab === 'settings' && <NexoroBrandFooter />}
       </main>
 
       {/* 5. MODAIS OPERACIONAIS */}

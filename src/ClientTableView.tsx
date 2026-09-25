@@ -70,6 +70,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
         o.restaurantSlug === activeRestaurantSlug &&
         o.tableNumber === tableNumber &&
         o.status !== 'entregue' &&
+        o.status !== 'finalizado' &&
         o.status !== 'cancelado'
     );
   }, [orders, activeRestaurantSlug, tableNumber]);

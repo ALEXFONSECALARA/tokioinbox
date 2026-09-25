@@ -213,7 +213,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const saveTableManager = () => {
     if (!restaurant?.slug) return;
     const next = Array.from(new Set(tableDraft.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))).sort((a, b) => a - b);
-    const activeIds = new Set(orders.filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber) && o.status !== 'entregue' && o.status !== 'cancelado').map((o) => Number(o.tableNumber)));
+    const activeIds = new Set(orders.filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber) && o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado').map((o) => Number(o.tableNumber)));
     const blocked = [...activeIds].filter((id) => !next.includes(id));
     if (blocked.length) {
       showToast(`Não é possível excluir Mesa ${blocked.join(', ')} enquanto houver comanda ativa.`, 'warning', 5000);
@@ -337,6 +337,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
         ord.orderType === 'mesa' &&
         ord.tableNumber &&
         ord.status !== 'entregue' &&
+        ord.status !== 'finalizado' &&
         ord.status !== 'cancelado'
       ) {
         if (!map[ord.tableNumber] || new Date(ord.createdAt) > new Date(map[ord.tableNumber].createdAt)) {
