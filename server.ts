@@ -223,8 +223,13 @@ app.get('/api/system/persistence-check', ...adminOnly, (req, res) => {
   });
 });
 
-// Token assinado para o QR físico de uma mesa. Somente a equipe autorizada pode gerar.
-app.get('/api/table/access-token', authenticateStaff, requirePermission('can_configure_restaurant'), (req, res) => {
+// Token assinado para o QR físico de uma mesa.
+// BUG CORRIGIDO: exigia 'can_configure_restaurant', permissão que só o
+// super_admin possui por padrão. Como resultado, garçom/caixa/administrador
+// (que são quem realmente reimprime QR de mesa e pré-visualiza o cardápio
+// do cliente no dia a dia) recebiam 403 e o QR "não gerava". Ajustado para
+// 'can_create_orders', a mesma permissão operacional de quem atende mesas.
+app.get('/api/table/access-token', authenticateStaff, requirePermission('can_create_orders'), (req, res) => {
   const requestedSlug = String(req.query.slug || '');
   const scopedSlug = resolveScopedSlug(req, requestedSlug);
   const table = Number(req.query.table);
@@ -1935,7 +1940,7 @@ app.get('/api/users', authenticateStaff, requireRole('super_admin'), (req, res) 
 
 app.post('/api/users', authenticateStaff, requireRole('super_admin'), (req, res) => {
   try {
-    const { name, username, password, role, restaurantSlug, customPermissions, operatorName } = req.body;
+    const { name, username, password, role, restaurantSlug, restaurantAccess, customPermissions, operatorName } = req.body;
     if (!name || !username || !password || !role) {
       return res.status(400).json({ success: false, error: 'Nome, login, senha e função são obrigatórios.' });
     }
@@ -1945,7 +1950,12 @@ app.post('/api/users', authenticateStaff, requireRole('super_admin'), (req, res)
       username,
       password,
       role,
-      restaurantSlug,
+      // BUG CORRIGIDO: o formulário de "Cadastrar Novo Usuário" envia o
+      // campo "restaurantAccess" (mesmo nome usado na edição/PATCH), mas
+      // aqui só se lia "restaurantSlug" — undefined sempre, então todo
+      // usuário novo era criado com acesso "all" em vez do restaurante
+      // escolhido no cadastro.
+      restaurantSlug: restaurantSlug || restaurantAccess,
       customPermissions,
       operatorName: operatorName || req.userSession?.name,
     });
