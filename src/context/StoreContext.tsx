@@ -1079,12 +1079,30 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       return undefined;
     }
     loadCatalog();
+    // V7: intervalo do cliente reduzido de 60s para 8s — alterações feitas
+    // no admin (preço, item, promoção, capa da vitrine etc.) agora chegam
+    // ao cardápio do cliente em poucos segundos, sem precisar dar F5.
+    // Requisições usam ETag/If-None-Match (304 quando nada mudou), então o
+    // custo extra de rede é mínimo mesmo com o intervalo mais curto.
     const id = setInterval(() => {
       const visible = typeof document === 'undefined' || document.visibilityState === 'visible';
       // Não sobrescreve edições do painel que ainda não foram enviadas
       if (visible && !pushTimerRef.current && !pushInFlightRef.current) loadCatalog();
-    }, isStaffMode ? 30000 : 60000);
-    return () => clearInterval(id);
+    }, isStaffMode ? 15000 : 8000);
+
+    // Ao voltar para a aba (troca de app, tela bloqueada etc.), busca na hora
+    // em vez de esperar o próximo tick do intervalo.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && !pushTimerRef.current && !pushInFlightRef.current) {
+        loadCatalog();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isStaffMode, currentUser?.id, loadCatalog]);
 
   // Painel: envia alterações do cardápio ao servidor
