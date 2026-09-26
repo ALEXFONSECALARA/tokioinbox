@@ -358,8 +358,8 @@ export const AdminUsers: React.FC = () => {
           <span>Senhas dos colaboradores</span>
         </h4>
         <p className="text-[11px] text-slate-400">
-          Cada colaborador deve ter usuário e senha próprios (mínimo 8 caracteres, sem senhas óbvias como
-          "12345678" ou "senha123"). Ao trocar a senha ou desativar um usuário, as sessões abertas dele são encerradas.
+          Cada colaborador deve ter usuário e senha próprios (mínimo 4 caracteres, sem senhas óbvias como
+          "1234" ou "senha123"). Ao trocar a senha ou desativar um usuário, as sessões abertas dele são encerradas.
         </p>
       </div>
 
@@ -509,7 +509,7 @@ export const AdminUsers: React.FC = () => {
                   required={!editUser}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 8 caracteres"
+                  placeholder="Mínimo 4 caracteres"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-medium focus:border-amber-500 outline-none"
                 />
               </div>

@@ -20,7 +20,9 @@ export const AdminVitrineManager: React.FC = () => {
   const { restaurants, updateVitrineConfig, checkPermission, currentUser, showToast } = useStore();
   const [editingSlug, setEditingSlug] = useState<string>('japones');
   const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isUploadingHero, setIsUploadingHero] = useState(false);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const heroFileInputRef = useRef<HTMLInputElement>(null);
 
   const restaurantList = Object.values(restaurants).sort(
     (a, b) => (a.vitrineOrder || 0) - (b.vitrineOrder || 0)
@@ -46,6 +48,62 @@ export const AdminVitrineManager: React.FC = () => {
   const handleUpdateCover = (slug: string, url: string) => {
     if (!checkPermission('can_edit_restaurants')) return;
     updateVitrineConfig(slug, { vitrineCoverImage: url });
+  };
+
+  // V7: editor do slide de "Promoções & Rodízios em Destaque" da Home —
+  // antes fixo no código, agora 100% editável aqui por restaurante.
+  const DEFAULT_HERO_SLIDE = {
+    enabled: false,
+    badge: '',
+    badgeIcon: '✨',
+    title: '',
+    highlightText: '',
+    description: '',
+    offerTag: '',
+    image: '',
+    ctaText: 'Ver Cardápio',
+  };
+
+  const handleUpdateHeroSlide = (slug: string, patch: Partial<NonNullable<RestaurantConfig['heroPromoSlide']>>) => {
+    if (!checkPermission('can_edit_restaurants')) return;
+    const current = restaurants[slug]?.heroPromoSlide || DEFAULT_HERO_SLIDE;
+    updateVitrineConfig(slug, { heroPromoSlide: { ...current, ...patch } });
+  };
+
+  const handleHeroImageUpload = async (slug: string, file: File | undefined) => {
+    if (!file) return;
+    if (!checkPermission('can_edit_restaurants')) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast('A imagem deve ter no máximo 8MB.', 'warning');
+      return;
+    }
+    setIsUploadingHero(true);
+    try {
+      const base64: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Erro ao ler o arquivo.'));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/upload/image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {}),
+        },
+        body: JSON.stringify({ image: base64, folder: `tokioinbox_hero_${slug}` }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.url) {
+        throw new Error(data.error || 'Falha ao enviar imagem.');
+      }
+      handleUpdateHeroSlide(slug, { image: data.url });
+      showToast('Imagem do slide de destaque atualizada!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao enviar imagem do slide.', 'error');
+    } finally {
+      setIsUploadingHero(false);
+    }
   };
 
   const handleCoverFileUpload = async (slug: string, file: File | undefined) => {
@@ -82,6 +140,56 @@ export const AdminVitrineManager: React.FC = () => {
       showToast(err?.message || 'Erro ao enviar imagem da capa.', 'error');
     } finally {
       setIsUploadingCover(false);
+    }
+  };
+
+  // V8: upload genérico de imagem para qualquer campo real do restaurante
+  // (logo, banner da tela do cliente etc.) — a pedido, tudo isso agora fica
+  // reunido aqui no Gerenciador da Vitrine Principal, um lugar só por
+  // restaurante, e é salvo/sincronizado automaticamente (mesmo auto-save
+  // debounced do catálogo que já cobre `restaurants`).
+  const [uploadingField, setUploadingField] = useState<string | null>(null);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const bannerFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFieldImageUpload = async (
+    slug: string,
+    field: 'logo' | 'banner',
+    file: File | undefined
+  ) => {
+    if (!file) return;
+    if (!checkPermission('can_edit_restaurants')) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast('A imagem deve ter no máximo 8MB.', 'warning');
+      return;
+    }
+    const key = `${slug}-${field}`;
+    setUploadingField(key);
+    try {
+      const base64: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Erro ao ler o arquivo.'));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/upload/image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {}),
+        },
+        body: JSON.stringify({ image: base64, folder: `tokioinbox_${field}_${slug}` }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.url) {
+        throw new Error(data.error || 'Falha ao enviar imagem.');
+      }
+      updateVitrineConfig(slug, { [field]: data.url });
+      showToast(`${field === 'logo' ? 'Logotipo' : 'Banner'} atualizado! Já aparece no cardápio do cliente.`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao enviar imagem.', 'error');
+    } finally {
+      setUploadingField(null);
     }
   };
 
@@ -312,6 +420,208 @@ export const AdminVitrineManager: React.FC = () => {
                     ) : (
                       <Upload className="w-3.5 h-3.5" />
                     )}
+                    <span>Upload</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* V8: Configuração real da Tela do Cliente (logo, banner, frase) por restaurante */}
+              <div className="space-y-3 pt-4 border-t border-slate-800">
+                <label className="text-xs font-bold text-slate-300 uppercase flex items-center gap-1.5">
+                  <Image className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Tela do Cliente deste Restaurante</span>
+                </label>
+                <p className="text-[10px] text-slate-500">
+                  Logo, banner e frase que aparecem quando o cliente abre o cardápio deste restaurante. Ao salvar, já vale no cardápio automaticamente (sem precisar atualizar a página).
+                </p>
+
+                {/* Logo */}
+                <div className="flex items-center gap-2">
+                  <img
+                    src={currentRest.logo}
+                    alt="Logo atual"
+                    className="w-10 h-10 rounded-xl object-cover border border-slate-700 shrink-0 bg-slate-950"
+                  />
+                  <input
+                    type="text"
+                    value={currentRest.logo || ''}
+                    onChange={(e) => updateVitrineConfig(currentRest.slug, { logo: e.target.value })}
+                    placeholder="URL do logotipo (ou envie um arquivo)"
+                    className="flex-1 bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                  />
+                  <input
+                    ref={logoFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      handleFieldImageUpload(currentRest.slug, 'logo', e.target.files?.[0]);
+                      if (logoFileInputRef.current) logoFileInputRef.current.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => logoFileInputRef.current?.click()}
+                    disabled={uploadingField === `${currentRest.slug}-logo`}
+                    className="shrink-0 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {uploadingField === `${currentRest.slug}-logo` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    <span>Logo</span>
+                  </button>
+                </div>
+
+                {/* Banner */}
+                <div className="flex items-center gap-2">
+                  {currentRest.banner && (
+                    <img
+                      src={currentRest.banner}
+                      alt="Banner atual"
+                      className="w-16 h-10 rounded-xl object-cover border border-slate-700 shrink-0 bg-slate-950"
+                    />
+                  )}
+                  <input
+                    type="text"
+                    value={currentRest.banner || ''}
+                    onChange={(e) => updateVitrineConfig(currentRest.slug, { banner: e.target.value })}
+                    placeholder="URL do banner do cardápio (ou envie um arquivo)"
+                    className="flex-1 bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                  />
+                  <input
+                    ref={bannerFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      handleFieldImageUpload(currentRest.slug, 'banner', e.target.files?.[0]);
+                      if (bannerFileInputRef.current) bannerFileInputRef.current.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => bannerFileInputRef.current?.click()}
+                    disabled={uploadingField === `${currentRest.slug}-banner`}
+                    className="shrink-0 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {uploadingField === `${currentRest.slug}-banner` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    <span>Banner</span>
+                  </button>
+                </div>
+
+                {/* Tagline */}
+                <input
+                  type="text"
+                  value={currentRest.tagline || ''}
+                  onChange={(e) => updateVitrineConfig(currentRest.slug, { tagline: e.target.value })}
+                  placeholder="Frase de impacto exibida no cardápio (ex: Pratos artesanais com ingredientes importados)"
+                  className="w-full bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {/* Slide de Destaque na Home: "Promoções & Rodízios em Destaque" / "Ofertas ativas hoje" */}
+              <div className="space-y-3 pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300 uppercase flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Slide em "Promoções & Rodízios em Destaque" (Home)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateHeroSlide(currentRest.slug, {
+                        enabled: !(currentRest.heroPromoSlide?.enabled ?? false),
+                      })
+                    }
+                    className={`text-[11px] font-black px-3 py-1.5 rounded-lg border ${
+                      currentRest.heroPromoSlide?.enabled
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                    }`}
+                  >
+                    {currentRest.heroPromoSlide?.enabled ? 'Exibindo na Home' : 'Oculto na Home'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Este é o carrossel grande no topo da página pública, com "Ofertas ativas hoje". Preencha e ative para este restaurante aparecer nele.
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={currentRest.heroPromoSlide?.badgeIcon || ''}
+                    onChange={(e) => handleUpdateHeroSlide(currentRest.slug, { badgeIcon: e.target.value })}
+                    placeholder="Emoji (ex: 🍣)"
+                    className="bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                  <input
+                    type="text"
+                    value={currentRest.heroPromoSlide?.badge || ''}
+                    onChange={(e) => handleUpdateHeroSlide(currentRest.slug, { badge: e.target.value })}
+                    placeholder="Selo (ex: OMAKASE & SUSHIS NOBRES)"
+                    className="bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={currentRest.heroPromoSlide?.title || ''}
+                  onChange={(e) => handleUpdateHeroSlide(currentRest.slug, { title: e.target.value })}
+                  placeholder="Título grande do slide"
+                  className="w-full bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+                <input
+                  type="text"
+                  value={currentRest.heroPromoSlide?.highlightText || ''}
+                  onChange={(e) => handleUpdateHeroSlide(currentRest.slug, { highlightText: e.target.value })}
+                  placeholder="Linha de destaque (acima do título)"
+                  className="w-full bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+                <textarea
+                  value={currentRest.heroPromoSlide?.description || ''}
+                  onChange={(e) => handleUpdateHeroSlide(currentRest.slug, { description: e.target.value })}
+                  placeholder="Descrição curta do prato/oferta"
+                  rows={2}
+                  className="w-full bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 resize-none"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={currentRest.heroPromoSlide?.offerTag || ''}
+                    onChange={(e) => handleUpdateHeroSlide(currentRest.slug, { offerTag: e.target.value })}
+                    placeholder="Tag da oferta (ex: 20% OFF hoje)"
+                    className="bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                  <input
+                    type="text"
+                    value={currentRest.heroPromoSlide?.ctaText || ''}
+                    onChange={(e) => handleUpdateHeroSlide(currentRest.slug, { ctaText: e.target.value })}
+                    placeholder="Texto do botão (ex: Ver Cardápio)"
+                    className="bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={currentRest.heroPromoSlide?.image || ''}
+                    onChange={(e) => handleUpdateHeroSlide(currentRest.slug, { image: e.target.value })}
+                    placeholder="URL da foto do slide (ou envie um arquivo)"
+                    className="flex-1 bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                  />
+                  <input
+                    ref={heroFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      handleHeroImageUpload(currentRest.slug, e.target.files?.[0]);
+                      if (heroFileInputRef.current) heroFileInputRef.current.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => heroFileInputRef.current?.click()}
+                    disabled={isUploadingHero}
+                    className="shrink-0 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isUploadingHero ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                     <span>Upload</span>
                   </button>
                 </div>

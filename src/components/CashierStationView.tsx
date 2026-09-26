@@ -13,6 +13,7 @@ import {
   Users,
   Percent,
   Receipt,
+  FileText,
   Printer,
   CheckCircle2,
   AlertCircle,
@@ -65,6 +66,8 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
 
   // Payment dialog state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cartao_credito');
+  // V8: comprovante de fechamento — Nota Fiscal (NFC-e) ou Cupom Comum.
+  const [receiptType, setReceiptType] = useState<'fiscal' | 'comum'>('comum');
   const [cashReceived, setCashReceived] = useState<string>('');
   const [splitCount, setSplitCount] = useState<number>(1);
   const [includeServiceFee, setIncludeServiceFee] = useState<boolean>(true);
@@ -277,6 +280,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
           total: orderTotal,
           splitCount,
           operatorName: currentUser?.name || 'Operador Caixa',
+          receiptType,
         });
 
         allocatedTotal += orderTotal;
@@ -709,6 +713,25 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                       </button>
                       <button type="button" onClick={() => setPaymentMethod('dinheiro')} className={`py-2 px-2 rounded-xl text-[10px] sm:text-xs font-bold border flex items-center justify-center gap-1.5 transition-all ${paymentMethod === 'dinheiro' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500' : 'bg-slate-800/60 text-slate-400 border-slate-800'}`}>
                         <DollarSign className="w-4 h-4" /><span>Dinheiro</span>
+                      </button>
+                    </div>
+
+                    {/* V8: Nota Fiscal (NFC-e) ou Cupom Comum (recibo não fiscal) */}
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mt-2 mb-1.5">Comprovante</label>
+                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setReceiptType('comum')}
+                        className={`py-2 px-2 rounded-xl text-[10px] sm:text-xs font-bold border flex items-center justify-center gap-1.5 transition-all ${receiptType === 'comum' ? 'bg-amber-500/20 text-amber-300 border-amber-500' : 'bg-slate-800/60 text-slate-400 border-slate-800'}`}
+                      >
+                        <Receipt className="w-4 h-4" /><span>Cupom Comum</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReceiptType('fiscal')}
+                        className={`py-2 px-2 rounded-xl text-[10px] sm:text-xs font-bold border flex items-center justify-center gap-1.5 transition-all ${receiptType === 'fiscal' ? 'bg-amber-500/20 text-amber-300 border-amber-500' : 'bg-slate-800/60 text-slate-400 border-slate-800'}`}
+                      >
+                        <FileText className="w-4 h-4" /><span>Nota Fiscal</span>
                       </button>
                     </div>
 

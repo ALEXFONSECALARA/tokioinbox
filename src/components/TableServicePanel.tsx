@@ -34,6 +34,8 @@ import {
   Smartphone,
   SlidersHorizontal,
   ChevronDown,
+  XCircle,
+  FileText,
 } from 'lucide-react';
 import { BRAND_NAME } from '../config/brand';
 import { getRestaurantPath } from '../utils/urlRouting';
@@ -115,6 +117,9 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [tableDraft, setTableDraft] = useState<number[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro'>('pix');
+  // V8: escolha do tipo de comprovante ao fechar a mesa — Nota Fiscal (NFC-e)
+  // ou Cupom Comum (recibo não fiscal, sem emitir documento na SEFAZ).
+  const [receiptType, setReceiptType] = useState<'fiscal' | 'comum'>('comum');
   const [cashReceived, setCashReceived] = useState('');
   const [tableQrUrl, setTableQrUrl] = useState<string | null>(null);
   const [isLoadingTableQr, setIsLoadingTableQr] = useState(false);
@@ -123,7 +128,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [waiterCalls, setWaiterCalls] = useServerDoc<Record<number, { timestamp: number; table: number }>>('waiterCalls', {}, { enabled: true, onError: (m) => showToast(m, 'error') });
 
   // Shift History of closed tables
-  type ShiftHistoryItem = { id: string; tableId: number; total: number; closedAt: string; paymentMethod: string; waiter: string };
+  type ShiftHistoryItem = { id: string; tableId: number; total: number; closedAt: string; paymentMethod: string; receiptType?: 'fiscal' | 'comum'; waiter: string };
   const [shiftHistory, setShiftHistory] = useServerDoc<ShiftHistoryItem[]>('salonShiftHistory', [], { enabled: true, onError: (m) => showToast(m, 'error') });
 
   const handleAcknowledgeCall = (tableNum: number) => {
@@ -421,9 +426,20 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
     const totalToClose = includeServiceFee ? activeTableSubtotal * 1.1 : activeTableSubtotal;
 
-    if (confirm(`Confirmar fechamento e liberação da Mesa ${tableId}? Total: R$ ${totalToClose.toFixed(2)} via ${selectedPaymentMethod.toUpperCase()}.`)) {
+    const receiptLabel = receiptType === 'fiscal' ? 'Nota Fiscal (NFC-e)' : 'Cupom Comum (não fiscal)';
+
+    if (confirm(`Confirmar fechamento e liberação da Mesa ${tableId}? Total: R$ ${totalToClose.toFixed(2)} via ${selectedPaymentMethod.toUpperCase()}. Comprovante: ${receiptLabel}.`)) {
       for (const order of activeOrders) {
-        await updateOrderStatus(order.id, 'entregue', `Conta fechada via ${selectedPaymentMethod} e mesa liberada pelo garçom`);
+        // BUG CORRIGIDO: aqui o fechamento gravava status 'entregue', que os
+        // filtros de "mesa com conta pendente" no Caixa não reconhecem como
+        // encerrado (eles checam 'finalizado'). Mesa fechada pelo garçom
+        // nunca saía da lista de pendências do Caixa. Ver mesma correção em
+        // server/orderService.ts (closeTableOrderTransactional).
+        await updateOrderStatus(
+          order.id,
+          'finalizado',
+          `Conta fechada via ${selectedPaymentMethod} (${receiptLabel}) e mesa liberada pelo garçom`
+        );
       }
 
       // Record in Shift History
@@ -433,12 +449,44 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
         total: totalToClose,
         closedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         paymentMethod: selectedPaymentMethod,
+        receiptType,
         waiter: currentUser?.name || 'Garçom Salão',
       };
       setShiftHistory((prev) => [historyItem, ...prev]);
 
       setActiveTableId(null);
-      showToast(`Mesa ${tableId} fechada e liberada com sucesso!`, 'success');
+      showToast(`Mesa ${tableId} fechada e liberada com sucesso! (${receiptLabel})`, 'success');
+    }
+  };
+
+  // V8: Cancelamento de mesa — encerra a comanda sem cobrança (pedido
+  // enganado, cliente desistiu, erro de abertura de mesa etc.), diferente
+  // do fechamento com pagamento acima.
+  const handleCancelTable = async (tableId: number) => {
+    const tableOrders = tableOrdersMap[tableId] || [];
+    const activeOrders = tableOrders.filter(
+      (o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado'
+    );
+
+    if (activeOrders.length === 0) {
+      setActiveTableId(null);
+      showToast(`Mesa ${tableId} liberada.`, 'info');
+      return;
+    }
+
+    const reason = prompt(`Motivo do cancelamento da Mesa ${tableId} (opcional):`, '');
+    if (reason === null) return; // usuário cancelou o prompt
+
+    if (confirm(`Confirmar CANCELAMENTO da Mesa ${tableId}? Todos os pedidos em aberto serão cancelados sem cobrança.`)) {
+      for (const order of activeOrders) {
+        await updateOrderStatus(
+          order.id,
+          'cancelado',
+          reason ? `Mesa cancelada pelo garçom. Motivo: ${reason}` : 'Mesa cancelada pelo garçom.'
+        );
+      }
+      setActiveTableId(null);
+      showToast(`Mesa ${tableId} cancelada.`, 'info');
     }
   };
 
@@ -1590,6 +1638,44 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                     )}
                   </div>
 
+                  {/* V8: escolha do comprovante de fechamento */}
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-[11px] text-stone-400 block font-bold uppercase tracking-wide">
+                      Comprovante de Fechamento:
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setReceiptType('comum')}
+                        className={`py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                          receiptType === 'comum'
+                            ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+                            : 'bg-stone-900 border-stone-800 text-stone-300 hover:border-stone-700'
+                        }`}
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        Cupom Comum
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReceiptType('fiscal')}
+                        className={`py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                          receiptType === 'fiscal'
+                            ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+                            : 'bg-stone-900 border-stone-800 text-stone-300 hover:border-stone-700'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        Nota Fiscal
+                      </button>
+                    </div>
+                    {receiptType === 'fiscal' && (
+                      <p className="text-[10px] text-stone-500">
+                        A NFC-e é emitida no módulo Fiscal após o fechamento (Admin → Fiscal).
+                      </p>
+                    )}
+                  </div>
+
                   {/* Actions: Print, Fiscal and Close */}
                   <div className="space-y-2 pt-2">
                     <button
@@ -1608,6 +1694,15 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       Encerrar Atendimento &amp; Liberar Mesa
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCancelTable(activeTableId)}
+                      className="w-full py-2.5 rounded-xl bg-transparent hover:bg-rose-950/40 text-rose-400 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors border border-rose-900/60"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Cancelar Mesa (sem cobrança)
                     </button>
                   </div>
                 </div>

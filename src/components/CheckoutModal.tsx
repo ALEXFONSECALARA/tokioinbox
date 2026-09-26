@@ -253,7 +253,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div className="modal-viewport fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full overflow-hidden shadow-2xl my-auto animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full max-h-[92vh] overflow-hidden shadow-2xl my-auto animate-in fade-in duration-200 flex flex-col">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
           <div className="flex items-center gap-2.5">
@@ -277,7 +277,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         {/* BODY */}
-        <div className="p-5 sm:p-6 max-h-[75vh] overflow-y-auto">
+        {/* V7: agora flex-1 + min-h-0 em vez de max-h fixo, dentro de um
+            modal com altura própria (flex-col) — o botão "Confirmar e
+            Enviar Pedido" fica sempre visível num rodapé fixo abaixo,
+            fora da área que rola. */}
+        <form onSubmit={handleSubmitOrder} className="flex-1 min-h-0 flex flex-col">
+        <div className="p-5 sm:p-6 flex-1 min-h-0 overflow-y-auto">
           {createdOrder ? (
             /* SUCCESS VIEW */
             <div className="text-center space-y-6 py-2">
@@ -383,7 +388,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           ) : (
             /* CHECKOUT FORM VIEW */
-            <form onSubmit={handleSubmitOrder} className="space-y-5">
+            <div className="space-y-5">
               {/* Modality Pill Summary */}
               <div className="flex items-center justify-between p-3 bg-slate-950/60 rounded-2xl border border-slate-800">
                 <div className="flex items-center gap-2 text-xs">
@@ -678,64 +683,73 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 />
               </div>
 
-              {/* Order Final Summary */}
-              <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-1.5 text-xs text-slate-300">
-                <div className="flex justify-between">
-                  <span>Itens ({cart.reduce((a, b) => a + b.quantity, 0)}):</span>
-                  <span>R$ {subtotal.toFixed(2)}</span>
-                </div>
-                {discount > 0 && (
-                  <div className="flex justify-between text-emerald-400">
-                    <span>Desconto ({appliedCoupon?.code}):</span>
-                    <span>- R$ {discount.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span>Taxa de Entrega:</span>
-                  <span>R$ {deliveryFee.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm font-black text-white pt-2 border-t border-slate-800">
-                  <span>Total Final:</span>
-                  <span className="text-amber-400 text-base">R$ {total.toFixed(2)}</span>
-                </div>
-              </div>
-
-              {/* Error Banner */}
-              {submitError && (
-                <div className="p-3 bg-red-950/60 border border-red-500/40 rounded-2xl flex items-start gap-2.5 text-xs text-red-200">
-                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-semibold text-red-300">Falha ao confirmar pedido</p>
-                    <p className="text-[11px] text-red-200/90 mt-0.5">{submitError}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Submit CTA */}
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className={`w-full py-4 px-4 font-black text-sm rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${
-                  isSubmitting
-                    ? 'bg-amber-600/60 text-slate-900 cursor-wait'
-                    : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 hover:shadow-amber-500/20'
-                }`}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                    <span>Confirmando e Gravando Pedido...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Confirmar e Enviar Pedido</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </form>
+            </div>
           )}
         </div>
+
+        {/* V7: rodapé fixo (fora do scroll) — total e botão "Confirmar e
+            Enviar Pedido" ficam sempre visíveis, mesmo com a lista de
+            itens/formulário rolando por cima. */}
+        {!createdOrder && (
+          <div className="shrink-0 border-t border-slate-800 bg-slate-900 p-4 sm:p-5 space-y-3">
+            {/* Order Final Summary */}
+            <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-1.5 text-xs text-slate-300">
+              <div className="flex justify-between">
+                <span>Itens ({cart.reduce((a, b) => a + b.quantity, 0)}):</span>
+                <span>R$ {subtotal.toFixed(2)}</span>
+              </div>
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-400">
+                  <span>Desconto ({appliedCoupon?.code}):</span>
+                  <span>- R$ {discount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span>Taxa de Entrega:</span>
+                <span>R$ {deliveryFee.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm font-black text-white pt-2 border-t border-slate-800">
+                <span>Total Final:</span>
+                <span className="text-amber-400 text-base">R$ {total.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Error Banner */}
+            {submitError && (
+              <div className="p-3 bg-red-950/60 border border-red-500/40 rounded-2xl flex items-start gap-2.5 text-xs text-red-200">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-semibold text-red-300">Falha ao confirmar pedido</p>
+                  <p className="text-[11px] text-red-200/90 mt-0.5">{submitError}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Submit CTA */}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={`w-full py-4 px-4 font-black text-sm rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${
+                isSubmitting
+                  ? 'bg-amber-600/60 text-slate-900 cursor-wait'
+                  : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 hover:shadow-amber-500/20'
+              }`}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                  <span>Confirmando e Gravando Pedido...</span>
+                </>
+              ) : (
+                <>
+                  <span>Confirmar e Enviar Pedido</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        )}
+        </form>
       </div>
     </div>
   );

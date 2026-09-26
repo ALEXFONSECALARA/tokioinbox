@@ -84,11 +84,41 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
 
   // Address sub-form
   const [showAddAddress, setShowAddAddress] = useState(false);
+  const [addrCep, setAddrCep] = useState('');
+  const [addrCepLoading, setAddrCepLoading] = useState(false);
+  const [addrCepError, setAddrCepError] = useState<string | null>(null);
   const [addrStreet, setAddrStreet] = useState('');
   const [addrNumber, setAddrNumber] = useState('');
   const [addrNeighborhood, setAddrNeighborhood] = useState('');
+  const [addrCity, setAddrCity] = useState('');
+  const [addrState, setAddrState] = useState('');
+  const [addrPhone, setAddrPhone] = useState('');
   const [addrComplement, setAddrComplement] = useState('');
   const [addrTitle, setAddrTitle] = useState('Casa');
+
+  // V7: busca automática de Rua/Bairro/Cidade/UF a partir do CEP (ViaCEP).
+  const lookupCep = async (rawCep: string) => {
+    const digits = rawCep.replace(/\D/g, '');
+    if (digits.length !== 8) return;
+    setAddrCepLoading(true);
+    setAddrCepError(null);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await res.json();
+      if (data.erro) {
+        setAddrCepError('CEP não encontrado. Preencha o endereço manualmente.');
+      } else {
+        setAddrStreet(data.logradouro || '');
+        setAddrNeighborhood(data.bairro || '');
+        setAddrCity(data.localidade || '');
+        setAddrState(data.uf || '');
+      }
+    } catch {
+      setAddrCepError('Não foi possível buscar o CEP agora. Preencha o endereço manualmente.');
+    } finally {
+      setAddrCepLoading(false);
+    }
+  };
 
   // Edit profile state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -143,8 +173,8 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
       setErrorMsg('Informe seu número de WhatsApp.');
       return;
     }
-    if (passwordInput.length < 6) {
-      setErrorMsg('A senha deve ter no mínimo 6 caracteres.');
+    if (passwordInput.length < 4) {
+      setErrorMsg('A senha deve ter no mínimo 4 caracteres.');
       return;
     }
     if (passwordInput !== confirmPasswordInput) {
@@ -202,8 +232,8 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
       setErrorMsg('Digite o código de 6 dígitos recebido.');
       return;
     }
-    if (passwordInput.length < 6) {
-      setErrorMsg('A nova senha deve ter no mínimo 6 caracteres.');
+    if (passwordInput.length < 4) {
+      setErrorMsg('A nova senha deve ter no mínimo 4 caracteres.');
       return;
     }
     if (passwordInput !== confirmPasswordInput) {
@@ -232,24 +262,41 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   // 5. Add Address Submit
   const handleAddAddressSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addrStreet.trim() || !addrNumber.trim() || !addrNeighborhood.trim()) {
+    // V7: CEP, Rua, Número, Complemento e Telefone passam a ser obrigatórios.
+    if (
+      !addrCep.trim() ||
+      !addrStreet.trim() ||
+      !addrNumber.trim() ||
+      !addrNeighborhood.trim() ||
+      !addrComplement.trim() ||
+      !addrPhone.trim()
+    ) {
+      setErrorMsg('Preencha CEP, rua, número, complemento e telefone para salvar o endereço.');
       return;
     }
+    setErrorMsg(null);
     setIsLoading(true);
     await addAddress({
       title: addrTitle,
       street: addrStreet,
       number: addrNumber,
       neighborhood: addrNeighborhood,
-      city: 'São Paulo',
-      complement: addrComplement || undefined,
+      city: addrCity || 'São Paulo',
+      state: addrState || undefined,
+      cep: addrCep,
+      phone: addrPhone,
+      complement: addrComplement,
       isDefault: false,
     });
     setIsLoading(false);
     setShowAddAddress(false);
+    setAddrCep('');
     setAddrStreet('');
     setAddrNumber('');
     setAddrNeighborhood('');
+    setAddrCity('');
+    setAddrState('');
+    setAddrPhone('');
     setAddrComplement('');
   };
 
@@ -381,7 +428,10 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                     <span>Meus Endereços Salvos</span>
                   </span>
                   <button
-                    onClick={() => setShowAddAddress(!showAddAddress)}
+                    onClick={() => {
+                      if (!showAddAddress && customer?.phone && !addrPhone) setAddrPhone(customer.phone);
+                      setShowAddAddress(!showAddAddress);
+                    }}
                     className="text-xs text-[#C5A880] hover:underline font-bold flex items-center gap-1"
                   >
                     <Plus className="w-3 h-3" />
@@ -402,15 +452,36 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                         onChange={(e) => setAddrTitle(e.target.value)}
                         className="p-2 rounded bg-black/60 border border-stone-700 text-white"
                       />
-                      <input
-                        type="text"
-                        placeholder="Bairro *"
-                        value={addrNeighborhood}
-                        onChange={(e) => setAddrNeighborhood(e.target.value)}
-                        className="p-2 rounded bg-black/60 border border-stone-700 text-white"
-                        required
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="CEP *"
+                          value={addrCep}
+                          maxLength={9}
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/\D/g, '').slice(0, 8);
+                            const masked = v.length > 5 ? `${v.slice(0, 5)}-${v.slice(5)}` : v;
+                            setAddrCep(masked);
+                            if (v.length === 8) lookupCep(v);
+                          }}
+                          className="w-full p-2 rounded bg-black/60 border border-stone-700 text-white"
+                          required
+                        />
+                        {addrCepLoading && (
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-amber-400">buscando…</span>
+                        )}
+                      </div>
                     </div>
+                    {addrCepError && <p className="text-[10px] text-amber-400">{addrCepError}</p>}
+                    <input
+                      type="text"
+                      placeholder="Bairro *"
+                      value={addrNeighborhood}
+                      onChange={(e) => setAddrNeighborhood(e.target.value)}
+                      className="w-full p-2 rounded bg-black/60 border border-stone-700 text-white"
+                      required
+                    />
                     <div className="grid grid-cols-3 gap-2">
                       <input
                         type="text"
@@ -429,12 +500,38 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                         required
                       />
                     </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Cidade"
+                        value={addrCity}
+                        onChange={(e) => setAddrCity(e.target.value)}
+                        className="p-2 rounded bg-black/60 border border-stone-700 text-white"
+                      />
+                      <input
+                        type="text"
+                        placeholder="UF"
+                        value={addrState}
+                        maxLength={2}
+                        onChange={(e) => setAddrState(e.target.value.toUpperCase())}
+                        className="p-2 rounded bg-black/60 border border-stone-700 text-white"
+                      />
+                    </div>
                     <input
                       type="text"
-                      placeholder="Complemento / Apto / Bloco"
+                      placeholder="Complemento / Apto / Bloco *"
                       value={addrComplement}
                       onChange={(e) => setAddrComplement(e.target.value)}
                       className="w-full p-2 rounded bg-black/60 border border-stone-700 text-white"
+                      required
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Telefone para contato *"
+                      value={addrPhone}
+                      onChange={(e) => setAddrPhone(formatPhoneMask(e.target.value))}
+                      className="w-full p-2 rounded bg-black/60 border border-stone-700 text-white"
+                      required
                     />
                     <button
                       type="submit"
@@ -690,7 +787,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-stone-300 mb-1">
-                  Criar Senha (mínimo 6 caracteres):
+                  Criar Senha (mínimo 4 caracteres):
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-3.5" />

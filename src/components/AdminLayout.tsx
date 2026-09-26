@@ -230,6 +230,57 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
     }
   };
 
+  // V8: mesma matriz de permissões usada para mostrar/esconder cada botão de
+  // aba, mas reaproveitada aqui como trava — impede que um usuário acabe numa
+  // aba restrita (por deep-link, aba salva antes de perder permissão etc.)
+  // mesmo que o botão correspondente esteja oculto para ele.
+  const hasTabAccess = (tab: string): boolean => {
+    if (!currentUser || currentUser.role === 'super_admin') return true;
+    const perms = currentUser.permissions;
+    switch (tab) {
+      case 'tools_catalog':
+      case 'ai_engine':
+      case 'admin_suite':
+      case 'restaurants':
+      case 'ai_sales':
+      case 'marketing':
+      case 'promotions':
+      case 'delivery_areas':
+      case 'vitrine':
+      case 'sales_channels':
+        return Boolean(perms?.can_configure_restaurant);
+      case 'devices':
+      case 'print_agent':
+        return Boolean(perms?.can_connect_devices);
+      case 'customers':
+      case 'audit':
+      case 'issues':
+      case 'crm_recovery':
+        return Boolean(perms?.can_view_reports);
+      case 'users':
+        return Boolean(perms?.can_manage_users);
+      case 'pricing':
+        return Boolean(perms?.can_change_prices);
+      case 'menu':
+        return Boolean(perms?.can_edit_menu);
+      case 'settings':
+        return Boolean(perms?.can_configure_alerts);
+      case 'auditor':
+      case 'backup':
+      case 'health':
+        return false;
+      default:
+        return true;
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser && !hasTabAccess(activeTab)) {
+      setActiveTab('dashboard');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id, activeTab]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
@@ -741,7 +792,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Ferramentas (23 Módulos) Tab (food nexoro2.png) */}
-          {isTabInCategory('tools_catalog') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('tools_catalog') && (
             <button
               onClick={() => setActiveTab('tools_catalog')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -759,7 +810,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Central de IA (AI Engine) Tab */}
-          {isTabInCategory('ai_engine') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('ai_engine') && (
             <button
               onClick={() => setActiveTab('ai_engine')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -777,7 +828,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* 20. Suite Admin Tab */}
-          {isTabInCategory('admin_suite') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('admin_suite') && (
             <button
               onClick={() => setActiveTab('admin_suite')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -927,7 +978,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Lojas & Links HTTP Tab */}
-          {isTabInCategory('restaurants') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('restaurants') && (
             <button
               onClick={() => setActiveTab('restaurants')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -942,7 +993,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Clientes Tab */}
-          {isTabInCategory('customers') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_view_reports) && isTabInCategory('customers') && (
             <button
               onClick={() => setActiveTab('customers')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -962,7 +1013,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Dispositivos Conectados Tab */}
-          {isTabInCategory('devices') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_connect_devices) && isTabInCategory('devices') && (
             <button
               onClick={() => setActiveTab('devices')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -997,7 +1048,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Auditoria Tab */}
-          {isTabInCategory('audit') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_view_reports) && isTabInCategory('audit') && (
             <button
               onClick={() => setActiveTab('audit')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1042,7 +1093,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Central de Problemas & Exceções */}
-          {isTabInCategory('issues') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_view_reports) && isTabInCategory('issues') && (
             <button
               onClick={() => setActiveTab('issues')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1062,7 +1113,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Assistente de Vendas IA */}
-          {isTabInCategory('ai_sales') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('ai_sales') && (
             <button
               onClick={() => setActiveTab('ai_sales')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1077,7 +1128,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Central de Marketing */}
-          {isTabInCategory('marketing') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('marketing') && (
             <button
               onClick={() => setActiveTab('marketing')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1092,7 +1143,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Promoções IA */}
-          {isTabInCategory('promotions') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('promotions') && (
             <button
               onClick={() => setActiveTab('promotions')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1107,7 +1158,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Print Agent Térmico */}
-          {isTabInCategory('print_agent') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_connect_devices) && isTabInCategory('print_agent') && (
             <button
               onClick={() => setActiveTab('print_agent')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1122,7 +1173,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Áreas de Entrega */}
-          {isTabInCategory('delivery_areas') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('delivery_areas') && (
             <button
               onClick={() => setActiveTab('delivery_areas')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1137,7 +1188,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* CRM & Carrinhos Abandonados */}
-          {isTabInCategory('crm_recovery') && (
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_view_reports) && isTabInCategory('crm_recovery') && (
             <button
               onClick={() => setActiveTab('crm_recovery')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1152,7 +1203,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Auditor Sênior */}
-          {isTabInCategory('auditor') && (
+          {currentUser.role === 'super_admin' && isTabInCategory('auditor') && (
             <button
               onClick={() => setActiveTab('auditor')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1167,7 +1218,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Backup & Restauração */}
-          {isTabInCategory('backup') && (
+          {currentUser.role === 'super_admin' && isTabInCategory('backup') && (
             <button
               onClick={() => setActiveTab('backup')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1182,7 +1233,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Diagnóstico Tab */}
-          {isTabInCategory('health') && (
+          {currentUser.role === 'super_admin' && isTabInCategory('health') && (
             <button
               onClick={() => setActiveTab('health')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${

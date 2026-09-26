@@ -335,62 +335,10 @@ export const HomeHub: React.FC<HomeHubProps> = ({
           </span>
         </div>
 
-        {/* Vitrine Style Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111111]/80 p-3 rounded-2xl border border-[#E3BD6A]/20">
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            <span className="text-xs text-slate-400 font-bold shrink-0">Estilo dos Cards:</span>
-            <button
-              onClick={() => setForcedLayoutTheme('individual')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                forcedLayoutTheme === 'individual'
-                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow'
-                  : 'bg-black/60 text-slate-300 hover:text-white border border-slate-800'
-              }`}
-            >
-              ✦ Conforme Restaurante
-            </button>
-            <button
-              onClick={() => setForcedLayoutTheme('moderno_premium')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                forcedLayoutTheme === 'moderno_premium'
-                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow'
-                  : 'bg-black/60 text-slate-300 hover:text-white border border-slate-800'
-              }`}
-            >
-              ✨ Moderno Premium
-            </button>
-            <button
-              onClick={() => setForcedLayoutTheme('rustico_acolhedor')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                forcedLayoutTheme === 'rustico_acolhedor'
-                  ? 'bg-amber-600 text-amber-50 font-black shadow'
-                  : 'bg-black/60 text-slate-300 hover:text-white border border-slate-800'
-              }`}
-            >
-              🌾 Rústico Acolhedor
-            </button>
-            <button
-              onClick={() => setForcedLayoutTheme('clean_minimalista')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                forcedLayoutTheme === 'clean_minimalista'
-                  ? 'bg-slate-100 text-slate-950 font-black shadow'
-                  : 'bg-black/60 text-slate-300 hover:text-white border border-slate-800'
-              }`}
-            >
-              ⚪ Clean Minimalista
-            </button>
-            <button
-              onClick={() => setForcedLayoutTheme('dark_elegante')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                forcedLayoutTheme === 'dark_elegante'
-                  ? 'bg-cyan-500 text-slate-950 font-black shadow'
-                  : 'bg-black/60 text-slate-300 hover:text-white border border-slate-800'
-              }`}
-            >
-              ⚡ Dark Elegante
-            </button>
-          </div>
-        </div>
+        {/* V7: seletor "Estilo dos Cards" removido do cardápio do cliente —
+            era uma ferramenta de dev exposta ao consumidor final. Cada
+            restaurante agora sempre usa o tema configurado pelo admin
+            (rest.vitrineLayoutTheme), via forcedLayoutTheme fixo em 'individual'. */}
 
         {/* Cards Grid: Cada Restaurante com Capa Própria, Logo, Estilo e Chamada */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

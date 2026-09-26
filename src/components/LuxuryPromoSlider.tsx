@@ -16,103 +16,42 @@ interface SlideData {
   ctaText: string;
 }
 
-const PROMO_SLIDES: SlideData[] = [
-  {
-    id: 'slide-risotos-nobile',
-    restaurantSlug: 'risotos',
-    badge: 'ALTA GASTRONOMIA ITALIANA',
-    badgeIcon: '🍲',
-    title: 'Il Nobile • Risotto al Tartufo Nero',
-    highlightText: 'Arroz Carnaroli D.O.P. & Trufas Negras',
-    description: 'Cremado lentamente ao vinho branco, fonduta de parmesão 36 meses e lâminas de trufa negra fresca da Úmbria.',
-    offerTag: 'Menu Degustação com Harmonização',
-    image: 'https://images.unsplash.com/photo-1633964913295-ceb43826e7c9?w=1600&auto=format&fit=crop&q=85',
-    ctaText: 'Ver Risotteria Il Nobile',
-  },
-  {
-    id: 'slide-parrilla-fuego',
-    restaurantSlug: 'grelhados',
-    badge: 'PARRILLA & CORTES NOBRES',
-    badgeIcon: '🥩',
-    title: 'Fuego & Brasa • Tomahawk Dry Aged',
-    highlightText: 'Brasa a Lenha de Macieira & Flor de Sal',
-    description: 'Maturado por 45 dias para máxima maciez e selado na grelha argentina a 400°C com manteiga de chimichurri fresco.',
-    offerTag: 'Acompanha Farofa na Brasa & Legumes',
-    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=1600&auto=format&fit=crop&q=85',
-    ctaText: 'Ver Cortes & Grelhados',
-  },
-  {
-    id: 'slide-vegano-botanique',
-    restaurantSlug: 'vegano',
-    badge: 'HAUTE CUISINE VEGETAL',
-    badgeIcon: '🌿',
-    title: 'Botanique • Wellington da Terra Prime',
-    highlightText: 'Cogumelos Selvagens & Trufas da Mantiqueira',
-    description: 'Massa folhada artesanal dourada, duxelles de portobello selvagem, redução de aceto balsâmico e purê aveludado.',
-    offerTag: '100% Plant-Based • Gastronomia Nobre',
-    image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=1600&auto=format&fit=crop&q=85',
-    ctaText: 'Ver Cardápio Botanique',
-  },
-  {
-    id: 'slide-rodizio-japones',
-    restaurantSlug: 'japones',
-    badge: 'OMAKASE & SUSHIS NOBRES',
-    badgeIcon: '🍣',
-    title: 'Festival Sakura & Rodízio Premium',
-    highlightText: 'Sashimis Nobres & Niguiris Trufados',
-    description: 'Experimente cortes nobres de salmão fresco, carpaccios maçaricados com flor de sal e uramakis especiais sem limite.',
-    offerTag: 'A partir de R$ 119,90 • Almoço e Jantar',
-    image: 'https://images.unsplash.com/photo-1611143669185-af224c5e3252?w=1600&auto=format&fit=crop&q=85',
-    ctaText: 'Ver Rodízio & Combinados',
-  },
-  {
-    id: 'slide-pasta-italiana',
-    restaurantSlug: 'italiano',
-    badge: 'CUCINA ARTIGIANALE TOSCANA',
-    badgeIcon: '🍝',
-    title: 'Noite della Pasta & Ragu di Costela',
-    highlightText: 'Massas Frescas com Grana Padano',
-    description: 'Fettuccine feito à mão e nhoques dourados com fonduta de queijos italianos apurados lentamente por 6 horas.',
-    offerTag: '20% OFF no Segundo Prato Principal',
-    image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1600&auto=format&fit=crop&q=85',
-    ctaText: 'Explorar Massas & Risottos',
-  },
-  {
-    id: 'slide-pizza-napolitana',
-    restaurantSlug: 'pizza',
-    badge: 'FORNO A LENHA 450°C',
-    badgeIcon: '🍕',
-    title: 'Pizzas Napolitanas 48h Fermentação',
-    highlightText: 'Fior di Latte D.O.P. & Borda Vulcão',
-    description: 'Massa aerada e leve com tomates San Marzano e presunto cru de Parma. Ganhe chopp gelado em pedidos acima de R$ 90.',
-    offerTag: 'Borda Vulcão Recheada em Dobro',
-    image: 'https://images.unsplash.com/photo-1590947132387-155cc02f3212?w=1600&auto=format&fit=crop&q=85',
-    ctaText: 'Pedir Pizza Napolitana',
-  },
-  {
-    id: 'slide-burger-craft',
-    restaurantSlug: 'hamburgueria',
-    badge: 'BLEND 100% ANGUS CERTIFICADO',
-    badgeIcon: '🍔',
-    title: 'Double Smash Bacon & Cheddar Inglês',
-    highlightText: 'Crostinha Crocante na Chapa Quente',
-    description: 'Pão brioche tostado na manteiga de garrafa, bacon artesanal defumado e batatas rústicas com alecrim e queijo canastra.',
-    offerTag: 'Combo Especial com Chopp Artesanal',
-    image: 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=1600&auto=format&fit=crop&q=85',
-    ctaText: 'Ver Smash Burgers & Shakes',
-  },
-];
-
 interface LuxuryPromoSliderProps {
   onSelectRestaurant: (slug: RestaurantSlug) => void;
 }
 
+// V7: os slides deixaram de ser fixos no código — cada restaurante agora
+// guarda seu próprio `heroPromoSlide`, editável pelo super_admin em
+// Admin → Vitrine Principal (ver AdminVitrineManager.tsx). O carrossel só
+// mostra os restaurantes ativos que tiverem um slide habilitado.
 export const LuxuryPromoSlider: React.FC<LuxuryPromoSliderProps> = ({ onSelectRestaurant }) => {
   const { restaurants } = useStore();
-  const visibleSlides = PROMO_SLIDES.filter((slide) => {
-    const restaurant = restaurants[slide.restaurantSlug];
-    return Boolean(restaurant && restaurant.isActive !== false && restaurant.vitrineStatus !== 'OCULTO' && restaurant.isActiveInVitrine !== false);
-  });
+  const visibleSlides: SlideData[] = Object.values(restaurants)
+    .filter((restaurant) =>
+      Boolean(
+        restaurant &&
+        restaurant.heroPromoSlide?.enabled &&
+        restaurant.heroPromoSlide?.image &&
+        restaurant.isActive !== false &&
+        restaurant.vitrineStatus !== 'OCULTO' &&
+        restaurant.isActiveInVitrine !== false
+      )
+    )
+    .map((restaurant) => {
+      const s = restaurant.heroPromoSlide!;
+      return {
+        id: `slide-${restaurant.slug}`,
+        restaurantSlug: restaurant.slug,
+        badge: s.badge,
+        badgeIcon: s.badgeIcon,
+        title: s.title,
+        highlightText: s.highlightText,
+        description: s.description,
+        offerTag: s.offerTag,
+        image: s.image,
+        ctaText: s.ctaText,
+      };
+    });
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -244,7 +183,7 @@ export const LuxuryPromoSlider: React.FC<LuxuryPromoSliderProps> = ({ onSelectRe
 
         {/* Slider Bottom Progress Bars */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
-          {PROMO_SLIDES.map((_, idx) => (
+          {visibleSlides.map((_, idx) => (
             <button
               key={idx}
               onClick={() => setCurrentIdx(idx)}

@@ -4,6 +4,7 @@ import {
   ShoppingBag,
   Clock,
   User,
+  ArrowLeft,
 } from 'lucide-react';
 import { useCustomerAuth } from '../context/CustomerAuthContext';
 
@@ -25,8 +26,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuth,
 }) => {
   const {
-    restaurants,
-    activeRestaurantSlug,
     cart,
     setIsCartOpen,
     orders,
@@ -49,11 +48,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     else setIsCartOpen(true);
   };
 
-  const currentRestaurant =
-    restaurants[activeRestaurantSlug] ||
-    restaurants.japones ||
-    Object.values(restaurants)[0] ||
-    null;
   const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
   const cartTotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
 
@@ -66,18 +60,18 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="safe-top sticky top-0 z-40 bg-[#0B0907]/95 backdrop-blur-xl border-b border-[#C5A880]/25 shadow-[0_8px_30px_rgba(0,0,0,0.85)]">
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-3">
-        {/* Breadcrumb do Cardápio — sem ícone/nome de marca no topo, conforme solicitado */}
+        {/* V8: removido o chip "Cardápio: Nome do Restaurante" a pedido —
+            cabeçalho limpo, sem ícone/rótulo do restaurante. Mantida apenas
+            uma seta discreta para voltar à tela com todos os restaurantes. */}
         <div className="flex items-center gap-3 min-h-[44px]">
           {currentView === 'menu' && (
             <button
               onClick={handleLogoClick}
-              className="flex items-center gap-1.5 text-left focus:outline-none"
-              title="Página Inicial - Todos os Restaurantes"
+              className="w-9 h-9 rounded-xl bg-black/60 border border-[#C5A880]/30 flex items-center justify-center text-[#C5A880] hover:bg-black/80 transition-colors"
+              title="Voltar - Todos os Restaurantes"
+              aria-label="Voltar para todos os restaurantes"
             >
-              <span className="text-xs text-stone-400">Cardápio:</span>
-              <span className="text-xs font-bold text-[#C5A880] flex items-center gap-1 bg-black/60 px-2.5 py-1 rounded-lg border border-[#C5A880]/30">
-                {currentRestaurant ? currentRestaurant.name : 'Cardápio'}
-              </span>
+              <ArrowLeft className="w-4 h-4" />
             </button>
           )}
         </div>
