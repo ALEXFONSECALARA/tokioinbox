@@ -315,6 +315,9 @@ export interface Order {
     cardBrand?: string;
     pixCode?: string;
     paid: boolean;
+    // V8: comprovante emitido no fechamento — Nota Fiscal (NFC-e, emitida
+    // depois no módulo Fiscal) ou Cupom Comum (recibo não fiscal).
+    receiptType?: 'fiscal' | 'comum';
   };
   notes?: string;
   status: OrderStatus;
