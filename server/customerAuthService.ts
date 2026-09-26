@@ -12,6 +12,9 @@ export interface CustomerAddress {
   number: string;
   neighborhood: string;
   city: string;
+  state?: string;
+  cep?: string;
+  phone?: string;
   complement?: string;
   isDefault?: boolean;
 }
@@ -195,8 +198,9 @@ export function registerCustomer(params: {
   }
 
   const password = params.password;
-  if (!password || password.length < 6) {
-    return { success: false, error: 'A senha deve conter no mínimo 6 caracteres.' };
+  // V7: mínimo reduzido para 4 (o cliente pode usar uma senha numérica curta, tipo PIN).
+  if (!password || password.length < 4) {
+    return { success: false, error: 'A senha deve conter no mínimo 4 caracteres.' };
   }
 
   if (params.confirmPassword !== undefined && params.confirmPassword !== password) {
@@ -470,8 +474,8 @@ export function confirmCustomerPasswordReset(params: {
     return { success: false, message: '', error: 'O código de verificação deve conter 6 dígitos.' };
   }
 
-  if (!params.newPassword || params.newPassword.length < 6) {
-    return { success: false, message: '', error: 'A nova senha deve conter pelo menos 6 caracteres.' };
+  if (!params.newPassword || params.newPassword.length < 4) {
+    return { success: false, message: '', error: 'A nova senha deve conter pelo menos 4 caracteres.' };
   }
 
   if (params.confirmPassword !== undefined && params.confirmPassword !== params.newPassword) {
@@ -574,6 +578,9 @@ export function saveCustomerAddress(
     number: address.number.trim(),
     neighborhood: address.neighborhood.trim(),
     city: address.city?.trim() || 'São Paulo',
+    state: address.state?.trim() || undefined,
+    cep: address.cep?.trim() || undefined,
+    phone: address.phone?.trim() || undefined,
     complement: address.complement?.trim() || undefined,
     isDefault: Boolean(address.isDefault),
   };

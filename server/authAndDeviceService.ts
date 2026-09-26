@@ -292,7 +292,10 @@ function usesKnownDefaultPassword(u: { passwordHash: string; passwordSalt: strin
 
 /** Política mínima de senha para colaboradores. */
 export function validateStaffPassword(password: string): string | null {
-  if (!password || password.length < 8) return 'A senha deve ter pelo menos 8 caracteres.';
+  // V7: mínimo reduzido para 4 caracteres a pedido operacional (equipe de
+  // chão de loja usa senhas curtas/numéricas). Mantidas as travas contra
+  // senha óbvia (um único caractere repetido) e senhas padrão conhecidas.
+  if (!password || password.length < 4) return 'A senha deve ter pelo menos 4 caracteres.';
   if (/^(.)\1+$/.test(password)) return 'A senha não pode ser formada por um único caractere repetido.';
   if (KNOWN_DEFAULT_PASSWORDS.includes(password.toLowerCase())) return 'Esta senha é muito comum. Escolha outra.';
   return null;
