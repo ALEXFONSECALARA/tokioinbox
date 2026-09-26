@@ -1532,6 +1532,7 @@ app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('ca
       splitCount,
       operatorName,
       waiterNotes,
+      receiptType,
     } = req.body;
 
     if (!paymentMethod) {
@@ -1548,6 +1549,9 @@ app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('ca
       splitCount: Number(splitCount) || 1,
       operatorName,
       waiterNotes,
+      // V8: Nota Fiscal (NFC-e, emitida depois no módulo Fiscal) ou Cupom
+      // Comum (recibo não fiscal). Default 'comum' quando não informado.
+      receiptType: receiptType === 'fiscal' ? 'fiscal' : 'comum',
     });
 
     // Broadcast Real-Time SSE update so table map updates immediately to LIVRE
