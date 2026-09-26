@@ -103,6 +103,7 @@ export interface Order {
     cardBrand?: string;
     pixCode?: string;
     paid: boolean;
+    receiptType?: 'fiscal' | 'comum';
   };
   notes?: string;
   status: OrderStatus;
@@ -1129,6 +1130,7 @@ export function closeTableOrderTransactional(params: {
   splitCount?: number;
   operatorName?: string;
   waiterNotes?: string;
+  receiptType?: 'fiscal' | 'comum';
 }): Order {
   initializeOrders();
   const idx = ordersCache.findIndex((o) => o.id === params.orderId);
@@ -1147,7 +1149,10 @@ export function closeTableOrderTransactional(params: {
   const splitCount = Math.max(1, Math.floor(params.splitCount || 1));
   const splitPerPerson = Number((finalTotal / splitCount).toFixed(2));
 
-  const closeNote = `Conta da Mesa ${params.tableNumber} fechada via ${params.paymentMethod.toUpperCase()}${
+  const receiptType: 'fiscal' | 'comum' = params.receiptType === 'fiscal' ? 'fiscal' : 'comum';
+  const receiptLabel = receiptType === 'fiscal' ? 'Nota Fiscal' : 'Cupom Comum';
+
+  const closeNote = `Conta da Mesa ${params.tableNumber} fechada via ${params.paymentMethod.toUpperCase()} (${receiptLabel})${
     discount > 0 ? ` (Desconto: R$ ${discount.toFixed(2)})` : ''
   }${serviceFee > 0 ? ` (Taxa Serviço: R$ ${serviceFee.toFixed(2)})` : ''}${
     splitCount > 1 ? ` (Dividido em ${splitCount}x R$ ${splitPerPerson.toFixed(2)})` : ''
@@ -1178,6 +1183,7 @@ export function closeTableOrderTransactional(params: {
     paymentDetails: {
       ...(currentOrder.paymentDetails || {}),
       paid: true,
+      receiptType,
     },
     statusHistory: updatedHistory,
     updatedAt: nowIso,
