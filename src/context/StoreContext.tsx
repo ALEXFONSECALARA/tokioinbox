@@ -207,6 +207,7 @@ interface StoreContextType {
     splitCount?: number;
     operatorName?: string;
     waiterNotes?: string;
+    receiptType?: 'fiscal' | 'comum';
   }) => Promise<{ success: boolean; order?: Order; error?: string }>;
   updateOrderPrintStatus: (orderId: string, printStatus: 'pendente' | 'imprimindo' | 'impresso') => Promise<void>;
   deleteOrder: (orderId: string) => Promise<void>;
@@ -2123,6 +2124,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     splitCount?: number;
     operatorName?: string;
     waiterNotes?: string;
+    receiptType?: 'fiscal' | 'comum';
   }): Promise<{ success: boolean; order?: Order; error?: string }> => {
     try {
       const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
