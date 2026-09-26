@@ -9,6 +9,9 @@ export interface CustomerAddress {
   number: string;
   neighborhood: string;
   city: string;
+  state?: string;
+  cep?: string;
+  phone?: string;
   complement?: string;
   isDefault?: boolean;
 }

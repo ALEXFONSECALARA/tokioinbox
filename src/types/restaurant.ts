@@ -234,6 +234,20 @@ export interface RestaurantConfig {
   serviceAreaKm?: number;
   bannerImage?: string;
   deliveryTime?: string;
+  // V7: slide editável do carrossel "Promoções & Rodízios em Destaque" da
+  // Home pública — antes fixo no código (LuxuryPromoSlider.tsx), agora
+  // editado pelo super_admin em Vitrine Principal e salvo por restaurante.
+  heroPromoSlide?: {
+    enabled: boolean;
+    badge: string;
+    badgeIcon: string;
+    title: string;
+    highlightText: string;
+    description: string;
+    offerTag: string;
+    image: string;
+    ctaText: string;
+  };
 }
 
 export interface CartItemOptionSelected {
