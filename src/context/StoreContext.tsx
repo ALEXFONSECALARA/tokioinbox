@@ -153,7 +153,10 @@ interface StoreContextType {
         number: string;
         neighborhood: string;
         city: string;
+        state?: string;
+        cep?: string;
         complement?: string;
+        distanceKm?: number;
       };
       paymentMethod: PaymentMethod;
       paymentDetails?: {
@@ -209,6 +212,9 @@ interface StoreContextType {
     waiterNotes?: string;
     receiptType?: 'fiscal' | 'comum';
   }) => Promise<{ success: boolean; order?: Order; error?: string }>;
+  // V8 PRO: "Fechar Mesa" (pedir a conta) é diferente de "Pagar Mesa" —
+  // só sinaliza aguardando pagamento, não recebe pagamento nem libera a mesa.
+  requestTableBill: (tableNumber: number, restaurantSlug: string) => Promise<{ success: boolean; error?: string }>;
   updateOrderPrintStatus: (orderId: string, printStatus: 'pendente' | 'imprimindo' | 'impresso') => Promise<void>;
   deleteOrder: (orderId: string) => Promise<void>;
   clearOrdersHistory: (slug?: RestaurantSlug, mode?: 'finished' | 'all') => Promise<void>;
@@ -258,7 +264,10 @@ interface StoreContextType {
         number: string;
         neighborhood: string;
         city: string;
+        state?: string;
+        cep?: string;
         complement?: string;
+        distanceKm?: number;
       };
       paymentMethod: PaymentMethod;
       paymentDetails?: {
@@ -1669,7 +1678,10 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         number: string;
         neighborhood: string;
         city: string;
+        state?: string;
+        cep?: string;
         complement?: string;
+        distanceKm?: number;
       };
       paymentMethod: PaymentMethod;
       paymentDetails?: {
@@ -2158,6 +2170,36 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     }
   };
 
+  const requestTableBill = async (
+    tableNumber: number,
+    restaurantSlug: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
+      const res = await fetch(`/api/tables/${tableNumber}/request-bill`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ restaurantSlug, operatorName: currentUser?.name }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Erro ao solicitar a conta da mesa');
+      }
+      if (Array.isArray(data.orders)) {
+        setOrders((prev) => prev.map((o) => data.orders.find((u: Order) => u.id === o.id) || o));
+      }
+      showToast(`Conta da Mesa ${tableNumber} solicitada — aguardando pagamento.`, 'info');
+      return { success: true };
+    } catch (err: any) {
+      console.error('[REQUEST BILL ERROR]:', err);
+      showToast(err.message || 'Falha ao solicitar a conta da mesa', 'error');
+      return { success: false, error: err.message };
+    }
+  };
+
   const updateOrderPrintStatus = async (
     orderId: string,
     printStatus: 'pendente' | 'imprimindo' | 'impresso'
@@ -2353,7 +2395,10 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         number: string;
         neighborhood: string;
         city: string;
+        state?: string;
+        cep?: string;
         complement?: string;
+        distanceKm?: number;
       };
       paymentMethod: PaymentMethod;
       paymentDetails?: {
@@ -2724,6 +2769,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         updateStationStatus,
         appendItemsToTableOrder,
         closeTableOrder,
+        requestTableBill,
         updateOrderPrintStatus,
         deleteOrder,
         clearOrdersHistory,
