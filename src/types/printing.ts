@@ -1,6 +1,14 @@
 import { RestaurantSlug, Order } from './restaurant';
 
-export type PrintStation = 'CAIXA' | 'COZINHA' | 'SUSHI_BAR' | 'BAR' | 'ENTREGA';
+// Estações padrão mantidas por compatibilidade. IDs adicionais podem ser
+// criados individualmente por restaurante.
+export type PrintStation =
+  | 'CAIXA'
+  | 'COZINHA'
+  | 'SUSHI_BAR'
+  | 'BAR'
+  | 'ENTREGA'
+  | (string & {});
 
 export type PrintJobStatus =
   | 'PENDENTE'
