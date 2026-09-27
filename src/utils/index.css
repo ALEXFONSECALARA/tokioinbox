@@ -227,6 +227,19 @@ button, input, select, textarea {
   touch-action: manipulation;
 }
 
+/* V8 PRO PLUS: iOS/Android dão zoom automático em qualquer campo (input,
+   select, textarea) com font-size menor que 16px ao tocar para digitar —
+   é assim que o navegador decide se "zoom in". Como o app usa bastante
+   text-xs/text-sm (12–14px) nos formulários (cadastro, itens do cardápio,
+   endereço etc.), isso causava o zoom indesejado e a tela "saindo do
+   tamanho". Forçando 16px em telas de celular, sem mudar o tamanho visual
+   no desktop. */
+@media (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
 .modal-viewport {
   height: 100dvh;
   min-height: 100vh;
