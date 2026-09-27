@@ -5,6 +5,7 @@ import { normalizePhone } from './phoneUtils';
 import { getRestaurant, getCoupon, priceLine, restaurantExists, assertCanAcceptNewOrder } from './catalogService';
 import { secureToken } from './security';
 import { markTableSessionClosed } from './tableAccessService';
+import { findMatchingDeliveryZone } from '../src/utils/geo';
 
 export interface OrderItemOption {
   groupId: string;
@@ -88,7 +89,10 @@ export interface Order {
     number: string;
     neighborhood: string;
     city: string;
+    state?: string;
+    cep?: string;
     complement?: string;
+    distanceKm?: number;
   };
   items: OrderItem[];
   stations?: Partial<Record<ProductionStation, StationProductionRecord>>;
@@ -109,6 +113,10 @@ export interface Order {
   status: OrderStatus;
   statusHistory: StatusHistoryEntry[];
   printStatus: 'pendente' | 'imprimindo' | 'impresso';
+  // V8 PRO: ver mesmo campo em src/types/restaurant.ts — "fechar" a mesa
+  // (pedir a conta) é diferente de "pagar" a mesa.
+  awaitingPayment?: boolean;
+  billRequestedAt?: string;
   idempotencyKey?: string;
   /** Token secreto entregue só a quem criou o pedido; permite acompanhar sem login. */
   trackingToken?: string;
@@ -432,7 +440,10 @@ export interface CreateOrderPayload {
     number: string;
     neighborhood: string;
     city: string;
+    state?: string;
+    cep?: string;
     complement?: string;
+    distanceKm?: number;
   };
   items: OrderItem[];
   paymentMethod: string;
@@ -578,8 +589,25 @@ export function createOrderTransactional(
       throw new Error('Endereço de entrega incompleto (rua, número e bairro).');
     }
   }
+  // V8 PRO PLUS: taxa por distância (KM). O cliente calcula a distância no
+  // checkout (geocodificação) e envia deliveryAddress.distanceKm; o
+  // SERVIDOR — não o cliente — decide a taxa, buscando a faixa
+  // correspondente nas zonas configuradas do restaurante. Isso evita que o
+  // cliente manipule a taxa enviada, mantendo o cálculo de preço sempre
+  // autoritativo no back-end. Sem zonas configuradas ou sem distância
+  // informada, cai de volta para a taxa fixa (comportamento de sempre).
+  const requestedDistanceKm =
+    canonicalOrderType === 'delivery' && typeof payload.deliveryAddress?.distanceKm === 'number'
+      ? payload.deliveryAddress.distanceKm
+      : null;
+  const matchedZone =
+    requestedDistanceKm !== null
+      ? findMatchingDeliveryZone(requestedDistanceKm, restaurant.deliveryZones)
+      : null;
   const deliveryFee =
-    canonicalOrderType === 'delivery' ? Number(Number(restaurant.deliveryFee ?? 0).toFixed(2)) : 0;
+    canonicalOrderType === 'delivery'
+      ? Number(Number(matchedZone?.fee ?? restaurant.deliveryFee ?? 0).toFixed(2))
+      : 0;
   const calculatedTotal = Number(Math.max(0, calculatedSubtotal - calculatedDiscount + deliveryFee).toFixed(2));
 
 // 4. Generate Unique IDs & Codes
@@ -614,7 +642,10 @@ export function createOrderTransactional(
             number: cleanText(payload.deliveryAddress.number, 20),
             neighborhood: cleanText(payload.deliveryAddress.neighborhood, 80),
             city: cleanText(payload.deliveryAddress.city, 80),
+            state: cleanText(payload.deliveryAddress.state, 5) || undefined,
+            cep: cleanText(payload.deliveryAddress.cep, 12) || undefined,
             complement: cleanText(payload.deliveryAddress.complement, 80) || undefined,
+            distanceKm: requestedDistanceKm !== null ? Number(requestedDistanceKm.toFixed(2)) : undefined,
           }
         : undefined,
     items: sanitizedItems,
@@ -1120,6 +1151,55 @@ export function updateOrderItemTransactional(params: {
   return updated;
 }
 
+/**
+ * V8 PRO — "FECHAR MESA ≠ PAGAR MESA".
+ * Marca a(s) comanda(s) ativas de uma mesa como "conta fechada, aguardando
+ * pagamento" — o garçom/cliente pediu a conta, mas o caixa ainda não
+ * recebeu o pagamento. Não altera status nem paymentDetails.paid; é só um
+ * sinalizador visual/operacional para diferenciar das mesas ainda em
+ * consumo. A confirmação do pagamento continua sendo feita por
+ * closeTableOrderTransactional (que grava paid=true e status='finalizado').
+ */
+export function requestTableBillTransactional(params: {
+  tableNumber: number;
+  restaurantSlug: string;
+  operatorName?: string;
+}): Order[] {
+  initializeOrders();
+  const nowIso = new Date().toISOString();
+  const affected: Order[] = [];
+
+  ordersCache.forEach((order, idx) => {
+    if (
+      order.restaurantSlug === params.restaurantSlug &&
+      order.orderType === 'mesa' &&
+      order.tableNumber === params.tableNumber &&
+      order.status !== 'finalizado' &&
+      order.status !== 'cancelado'
+    ) {
+      const updated: Order = {
+        ...order,
+        awaitingPayment: true,
+        billRequestedAt: nowIso,
+        statusHistory: [
+          ...order.statusHistory,
+          {
+            status: order.status,
+            timestamp: 'Agora mesmo',
+            note: `Conta solicitada${params.operatorName ? ` por ${params.operatorName}` : ''} — aguardando pagamento no caixa.`,
+          },
+        ],
+        updatedAt: nowIso,
+      };
+      ordersCache[idx] = updated;
+      affected.push(updated);
+    }
+  });
+
+  if (affected.length > 0) persistOrdersSync();
+  return affected;
+}
+
 export function closeTableOrderTransactional(params: {
   orderId: string;
   tableNumber: number;
@@ -1176,6 +1256,7 @@ export function closeTableOrderTransactional(params: {
     // só consideram a mesa paga/fechada quando status === 'finalizado'.
     // Com 'entregue' a mesa nunca saía da lista de pendentes mesmo já paga.
     status: 'finalizado',
+    awaitingPayment: false,
     paymentMethod: params.paymentMethod,
     discount,
     deliveryFee: serviceFee, // service fee recorded in fee slot or final total
