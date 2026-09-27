@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useCustomerAuth } from '../context/CustomerAuthContext';
 import { formatPhoneMask } from '../utils/phoneUtils';
+import { geocodeAddress, haversineDistanceKm, findMatchingDeliveryZone } from '../utils/geo';
 import { OrderType, PaymentMethod, Order } from '../types/restaurant';
 import confetti from 'canvas-confetti';
 import {
@@ -55,11 +56,79 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Delivery Address state
   const defaultAddr = customer?.savedAddresses?.find((a) => a.isDefault) || customer?.savedAddresses?.[0];
+  // V8 PRO PLUS: CEP no checkout, com autopreenchimento (ViaCEP) — antes só
+  // existia na tela de "Meus Endereços" da conta, faltava aqui no fluxo
+  // mais usado (pedido avulso na hora).
+  const [cep, setCep] = useState(defaultAddr?.cep || '');
+  const [cepLoading, setCepLoading] = useState(false);
+  const [cepError, setCepError] = useState<string | null>(null);
   const [street, setStreet] = useState(defaultAddr?.street || '');
   const [number, setNumber] = useState(defaultAddr?.number || '');
   const [neighborhood, setNeighborhood] = useState(defaultAddr?.neighborhood || '');
   const [city, setCity] = useState(defaultAddr?.city || 'São Paulo');
+  const [stateUf, setStateUf] = useState(defaultAddr?.state || '');
   const [complement, setComplement] = useState(defaultAddr?.complement || '');
+
+  // V8 PRO PLUS: entrega por distância (KM) — quando o restaurante tem
+  // coordenadas + faixas configuradas (Admin → Áreas de Entrega), calcula a
+  // distância real até o CEP do cliente e usa a taxa da faixa
+  // correspondente; senão, cai de volta para a taxa fixa do restaurante.
+  const [distanceKm, setDistanceKm] = useState<number | null>(null);
+  const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
+
+  const lookupCep = async (rawCep: string) => {
+    const digits = rawCep.replace(/\D/g, '');
+    if (digits.length !== 8) return;
+    setCepLoading(true);
+    setCepError(null);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await res.json();
+      if (data.erro) {
+        setCepError('CEP não encontrado. Preencha o endereço manualmente.');
+      } else {
+        setStreet(data.logradouro || '');
+        setNeighborhood(data.bairro || '');
+        setCity(data.localidade || '');
+        setStateUf(data.uf || '');
+      }
+    } catch {
+      setCepError('Não foi possível buscar o CEP agora. Preencha manualmente.');
+    } finally {
+      setCepLoading(false);
+    }
+  };
+
+  // Recalcula a distância/taxa sempre que o endereço de entrega muda
+  useEffect(() => {
+    if (orderType !== 'delivery') return;
+    if (!currentRestaurant.latitude || !currentRestaurant.longitude) return;
+    if (!currentRestaurant.deliveryZones || currentRestaurant.deliveryZones.length === 0) return;
+    if (!street.trim() || !number.trim() || !city.trim()) {
+      setDistanceKm(null);
+      return;
+    }
+    const query = `${street}, ${number}, ${neighborhood}, ${city}, ${stateUf}, ${cep}, Brasil`;
+    let cancelled = false;
+    setIsCalculatingDistance(true);
+    geocodeAddress(query).then((coords) => {
+      if (cancelled) return;
+      if (coords && currentRestaurant.latitude != null && currentRestaurant.longitude != null) {
+        const km = haversineDistanceKm(coords, { lat: currentRestaurant.latitude, lng: currentRestaurant.longitude });
+        setDistanceKm(km);
+      } else {
+        setDistanceKm(null);
+      }
+      setIsCalculatingDistance(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderType, street, number, neighborhood, city, stateUf, cep]);
+
+  const matchedZone =
+    distanceKm !== null ? findMatchingDeliveryZone(distanceKm, currentRestaurant.deliveryZones) : null;
 
   useEffect(() => {
     if (customer) {
@@ -106,7 +175,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }
   discount = Math.min(discount, subtotal);
 
-  const deliveryFee = orderType === 'delivery' ? currentRestaurant.deliveryFee : 0;
+  // V8 PRO PLUS: usa a taxa da faixa de KM encontrada quando o restaurante
+  // tem entrega por distância configurada; senão, taxa fixa (comportamento
+  // de sempre, sem quebrar quem não configurou zonas).
+  const deliveryFee = orderType === 'delivery' ? (matchedZone?.fee ?? currentRestaurant.deliveryFee) : 0;
   const total = Math.max(0, subtotal - discount + deliveryFee);
 
   const simulatedPixCode = `00020126580014BR.GOV.BCB.PIX0136${currentRestaurant.pixKey}520400005303986540${total.toFixed(
@@ -142,7 +214,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               number: number.trim(),
               neighborhood: neighborhood.trim(),
               city: city.trim(),
+              state: stateUf.trim() || undefined,
+              cep: cep.trim() || undefined,
               complement: complement.trim() || undefined,
+              distanceKm: distanceKm !== null ? Number(distanceKm.toFixed(2)) : undefined,
             }
           : undefined,
       paymentMethod,
@@ -457,6 +532,32 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
                     2. Endereço de Entrega
                   </h3>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">CEP *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        inputMode="numeric"
+                        maxLength={9}
+                        value={cep}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/\D/g, '').slice(0, 8);
+                          const masked = v.length > 5 ? `${v.slice(0, 5)}-${v.slice(5)}` : v;
+                          setCep(masked);
+                          if (v.length === 8) lookupCep(v);
+                        }}
+                        placeholder="00000-000"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                      />
+                      {cepLoading && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-amber-400">buscando…</span>
+                      )}
+                    </div>
+                    {cepError && <p className="text-[10px] text-amber-400 mt-1">{cepError}</p>}
+                  </div>
+
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2">
                       <label className="block text-[11px] text-slate-400 mb-1">Rua / Avenida *</label>
@@ -507,6 +608,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       />
                     </div>
                   </div>
+
+                  {/* V8 PRO PLUS: indicador de distância / taxa por KM */}
+                  {isCalculatingDistance && (
+                    <p className="text-[11px] text-slate-400">Calculando distância de entrega…</p>
+                  )}
+                  {!isCalculatingDistance && matchedZone && distanceKm !== null && (
+                    <div className="p-2.5 rounded-xl bg-cyan-950/30 border border-cyan-500/30 text-[11px] text-cyan-300 flex items-center justify-between">
+                      <span>📍 {distanceKm.toFixed(1)} km • {matchedZone.name}</span>
+                      <span className="font-bold">R$ {matchedZone.fee.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {!isCalculatingDistance &&
+                    distanceKm !== null &&
+                    !matchedZone &&
+                    currentRestaurant.deliveryZones &&
+                    currentRestaurant.deliveryZones.length > 0 && (
+                      <p className="text-[11px] text-amber-400">
+                        Endereço fora das faixas de entrega ({distanceKm.toFixed(1)} km) — taxa padrão aplicada.
+                      </p>
+                    )}
                 </div>
               )}
 

@@ -72,6 +72,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     currentUser,
     loginUser,
     updateOrderStatus,
+    requestTableBill,
     showToast,
     soundSettings,
     updateRestaurantConfig,
@@ -106,6 +107,9 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [splitCount, setSplitCount] = useState(2);
   const [isSendingOrder, setIsSendingOrder] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  // V8 PRO PLUS: ao fechar a mesa, já abre o cupom para impressão — só libera
+  // a mesa de fato (sai da tela) quando o garçom fecha/imprime esse cupom.
+  const [tableJustClosed, setTableJustClosed] = useState(false);
 
   // New Features: QR Code Stand, Waiter Calls, Transfer, Payment & Shift History
   const [showQrPlatesModal, setShowQrPlatesModal] = useState(false);
@@ -243,11 +247,13 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     if (activeOrders.length === 0) {
       return 'livre';
     }
+    // V8 PRO: "conta" agora usa o sinalizador real awaitingPayment (setado
+    // pelo botão "Pedir a Conta"), em vez de adivinhar por texto em notes.
+    if (activeOrders.some((o) => o.awaitingPayment)) {
+      return 'conta';
+    }
     if (activeOrders.some((o) => o.status === 'recebido' || o.status === 'em_preparo')) {
       return 'preparando';
-    }
-    if (activeOrders.some((o) => o.notes?.toLowerCase().includes('conta') || o.notes?.toLowerCase().includes('fechar'))) {
-      return 'conta';
     }
     return 'ocupada';
   };
@@ -454,8 +460,11 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
       };
       setShiftHistory((prev) => [historyItem, ...prev]);
 
-      setActiveTableId(null);
-      showToast(`Mesa ${tableId} fechada e liberada com sucesso! (${receiptLabel})`, 'success');
+      // V8 PRO PLUS: não libera a mesa ainda — abre direto o cupom pronto
+      // para imprimir. A mesa só sai da tela quando o cupom for fechado.
+      setTableJustClosed(true);
+      setShowPrintModal(true);
+      showToast(`Mesa ${tableId} fechada com sucesso! (${receiptLabel}) Imprima o cupom abaixo.`, 'success');
     }
   };
 
@@ -1638,10 +1647,30 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                     )}
                   </div>
 
+                  {/* V8 PRO — regra fundamental: FECHAR MESA ≠ PAGAR MESA.
+                      "Pedir a Conta" só avisa que a mesa quer fechar e fica
+                      "Aguardando Pagamento"; o pagamento em si só é
+                      confirmado no botão de baixo. */}
+                  {activeTableOrders.some((o) => o.awaitingPayment) ? (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-amber-300 text-xs font-bold">
+                      <Receipt className="w-4 h-4 shrink-0" />
+                      <span>Conta pedida — aguardando pagamento no caixa.</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => requestTableBill(activeTableId, activeRestaurantSlug)}
+                      className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 border border-amber-500/30 transition-colors"
+                    >
+                      <Receipt className="w-4 h-4" />
+                      Pedir a Conta (Fechar Mesa)
+                    </button>
+                  )}
+
                   {/* V8: escolha do comprovante de fechamento */}
                   <div className="space-y-1.5 pt-1">
                     <label className="text-[11px] text-stone-400 block font-bold uppercase tracking-wide">
-                      Comprovante de Fechamento:
+                      Comprovante de Fechamento — confirma o PAGAMENTO e libera a mesa:
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -1781,18 +1810,33 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                 onClick={() => {
                   window.print();
                   setShowPrintModal(false);
+                  if (tableJustClosed) {
+                    setTableJustClosed(false);
+                    setActiveTableId(null);
+                  }
                 }}
                 className="flex-1 py-2 rounded-xl bg-black text-white font-bold text-xs"
               >
                 Imprimir
               </button>
               <button
-                onClick={() => setShowPrintModal(false)}
+                onClick={() => {
+                  setShowPrintModal(false);
+                  if (tableJustClosed) {
+                    setTableJustClosed(false);
+                    setActiveTableId(null);
+                  }
+                }}
                 className="py-2 px-4 rounded-xl bg-neutral-200 text-neutral-800 font-bold text-xs"
               >
-                Fechar
+                {tableJustClosed ? 'Fechar e Liberar Mesa' : 'Fechar'}
               </button>
             </div>
+            {tableJustClosed && (
+              <p className="text-center text-[10px] text-neutral-500 -mt-2">
+                Mesa {activeTableId} já foi fechada e paga — este cupom é só para impressão.
+              </p>
+            )}
           </div>
         </div>
       )}
