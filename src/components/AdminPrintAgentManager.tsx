@@ -161,7 +161,13 @@ export const AdminPrintAgentManager: React.FC<AdminPrintAgentManagerProps> = ({ 
       showToast('Marque ao menos um local (estação) para esta impressora.', 'warning');
       return;
     }
-    const targetSlug = selectedSlug === 'all' ? 'japones' : selectedSlug;
+    // Nunca usar 'japones' como fallback. Isso poderia gravar uma impressora
+    // do restaurante errado quando o administrador estiver na visão global.
+    if (selectedSlug === 'all') {
+      showToast('Selecione um restaurante específico antes de cadastrar a impressora.', 'warning');
+      return;
+    }
+    const targetSlug = selectedSlug;
     setIsSavingPrinter(true);
     try {
       const printerPayload: ThermalPrinterDevice = {
