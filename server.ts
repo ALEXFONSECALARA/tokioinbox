@@ -16,6 +16,7 @@ import {
   updateOrderStationStatusTransactional,
   appendItemsToTableOrderTransactional,
   closeTableOrderTransactional,
+  requestTableBillTransactional,
   updateOrderPrintStatusTransactional,
   updateOrderTableTransactional,
   updateOrderItemTransactional,
@@ -1516,6 +1517,27 @@ app.post('/api/orders/table/append', publicWriteLimiter, optionalStaffAuth, (req
     });
   } catch (error: any) {
     console.error('[TABLE APPEND ERROR]:', error.message);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// 5c-bis. V8 PRO: "Fechar Mesa" (pedir a conta) ≠ "Pagar Mesa". Este endpoint
+// só marca a mesa como aguardando pagamento; não recebe pagamento nem libera
+// a mesa. A liberação/finalização real continua em /close-table abaixo.
+app.post('/api/tables/:tableNumber/request-bill', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
+  try {
+    const { restaurantSlug, operatorName } = req.body;
+    if (!restaurantSlug) {
+      return res.status(400).json({ success: false, error: 'restaurantSlug é obrigatório.' });
+    }
+    const affected = requestTableBillTransactional({
+      tableNumber: Number(req.params.tableNumber),
+      restaurantSlug,
+      operatorName: operatorName || req.userSession?.name,
+    });
+    affected.forEach((o) => broadcastOrdersUpdate('bill_requested', o));
+    res.json({ success: true, orders: affected });
+  } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
   }
 });
