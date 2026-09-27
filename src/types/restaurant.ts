@@ -234,6 +234,21 @@ export interface RestaurantConfig {
   serviceAreaKm?: number;
   bannerImage?: string;
   deliveryTime?: string;
+  // V8 PRO PLUS: entrega por distância (KM) — coordenadas do restaurante e
+  // faixas de raio/taxa configuráveis em Admin → Áreas de Entrega. Quando
+  // preenchidas, o checkout calcula a distância até o endereço do cliente
+  // (via CEP) e usa a taxa da faixa correspondente em vez da taxa fixa.
+  latitude?: number;
+  longitude?: number;
+  deliveryZones?: {
+    id: string;
+    name: string;
+    maxRadiusKm: number;
+    fee: number;
+    estimatedMinutes?: string;
+    minOrder?: number;
+    active: boolean;
+  }[];
   // V7: slide editável do carrossel "Promoções & Rodízios em Destaque" da
   // Home pública — antes fixo no código (LuxuryPromoSlider.tsx), agora
   // editado pelo super_admin em Vitrine Principal e salvo por restaurante.
@@ -299,7 +314,12 @@ export interface Order {
     number: string;
     neighborhood: string;
     city: string;
+    state?: string;
+    cep?: string;
     complement?: string;
+    // V8 PRO PLUS: distância (km) calculada até o cliente, quando o
+    // restaurante usa entrega por distância — útil para auditoria/relatórios.
+    distanceKm?: number;
   };
   items: OrderItemRecord[];
   stations?: Partial<Record<ProductionStation, StationProductionRecord>>;
@@ -323,6 +343,13 @@ export interface Order {
   status: OrderStatus;
   statusHistory: StatusHistoryEntry[];
   printStatus: 'pendente' | 'imprimindo' | 'impresso' | 'falha';
+  // V8 PRO: regra fundamental do prompt mestre — "FECHAR MESA ≠ PAGAR MESA".
+  // awaitingPayment marca que a conta foi fechada/solicitada (cliente pediu
+  // a conta) mas o pagamento AINDA não foi recebido pelo caixa/garçom. Só
+  // quando o pagamento é confirmado (paymentDetails.paid / status
+  // 'finalizado') a mesa é de fato liberada.
+  awaitingPayment?: boolean;
+  billRequestedAt?: string;
   idempotencyKey?: string;
   createdAt: string;
   updatedAt: string;
