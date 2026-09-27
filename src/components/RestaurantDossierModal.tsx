@@ -81,8 +81,13 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
 
         {/* Header Hero Banner */}
         <div className="relative h-44 sm:h-56 w-full shrink-0 overflow-hidden bg-[#111111]">
+          {/* BUG CORRIGIDO (varredura V9): mesmo problema de src="" quando
+              restaurant.banner está vazio — ver VitrineRestaurantCard.tsx. */}
           <img
-            src={restaurant.banner}
+            src={
+              restaurant.banner ||
+              "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='240'%3E%3Crect width='400' height='240' fill='%23262626'/%3E%3C/svg%3E"
+            }
             alt={restaurant.name}
             className="w-full h-full object-cover object-center filter brightness-[0.70] contrast-[1.1]"
           />
@@ -112,7 +117,10 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
           <div className="absolute bottom-4 left-4 right-16 flex items-end gap-3.5 z-20">
             <div className="relative shrink-0">
               <img
-                src={restaurant.logo}
+                src={
+                  restaurant.logo ||
+                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%23333333'/%3E%3C/svg%3E"
+                }
                 alt={restaurant.name}
                 className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-[#E3BD6A] shadow-[0_0_20px_rgba(227,189,106,0.35)]"
               />

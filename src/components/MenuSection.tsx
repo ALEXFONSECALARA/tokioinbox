@@ -213,8 +213,14 @@ export const MenuSection: React.FC<MenuSectionProps> = ({
               >
                 {/* Image Section with 4K Dark Gastronomic Presentation */}
                 <div className="relative h-48 sm:h-52 w-full overflow-hidden bg-slate-950">
+                  {/* BUG CORRIGIDO (varredura V9): item sem foto cadastrada
+                      deixava src="" (o navegador tenta carregar a própria
+                      página como imagem). Card mais visto pelo cliente. */}
                   <img
-                    src={item.image}
+                    src={
+                      item.image ||
+                      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300'%3E%3Crect width='400' height='300' fill='%230c0c10'/%3E%3C/svg%3E"
+                    }
                     alt={item.name}
                     className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 filter brightness-[0.9] contrast-[1.05]"
                     loading="lazy"

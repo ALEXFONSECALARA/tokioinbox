@@ -27,7 +27,18 @@ export const VitrineRestaurantCard: React.FC<VitrineRestaurantCardProps> = ({
   onOpenDossier,
 }) => {
   const theme = restaurant.vitrineLayoutTheme || 'moderno_premium';
-  const coverImg = restaurant.vitrineCoverImage || restaurant.banner;
+  // BUG CORRIGIDO (varredura V9): quando um restaurante não tinha capa nem
+  // banner configurados, coverImg/logo ficavam `undefined` → viravam
+  // src="" no HTML, o que faz o navegador tratar a própria página como se
+  // fosse a imagem (ícone quebrado / requisição indevida). Isso acontecia
+  // na Home pública, visível para clientes reais. Agora sempre cai num
+  // placeholder inline (SVG), nunca em string vazia.
+  const FALLBACK_COVER =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='240'%3E%3Crect width='400' height='240' fill='%23262626'/%3E%3C/svg%3E";
+  const FALLBACK_LOGO =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%23333333'/%3E%3C/svg%3E";
+  const coverImg = restaurant.vitrineCoverImage || restaurant.banner || FALLBACK_COVER;
+  const logoImg = restaurant.logo || FALLBACK_LOGO;
   const callout = restaurant.vitrineCallout || restaurant.tagline;
   const badge = restaurant.vitrineBadge || (restaurant.promotions?.[0]?.badge ?? 'Em Destaque');
 
@@ -62,7 +73,7 @@ export const VitrineRestaurantCard: React.FC<VitrineRestaurantCardProps> = ({
           {/* Logo overlay */}
           <div className="absolute -bottom-4 left-5 flex items-end gap-3 z-10">
             <img
-              src={restaurant.logo}
+              src={logoImg}
               alt={restaurant.name}
               className="w-16 h-16 rounded-2xl object-cover border-2 border-amber-600/60 shadow-xl bg-[#16120F]"
             />
@@ -139,7 +150,7 @@ export const VitrineRestaurantCard: React.FC<VitrineRestaurantCardProps> = ({
 
           <div className="absolute -bottom-4 left-5 flex items-end gap-3 z-10">
             <img
-              src={restaurant.logo}
+              src={logoImg}
               alt={restaurant.name}
               className="w-16 h-16 rounded-2xl object-cover border-2 border-slate-700 shadow-lg bg-[#0D0F12]"
             />
@@ -202,7 +213,7 @@ export const VitrineRestaurantCard: React.FC<VitrineRestaurantCardProps> = ({
 
           <div className="absolute -bottom-4 left-5 flex items-end gap-3 z-10">
             <img
-              src={restaurant.logo}
+              src={logoImg}
               alt={restaurant.name}
               className="w-16 h-16 rounded-2xl object-cover border-2 border-cyan-500/40 shadow-xl bg-[#0A0B10]"
             />
@@ -272,7 +283,7 @@ export const VitrineRestaurantCard: React.FC<VitrineRestaurantCardProps> = ({
 
         <div className="absolute -bottom-4 left-5 flex items-end gap-3 z-10">
           <img
-            src={restaurant.logo}
+            src={logoImg}
             alt={restaurant.name}
             className="w-16 h-16 rounded-2xl object-cover border-2 border-[#E3BD6A]/60 shadow-2xl bg-[#08090C]"
           />

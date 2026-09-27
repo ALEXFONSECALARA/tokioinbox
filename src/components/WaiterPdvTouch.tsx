@@ -186,7 +186,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const tableNumbers = useMemo(() => {
     const configured = Array.isArray(restaurant?.activeTables)
       ? restaurant.activeTables
-      : Array.from({ length: 30 }, (_, i) => i + 1);
+      : Array.from({ length: 26 }, (_, i) => i + 1);
     const activeFromOrders = orders
       .filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber))
       .map((o) => Number(o.tableNumber));
@@ -202,7 +202,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   };
 
   const openTableManager = () => {
-    const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : Array.from({ length: 30 }, (_, i) => i + 1);
+    const configured = Array.isArray(restaurant?.activeTables) ? restaurant.activeTables : Array.from({ length: 26 }, (_, i) => i + 1);
     setTableDraft(Array.from(new Set(configured.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))).sort((a, b) => a - b));
     setNewTableNumber('');
     setEditingTableNumber(null);

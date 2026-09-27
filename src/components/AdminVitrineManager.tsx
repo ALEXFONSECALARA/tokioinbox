@@ -29,6 +29,7 @@ export const AdminVitrineManager: React.FC = () => {
   );
 
   const currentRest = restaurants[editingSlug] || restaurantList[0];
+  const previewImageSrc = currentRest?.vitrineCoverImage || currentRest?.bannerImage || '';
 
   const handleToggleActive = (slug: string, current: boolean) => {
     if (!checkPermission('can_edit_restaurants')) return;
@@ -633,11 +634,33 @@ export const AdminVitrineManager: React.FC = () => {
                   Pré-visualização do Card na Vitrine:
                 </span>
                 <div className="relative h-44 rounded-2xl overflow-hidden border border-slate-700 shadow-xl bg-slate-900 group">
-                  <img
-                    src={currentRest.vitrineCoverImage || currentRest.bannerImage}
-                    alt={currentRest.name}
-                    className="w-full h-full object-cover"
-                  />
+                  {/* BUG CORRIGIDO: quando o restaurante ainda não tinha capa
+                      nem banner, `src` ficava undefined → vira src="" no
+                      HTML, o que faz o navegador tentar recarregar a própria
+                      página como se fosse a imagem (ícone quebrado, ou em
+                      alguns navegadores uma requisição indevida). Agora só
+                      renderiza <img> quando existe uma URL real, com
+                      fallback visual e onError para link quebrado. */}
+                  {previewImageSrc ? (
+                    <img
+                      key={previewImageSrc}
+                      src={previewImageSrc}
+                      alt={currentRest.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement | null;
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
+                    />
+                  ) : null}
+                  <div
+                    className="w-full h-full items-center justify-center text-slate-600 text-xs font-bold gap-1.5 flex-col absolute inset-0"
+                    style={{ display: previewImageSrc ? 'none' : 'flex' }}
+                  >
+                    <Image className="w-6 h-6" />
+                    <span>Sem imagem de capa</span>
+                  </div>
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
                   {currentRest.vitrineBadge && (
                     <span className="absolute top-3 right-3 bg-amber-500 text-slate-950 font-black text-[11px] px-2.5 py-0.5 rounded-full shadow">

@@ -153,7 +153,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     const hasConfiguredTables = Array.isArray(restaurant?.activeTables);
     const configured = hasConfiguredTables
       ? restaurant.activeTables.filter((n) => Number.isInteger(n) && n > 0 && n <= 999)
-      : Array.from({ length: 30 }, (_, i) => i + 1);
+      : Array.from({ length: 26 }, (_, i) => i + 1);
 
     const normalized = Array.from(new Set(configured)).sort((a, b) => a - b);
 
@@ -761,7 +761,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     const hasConfiguredTables = Array.isArray(restaurant?.activeTables);
     const configured = hasConfiguredTables
       ? (restaurant?.activeTables || [])
-      : Array.from({ length: 30 }, (_, i) => i + 1);
+      : Array.from({ length: 26 }, (_, i) => i + 1);
     const normalized = Array.from(
       new Set(configured.filter((n) => Number.isInteger(n) && n > 0 && n <= 999))
     ).sort((a, b) => a - b);
@@ -2184,7 +2184,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
             <div className="flex flex-wrap items-center gap-2 border-t border-slate-800 pt-4">
               <button
                 type="button"
-                onClick={() => setTableDraft(Array.from({ length: 30 }, (_, i) => i + 1))}
+                onClick={() => setTableDraft(Array.from({ length: 26 }, (_, i) => i + 1))}
                 className="px-3 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs"
               >
                 Restaurar 30
