@@ -140,15 +140,21 @@ export function enqueuePrintJob(params: {
   restaurantSlug: RestaurantSlug;
   station: PrintStation;
   rawEscPos?: string;
+  /** Impressora específica (ex.: a escolhida no Caixa). Se não existir/estiver offline, usa as da estação. */
+  printerId?: string;
 }): { job: PrintJob; deduplicated: boolean; jobs: PrintJob[] } {
   initializePrintQueue();
-  const { orderId, orderShortCode, restaurantSlug, station, rawEscPos } = params;
+  const { orderId, orderShortCode, restaurantSlug, station, rawEscPos, printerId } = params;
   const contentHash = crypto.createHash('sha256').update(rawEscPos || '').digest('hex');
 
   initializePrinters();
-  const matchingPrinters = registeredPrinters.filter(
+  let matchingPrinters = registeredPrinters.filter(
     (p) => p.restaurantSlug === restaurantSlug && p.stations?.includes(station) && p.status === 'online'
   );
+  if (printerId) {
+    const chosen = matchingPrinters.filter((p) => p.id === printerId);
+    if (chosen.length > 0) matchingPrinters = chosen;
+  }
   // Sem nenhuma impressora cadastrada/online para a estação: ainda assim
   // registra 1 trabalho pendente (sem impressora atribuída) para não perder
   // o pedido — ele aparece na fila como pendente até uma impressora ser
