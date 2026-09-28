@@ -74,6 +74,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     updateOrderStatus,
     closeTableOrder,
     requestTableBill,
+    reopenTable,
     showToast,
     soundSettings,
     updateRestaurantConfig,
@@ -108,6 +109,9 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [splitCount, setSplitCount] = useState(2);
   const [isSendingOrder, setIsSendingOrder] = useState(false);
   const [isClosingTable, setIsClosingTable] = useState(false);
+  // V9 ULTRA-CORREÇÃO: confirmação obrigatória antes de REABRIR CONTA
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false);
+  const [isReopeningTable, setIsReopeningTable] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   // V8 PRO PLUS: ao fechar a mesa, já abre o cupom para impressão — só libera
   // a mesa de fato (sai da tela) quando o garçom fecha/imprime esse cupom.
@@ -326,6 +330,10 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
   // Add Item to Waiter Tray
   const handleAddToTray = (item: MenuItem) => {
+    if (activeTableAwaitingPayment) {
+      showToast('Conta em FECHAMENTO: reabra a conta para lançar novos itens.', 'error');
+      return;
+    }
     setTrayItems((prev) => {
       const existingIdx = prev.findIndex((t) => t.menuItem.id === item.id);
       if (existingIdx >= 0) {
@@ -361,6 +369,10 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   // Submit Tray Order to Kitchen
   const handleSendOrderToKitchen = async () => {
     if (!activeTableId || trayItems.length === 0) return;
+    if (activeTableAwaitingPayment) {
+      showToast('Conta em FECHAMENTO: reabra a conta para lançar novos itens.', 'error');
+      return;
+    }
 
     setIsSendingOrder(true);
     try {
@@ -534,6 +546,21 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     }
   };
 
+  // V9 ULTRA-CORREÇÃO: REABRIR CONTA — desfaz o FECHAMENTO temporário
+  // (AGUARDANDO PAGAMENTO) e devolve a mesa para EM USO, liberando novos
+  // lançamentos. Nunca usada para desfazer um PAGAMENTO já confirmado.
+  const handleReopenTable = async (tableId: number) => {
+    setIsReopeningTable(true);
+    try {
+      const result = await reopenTable(tableId, activeRestaurantSlug);
+      if (result.success) {
+        setShowReopenConfirm(false);
+      }
+    } finally {
+      setIsReopeningTable(false);
+    }
+  };
+
   // V8: Cancelamento de mesa — encerra a comanda sem cobrança (pedido
   // enganado, cliente desistiu, erro de abertura de mesa etc.), diferente
   // do fechamento com pagamento acima.
@@ -651,6 +678,9 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
   // Active table calculations
   const activeTableOrders = activeTableId ? tableOrdersMap[activeTableId] || [] : [];
+  const activeTableAwaitingPayment = activeTableOrders.some(
+    (o) => o.awaitingPayment && o.status !== 'finalizado' && o.status !== 'cancelado'
+  );
   const activeTableSubtotal = activeTableId ? getTableTotal(activeTableId) : 0;
   const serviceFeeValue = includeServiceFee ? activeTableSubtotal * 0.1 : 0;
   const activeTableGrandTotal = activeTableSubtotal + serviceFeeValue;
@@ -1111,21 +1141,23 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
               livre: 'border-stone-800 hover:border-emerald-500/60 bg-stone-900/40',
               ocupada: 'border-amber-500/60 bg-amber-950/10 hover:border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.15)]',
               preparando: 'border-cyan-500/60 bg-cyan-950/10 hover:border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]',
-              conta: 'border-purple-500/60 bg-purple-950/10 hover:border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.15)]',
+              // V9: mesa AGUARDANDO PAGAMENTO pisca (animate-pulse) pra
+              // chamar atenção do salão/caixa visualmente, como pedido.
+              conta: 'border-purple-500/60 bg-purple-950/10 hover:border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.15)] animate-pulse',
             };
 
             const badgeStyles = {
               livre: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
               ocupada: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
               preparando: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30 animate-pulse',
-              conta: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+              conta: 'bg-purple-500/20 text-purple-400 border-purple-500/30 animate-pulse',
             };
 
             const statusLabels = {
               livre: 'Livre',
               ocupada: 'Ocupada',
               preparando: 'Cozinha',
-              conta: 'Aguardando Conta',
+              conta: 'Aguardando Pagamento',
             };
 
             return (
@@ -1191,6 +1223,38 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
         </div>
       </main>
 
+      {/* V9: confirmação obrigatória de REABRIR CONTA */}
+      {showReopenConfirm && activeTableId && (
+        <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-stone-900 border border-amber-500/40 rounded-2xl p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-6 h-6 text-amber-400 shrink-0" />
+              <p className="text-sm text-stone-100 font-semibold">
+                Atenção: ao reabrir a conta, a mesa voltará para EM USO e será possível adicionar novos itens. Deseja continuar?
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setShowReopenConfirm(false)}
+                disabled={isReopeningTable}
+                className="py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-black text-xs uppercase border border-stone-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleReopenTable(activeTableId)}
+                disabled={isReopeningTable}
+                className="py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-black text-xs uppercase"
+              >
+                {isReopeningTable ? 'Reabrindo...' : 'Confirmar Reabertura'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Active Table Drawer / Modal */}
       {activeTableId && (
         <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex justify-end animate-fadeIn">
@@ -1206,8 +1270,8 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                     <h2 className="text-lg font-black text-white">
                       Mesa {String(activeTableId).padStart(2, '0')}
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-stone-800 text-amber-400 text-xs font-bold">
-                      {getTableStatus(activeTableId).toUpperCase()}
+                    <span className={`px-2 py-0.5 rounded-full bg-stone-800 text-amber-400 text-xs font-bold ${getTableStatus(activeTableId) === 'conta' ? 'animate-pulse' : ''}`}>
+                      {getTableStatus(activeTableId) === 'conta' ? '🔴 AGUARDANDO PAGAMENTO' : getTableStatus(activeTableId) === 'livre' ? 'MESA LIVRE' : getTableStatus(activeTableId).toUpperCase()}
                     </span>
                   </div>
                   <p className="text-xs text-stone-400">
@@ -1407,7 +1471,23 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
               )}
 
               {/* TAB 2: Lançar Pedidos */}
-              {activeTab === 'lancar' && (
+              {activeTab === 'lancar' && activeTableAwaitingPayment && (
+                <div className="py-10 text-center space-y-3">
+                  <Lock className="w-12 h-12 mx-auto text-amber-400" />
+                  <p className="text-sm font-black text-amber-300 animate-pulse">🔴 AGUARDANDO PAGAMENTO</p>
+                  <p className="text-xs text-stone-400">
+                    Conta travada para novos lançamentos. Reabra a conta para adicionar itens.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowReopenConfirm(true)}
+                    className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs uppercase border border-stone-700"
+                  >
+                    Reabrir Conta
+                  </button>
+                </div>
+              )}
+              {activeTab === 'lancar' && !activeTableAwaitingPayment && (
                 <div className="space-y-4">
                   {/* Category Filter */}
                   <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
@@ -1718,9 +1798,19 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                       "Aguardando Pagamento"; o pagamento em si só é
                       confirmado no botão de baixo. */}
                   {activeTableOrders.some((o) => o.awaitingPayment) ? (
-                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-amber-300 text-xs font-bold">
-                      <Receipt className="w-4 h-4 shrink-0" />
-                      <span>Conta pedida — aguardando pagamento no caixa.</span>
+                    <div className="space-y-2">
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-amber-300 text-xs font-bold animate-pulse">
+                        <Receipt className="w-4 h-4 shrink-0" />
+                        <span>🔴 AGUARDANDO PAGAMENTO — conta travada, sem novos lançamentos.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowReopenConfirm(true)}
+                        className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 border border-stone-700 transition-colors"
+                      >
+                        <Unlock className="w-4 h-4 text-cyan-400" />
+                        Reabrir Conta
+                      </button>
                     </div>
                   ) : (
                     <button
@@ -1729,7 +1819,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                       className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 border border-amber-500/30 transition-colors"
                     >
                       <Receipt className="w-4 h-4" />
-                      Pedir a Conta (Fechar Mesa)
+                      Fechamento (Pedir a Conta)
                     </button>
                   )}
 
