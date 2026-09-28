@@ -22,6 +22,7 @@ import {
   Store,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
+import { useConferencePrint } from '../utils/useConferencePrint';
 
 interface CounterTouchViewProps {
   onBackToApp?: () => void;
@@ -50,6 +51,7 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp,
   const [cashGiven, setCashGiven] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastFinishedOrder, setLastFinishedOrder] = useState<any | null>(null);
+  const printConference = useConferencePrint();
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
   useEffect(() => {
@@ -170,6 +172,8 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp,
         setCashGiven('');
         playAlertSound('sound1', 0.6);
         showToast(`Pedido #${result.shortCode} criado com sucesso no Balcão!`, 'success');
+        // V9 ULTRA PLUS: fechamento do balcão imprime a conferência automática
+        void printConference(result, 'balcao');
       }
     } catch (err: any) {
       console.error('Erro no Balcão:', err);

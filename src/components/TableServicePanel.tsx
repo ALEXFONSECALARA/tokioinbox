@@ -41,6 +41,8 @@ import { BRAND_NAME } from '../config/brand';
 import { getRestaurantPath } from '../utils/urlRouting';
 import { QrCodeImage } from './QrCodeImage';
 import { playAlertSound } from '../utils/audioAlert';
+import { useConferencePrint } from '../utils/useConferencePrint';
+import { mergeOrdersForConference } from '../utils/conferencePrint';
 
 interface TableServicePanelProps {
   onBackToApp: () => void;
@@ -113,6 +115,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [isReopeningTable, setIsReopeningTable] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const printConference = useConferencePrint();
   // V8 PRO PLUS: ao fechar a mesa, já abre o cupom para impressão — só libera
   // a mesa de fato (sai da tela) quando o garçom fecha/imprime esse cupom.
   const [tableJustClosed, setTableJustClosed] = useState(false);
@@ -1815,7 +1818,13 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => requestTableBill(activeTableId, activeRestaurantSlug)}
+                      onClick={async () => {
+                        const r = await requestTableBill(activeTableId, activeRestaurantSlug);
+                        // V9 ULTRA PLUS: FECHAMENTO imprime a conferência automática
+                        if (r?.success && activeTableOrders.length > 0) {
+                          void printConference(mergeOrdersForConference(activeTableOrders), 'mesa');
+                        }
+                      }}
                       className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 border border-amber-500/30 transition-colors"
                     >
                       <Receipt className="w-4 h-4" />

@@ -17,6 +17,7 @@ import {
 import { OperationalWorkflowModal } from './OperationalWorkflowModal';
 import { useStore } from '../context/StoreContext';
 import { UserPermissions } from '../types/restaurant';
+import { isAreaEnabledByChannels } from '../painel/access';
 
 export type OperationalEnvironment =
   | 'cliente'
@@ -43,7 +44,7 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
   className = '',
   condensed = false,
 }) => {
-  const { currentUser } = useStore();
+  const { currentUser, salesChannels } = useStore();
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false);
 
   // Perfis e áreas liberadas seguem exatamente os nomes do servidor (ver painel/access.ts).
@@ -66,10 +67,11 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
       default: return false;
     }
   };
-  const canAccessPdv = canUse('pdv');
-  const canAccessCliente = Boolean(role); // abre o cardápio público em outra tela
-  const canAccessBalcao = canUse('balcao');
-  const canAccessDelivery = canUse('delivery');
+  // V9 ULTRA PLUS: ferramentas desativadas (canal de venda desligado) ficam ocultas.
+  const canAccessPdv = canUse('pdv') && isAreaEnabledByChannels('pdv', salesChannels);
+  const canAccessCliente = Boolean(role) && (salesChannels?.mesa?.enabled !== false || salesChannels?.online?.enabled !== false); // abre o cardápio público em outra tela
+  const canAccessBalcao = canUse('balcao') && isAreaEnabledByChannels('balcao', salesChannels);
+  const canAccessDelivery = canUse('delivery') && isAreaEnabledByChannels('delivery', salesChannels);
   const canAccessCaixa = canUse('caixa');
   const canAccessProducao = canUse('cozinha') || canUse('sushibar') || canUse('bar');
   const canAccessAdmin = canUse('admin');

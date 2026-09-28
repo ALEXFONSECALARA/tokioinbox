@@ -4,6 +4,9 @@ import { useStore } from '../context/StoreContext';
 import { Order, PaymentMethod, CashRegisterMovement } from '../types/restaurant';
 import { OrderOriginBadge } from './OrderOriginBadge';
 import { ThermalTicketModal } from './ThermalTicketModal';
+import { ConferenceAutoPrintPanel } from './ConferenceAutoPrintPanel';
+import { useConferencePrint } from '../utils/useConferencePrint';
+import { mergeOrdersForConference } from '../utils/conferencePrint';
 import { OfflineStatusIndicator } from './OfflineStatusIndicator';
 import {
   Wallet,
@@ -54,6 +57,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     menuItems,
     activeRestaurantSlug,
     appendItemsToTableOrder,
+    salesChannels,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'mesas' | 'delivery' | 'retirada' | 'movimentacoes'>('mesas');
@@ -63,6 +67,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
   const [addingItemId, setAddingItemId] = useState<string | null>(null);
+  const printConference = useConferencePrint();
 
   // Payment dialog state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cartao_credito');
@@ -231,6 +236,15 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
         showToast(`${item.name} adicionado à Mesa ${selectedOrder.tableNumber}.`, 'success');
         setShowAddItemModal(false);
         setItemSearch('');
+        // V9 ULTRA PLUS: item enviado → Caixa volta para a TELA INICIAL
+        setSelectedOrder(null);
+        setTicketOrder(null);
+        setCashReceived('');
+        setDiscountAmount(0);
+        setIsDiscountAuthorized(false);
+        setSplitCount(1);
+        setSearchTerm('');
+        setActiveTab('mesas');
       }
     } catch (err: any) {
       showToast(err?.message || 'Não foi possível adicionar o item.', 'error');
@@ -383,6 +397,8 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
               </span>
             </div>
 
+            <ConferenceAutoPrintPanel />
+
             <button
               onClick={() => setShowMovementModal(true)}
               className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5"
@@ -425,6 +441,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
               <span>🍽️ CONTAS DA MESA ({activeTableGroups.length})</span>
             </button>
 
+            {salesChannels?.delivery?.enabled !== false && (
             <button
               onClick={() => {
                 setActiveTab('delivery');
@@ -439,7 +456,9 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
               <Truck className="w-4 h-4" />
               <span>🚚 DELIVERY ({deliveryOrders.length})</span>
             </button>
+            )}
 
+            {salesChannels?.retirada?.enabled !== false && (
             <button
               onClick={() => {
                 setActiveTab('retirada');
@@ -454,6 +473,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
               <Package className="w-4 h-4" />
               <span>📦 RETIRADA ({retiradaOrders.length})</span>
             </button>
+            )}
 
             <button
               onClick={() => {
@@ -597,7 +617,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                       ))}
                       <button
                         type="button"
-                        onClick={() => setTicketOrder(selectedOrder)}
+                        onClick={() => void printConference(mergeOrdersForConference(selectedFinancialOrders.length ? selectedFinancialOrders : [selectedOrder]), 'caixa', { force: true })}
                         className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 text-xs font-bold flex items-center gap-1.5"
                         title="Imprimir conferência de mesa para o cliente"
                       >
@@ -606,8 +626,17 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                       </button>
                       <button
                         type="button"
-                        onClick={() => setSelectedOrder(null)}
-                        className="text-xs text-slate-400 hover:text-white px-2 py-1"
+                        onClick={() => {
+                          // V9 ULTRA PLUS: FECHAR imprime a conferência na impressora do Caixa
+                          const toPrint =
+                            selectedOrder.orderType === 'mesa' && selectedFinancialOrders.length
+                              ? mergeOrdersForConference(selectedFinancialOrders)
+                              : selectedOrder;
+                          void printConference(toPrint, selectedOrder.orderType === 'mesa' ? 'caixa' : selectedOrder.orderType === 'delivery' ? 'delivery' : 'retirada');
+                          setSelectedOrder(null);
+                        }}
+                        className="text-xs text-slate-300 hover:text-white px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 font-bold"
+                        title="Fechar e imprimir conferência automática"
                       >
                         Fechar
                       </button>

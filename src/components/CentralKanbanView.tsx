@@ -27,6 +27,7 @@ import {
   PackageCheck,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
+import { useConferencePrint } from '../utils/useConferencePrint';
 
 interface CentralKanbanViewProps {
   onBackToApp?: () => void;
@@ -127,6 +128,8 @@ export const CentralKanbanView: React.FC<CentralKanbanViewProps> = ({ onBackToAp
       statuses: ['entregue', 'finalizado'],
     },
   ];
+
+  const printConference = useConferencePrint();
 
   const handleAdvanceStatus = async (order: Order, nextStatus: OrderStatus) => {
     try {
@@ -406,6 +409,17 @@ export const CentralKanbanView: React.FC<CentralKanbanViewProps> = ({ onBackToAp
                             <span className="font-mono font-black text-sm text-emerald-400">
                               R$ {order.total.toFixed(2)}
                             </span>
+
+                            {/* V9 ULTRA PLUS: FECHAR = imprime a conferência automática */}
+                            <button
+                              type="button"
+                              onClick={() => void printConference(order, 'pedidos', { force: false })}
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all"
+                              title="Fechar: imprimir cupom de conferência na impressora do Caixa"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>Fechar</span>
+                            </button>
 
                             {col.nextStatus && (
                               <button

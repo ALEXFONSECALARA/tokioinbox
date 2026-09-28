@@ -48,6 +48,8 @@ import {
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
 import { ThermalTicketModal } from './ThermalTicketModal';
+import { useConferencePrint } from '../utils/useConferencePrint';
+import { FitTableGrid } from './FitTableGrid';
 import { EnvironmentBar, OperationalEnvironment } from './EnvironmentBar';
 import { OfflineStatusIndicator } from './OfflineStatusIndicator';
 
@@ -182,6 +184,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [waiterNotes, setWaiterNotes] = useState<string>('');
   const [isClosingTable, setIsClosingTable] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const printConference = useConferencePrint();
   const [isFinalizeExpanded, setIsFinalizeExpanded] = useState(false);
   // V9: REABRIR CONTA (aviso obrigatório) e ação de FECHAMENTO em andamento
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
@@ -836,7 +839,12 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     setIsFechando(true);
     try {
       const r = await requestTableBill(selectedTable, activeRestaurantSlug);
-      if (r.success) { setDraftItems([]); playAlertSound('sound1', 0.5); }
+      if (r.success) {
+        setDraftItems([]);
+        playAlertSound('sound1', 0.5);
+        // V9 ULTRA PLUS: FECHAMENTO imprime a conferência sozinha na impressora do Caixa
+        void printConference(currentTableOrder, 'garcom');
+      }
     } finally {
       setIsFechando(false);
     }
@@ -1133,28 +1141,30 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* ========================================================================= */}
       {/* 4. CONTEÚDO PRINCIPAL (TELAS SEPARADAS) */}
       {/* ========================================================================= */}
-      <main className={`flex-1 min-h-0 max-w-7xl w-full mx-auto p-3 sm:p-4 lg:p-5 pb-4 ${currentScreen === 'mesas' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+      <main className={`flex-1 min-h-0 max-w-7xl w-full mx-auto p-3 sm:p-4 lg:p-5 ${currentScreen === 'mesas' ? 'overflow-hidden pb-12' : 'overflow-y-auto pb-4'}`}>
         {/* --------------------------------------------------------------------- */}
         {/* TELA 1: MESAS */}
         {/* --------------------------------------------------------------------- */}
         {currentScreen === 'mesas' && (
-          <div className="space-y-6">
+          // V9 ULTRA PLUS: tela de mesas ocupa exatamente a altura disponível; as mesas
+          // ficam centralizadas e redimensionadas para CABEREM todas (sem corte, sem rolagem).
+          <div className="h-full min-h-0 flex flex-col gap-3">
             {/* Header & Status Filters */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#111624] p-4 rounded-3xl border border-slate-800 shadow-xl">
+            <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#111624] px-4 py-3 rounded-3xl border border-slate-800 shadow-xl">
               <div>
-                <h2 className="text-lg font-black text-white uppercase tracking-wider flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-white uppercase tracking-wider flex items-center gap-2">
                   <span>SALÃO DE MESAS</span>
                   <span className="text-xs bg-slate-800 text-amber-400 px-2.5 py-0.5 rounded-full font-mono">
                     {tableNumbers.length} Mesas
                   </span>
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">
                   Toque em qualquer mesa para abrir o atendimento ou conferir comanda
                 </p>
               </div>
 
               {/* Status Filter Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+              <div className="flex items-center justify-center gap-1.5 flex-wrap">
                 {(
                   [
                     { key: 'todos', label: 'Todas' },
@@ -1167,7 +1177,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                   <button
                     key={f.key}
                     onClick={() => setTableFilter(f.key)}
-                    className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all border ${
+                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider whitespace-nowrap transition-all border ${
                       tableFilter === f.key
                         ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md font-black'
                         : 'bg-[#181E2E] text-slate-400 border-slate-800 hover:text-white'
@@ -1180,35 +1190,42 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
             </div>
 
             {/* Cadastro removido do fluxo de venda: fica em Ferramentas no topo. */}
-            <div className="table-isometric-canvas rounded-3xl border border-slate-800/90 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,.08),transparent_42%),#080C14] p-3 sm:p-4">
-              {/* V9: células de tamanho fixo, grade centralizada e sem corte (a área principal rola) */}
-              <div className="grid gap-3 sm:gap-4 justify-center justify-items-center" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 132px))' }}>
-                {tableNumbers.map((tableNum) => {
+            <div className="table-isometric-canvas flex-1 min-h-0 rounded-3xl border border-slate-800/90 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,.08),transparent_42%),#080C14] p-3 sm:p-4 overflow-hidden">
+              <FitTableGrid
+                tables={tableNumbers.filter((n) => tableFilter === 'todos' || getTableStatus(n).key === tableFilter)}
+                gap={10}
+                renderCell={(tableNum, cell, compact) => {
                   const status = getTableStatus(tableNum);
                   const order = activeOrdersByTable[tableNum];
-                  if (tableFilter !== 'todos' && status.key !== tableFilter) return null;
                   const isCurrent = selectedTable === tableNum;
                   const closed = status.key === 'aguardando_pagamento';
                   const inUse = status.key !== 'livre';
                   return (
-                    <button key={tableNum} type="button" onClick={() => handleSelectTable(tableNum)} className={`group relative w-full aspect-square rounded-2xl border-2 p-2 text-left overflow-hidden transition-all active:scale-[.98] ${status.cardBg} ${isCurrent ? 'ring-2 ring-amber-400/90 shadow-[0_0_28px_rgba(245,158,11,.25)]' : 'shadow-lg'}`}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectTable(tableNum)}
+                      style={{ width: cell, height: cell, fontSize: cell }}
+                      className={`group relative rounded-[.14em] border-2 p-[.05em] text-left overflow-hidden transition-all active:scale-[.98] ${status.cardBg} ${isCurrent ? 'ring-2 ring-amber-400/90 shadow-[0_0_28px_rgba(245,158,11,.25)]' : 'shadow-lg'}`}
+                    >
                       <div className="absolute inset-0 bg-gradient-to-b from-white/[.035] to-transparent pointer-events-none" />
                       <div className="relative z-10 flex items-start justify-between gap-1">
-                        <div className="inline-flex flex-col items-start rounded-xl bg-black/70 border border-white/15 px-2 py-1 shadow-[0_2px_8px_rgba(0,0,0,.6)]">
-                          <div className="text-2xl sm:text-3xl font-black text-white font-mono leading-none tracking-tight [text-shadow:0_1px_3px_rgba(0,0,0,.9)]">{tableNum}</div>
-                          <div className="text-[8px] text-amber-300 uppercase font-black tracking-[.14em] mt-0.5">Mesa</div>
+                        <div className="inline-flex flex-col items-start rounded-[.1em] bg-black/70 border border-white/15 px-[.06em] py-[.02em] shadow-[0_2px_8px_rgba(0,0,0,.6)]">
+                          <div className="text-[.26em] font-black text-white font-mono leading-none tracking-tight [text-shadow:0_1px_3px_rgba(0,0,0,.9)]">{tableNum}</div>
+                          {!compact && <div className="text-[.075em] text-amber-300 uppercase font-black tracking-[.14em] mt-[.01em]">Mesa</div>}
                         </div>
-                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${closed ? 'bg-red-500 animate-ping' : inUse ? 'bg-white' : 'bg-emerald-500'}`} />
+                        <span className={`w-[.08em] h-[.08em] min-w-[6px] min-h-[6px] rounded-full shrink-0 mt-[.03em] ${closed ? 'bg-red-500 animate-ping' : inUse ? 'bg-white' : 'bg-emerald-500'}`} />
                       </div>
-                      <img src={getTableVisual(status.key)} alt={`Mesa ${tableNum}`} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[88%] max-w-[120px] h-auto object-contain opacity-95 drop-shadow-[0_12px_14px_rgba(0,0,0,.5)] transition-transform duration-300 group-hover:scale-105" />
-                      <div className="absolute left-2 right-2 bottom-2 z-10 flex items-center justify-between gap-1 border-t border-white/10 pt-1.5">
-                        <span className={`text-[9px] sm:text-[10px] font-black uppercase truncate ${closed ? 'text-red-400 animate-pulse' : inUse ? 'text-white' : 'text-emerald-400'}`}>{closed ? 'AGUARD. PGTO' : inUse ? 'EM USO' : 'MESA LIVRE'}</span>
-                        {order ? <span className="text-[9px] font-mono font-black text-amber-400 truncate">R$ {order.total.toFixed(2)}</span> : <Plus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                      </div>
+                      <img src={getTableVisual(status.key)} alt={`Mesa ${tableNum}`} className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-auto object-contain opacity-95 drop-shadow-[0_8px_10px_rgba(0,0,0,.5)] transition-transform duration-300 group-hover:scale-105 ${compact ? 'top-[58%]' : 'top-1/2'}`} />
+                      {!compact && (
+                        <div className="absolute left-[.05em] right-[.05em] bottom-[.04em] z-10 flex items-center justify-between gap-1 border-t border-white/10 pt-[.02em]">
+                          <span className={`text-[.075em] font-black uppercase truncate ${closed ? 'text-red-400 animate-pulse' : inUse ? 'text-white' : 'text-emerald-400'}`}>{closed ? 'AGUARD. PGTO' : inUse ? 'EM USO' : 'LIVRE'}</span>
+                          {order ? <span className="text-[.075em] font-mono font-black text-amber-400 truncate">R$ {order.total.toFixed(2)}</span> : <Plus className="w-[.1em] h-[.1em] min-w-[10px] min-h-[10px] text-emerald-400 shrink-0" />}
+                        </div>
+                      )}
                     </button>
                   );
-                })}
-              </div>
+                }}
+              />
             </div>
           </div>
         )}

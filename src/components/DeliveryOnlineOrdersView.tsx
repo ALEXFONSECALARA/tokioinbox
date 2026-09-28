@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
+import { useConferencePrint } from '../utils/useConferencePrint';
 
 interface DeliveryOnlineOrdersViewProps {
   onBackToApp?: () => void;
@@ -34,6 +35,7 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
   onBackToApp,
 }) => {
   const { orders, updateOrderStatus, showToast, restaurants } = useStore();
+  const printConference = useConferencePrint();
 
   const [activeTab, setActiveTab] = useState<'all' | 'delivery' | 'retirada'>('all');
   const [statusFilter, setStatusFilter] = useState<'ativos' | 'recebido' | 'em_preparo' | 'pronto' | 'saiu_para_entrega' | 'entregue'>('ativos');
@@ -451,6 +453,16 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
                         title="Imprimir comanda térmica de entrega"
                       >
                         <Printer className="w-4 h-4" />
+                      </button>
+
+                      {/* V9 ULTRA PLUS: FECHAR = imprime a conferência automática na impressora do Caixa */}
+                      <button
+                        type="button"
+                        onClick={() => void printConference(order, order.orderType === 'delivery' ? 'delivery' : 'retirada')}
+                        className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-black uppercase transition-colors"
+                        title="Fechar: imprimir cupom de conferência"
+                      >
+                        Fechar
                       </button>
 
                       {order.status !== 'entregue' && order.status !== 'finalizado' ? (
