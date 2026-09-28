@@ -128,3 +128,25 @@ export function areaFromPathname(pathname: string): StaffArea | null {
       return null;
   }
 }
+
+/**
+ * V9 ULTRA PLUS — ferramentas DESATIVADAS ficam ocultas no painel.
+ * Uma ferramenta ligada a um canal de venda (Salão, Balcão, Delivery) some da
+ * barra de ambientes e da navegação quando o canal está desativado em
+ * Configurações → Canais de Venda.
+ */
+const AREA_CHANNEL: Partial<Record<StaffArea, string[]>> = {
+  pdv: ['mesa'],
+  balcao: ['balcao', 'retirada'],
+  delivery: ['delivery', 'online'],
+};
+
+export function isAreaEnabledByChannels(
+  area: StaffArea,
+  salesChannels?: Record<string, { enabled?: boolean }> | null
+): boolean {
+  const channels = AREA_CHANNEL[area];
+  if (!channels || !salesChannels) return true;
+  // visível se ao menos um dos canais da ferramenta estiver ativo
+  return channels.some((id) => salesChannels[id]?.enabled !== false);
+}

@@ -11,6 +11,7 @@ import {
   StaffRole,
   areaFromPathname,
   areasForRole,
+  isAreaEnabledByChannels,
 } from './access';
 
 /**
@@ -41,8 +42,8 @@ const ENV_TO_AREA: Partial<Record<OperationalEnvironment, StaffArea>> = {
 };
 
 
-function allowedAreasForUser(user: any): StaffArea[] {
-  const roleAreas = areasForRole(user?.role);
+function allowedAreasForUser(user: any, salesChannels?: Record<string, { enabled?: boolean }> | null): StaffArea[] {
+  const roleAreas = areasForRole(user?.role).filter((a) => isAreaEnabledByChannels(a, salesChannels));
   const p = user?.permissions || {};
   return roleAreas.filter((a) => {
     switch (a) {
@@ -114,7 +115,7 @@ const Loading = () => (
 );
 
 export function PainelApp() {
-  const { currentUser, loginUser, logoutUser } = useStore();
+  const { currentUser, loginUser, logoutUser, salesChannels } = useStore();
   const role = currentUser?.role;
 
   // A navegação das ferramentas do painel é interna ao React.
@@ -146,7 +147,7 @@ export function PainelApp() {
   useEffect(() => {
     if (!currentUser) return;
     if (area === null) {
-      const def = allowedAreasForUser(currentUser)[0] || null;
+      const def = allowedAreasForUser(currentUser, salesChannels)[0] || null;
       if (def) goArea(def);
     }
   }, [currentUser?.id, area]);
@@ -160,13 +161,13 @@ export function PainelApp() {
       return;
     }
     const target = ENV_TO_AREA[env];
-    if (!target || !allowedAreasForUser(currentUser).includes(target)) return;
+    if (!target || !allowedAreasForUser(currentUser, salesChannels).includes(target)) return;
     if (target === 'admin' && subOption) setAdminInitialTab(subOption);
     goArea(target);
   };
 
   const backToStart = () => {
-    const def = allowedAreasForUser(currentUser)[0] || null;
+    const def = allowedAreasForUser(currentUser, salesChannels)[0] || null;
     if (def && area !== def) goArea(def);
     else setArea(null);
   };
@@ -175,7 +176,7 @@ export function PainelApp() {
     return <StaffLogin onLogin={loginUser} />;
   }
 
-  const allowed = allowedAreasForUser(currentUser);
+  const allowed = allowedAreasForUser(currentUser, salesChannels);
   const logoutChip = (
     <button
       onClick={() => {
