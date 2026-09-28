@@ -74,6 +74,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [discountPassword, setDiscountPassword] = useState<string>('');
   const [isDiscountAuthorized, setIsDiscountAuthorized] = useState<boolean>(false);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState<boolean>(false);
   const [isAuthorizingDiscount, setIsAuthorizingDiscount] = useState<boolean>(false);
 
   // Cash movement modal
@@ -241,12 +242,15 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   // Complete Payment and Close Order / Table
   const handleConfirmPayment = async () => {
     if (!selectedOrder) return;
+    if (isConfirmingPayment) return; // trava contra duplo clique / fechamento duplicado
 
     if (paymentMethod === 'dinheiro' && cashReceivedNum < finalTotal) {
       showToast('O valor recebido em dinheiro é inferior ao total da conta.', 'warning');
       return;
     }
 
+    setIsConfirmingPayment(true);
+    try {
     if (selectedOrder.orderType === 'mesa' && selectedOrder.tableNumber) {
       // Uma mesa pode possuir mais de uma comanda/pedido. O fechamento é
       // distribuído proporcionalmente para não gravar o total/taxa/desconto
@@ -302,6 +306,9 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     setDiscountAmount(0);
     setIsDiscountAuthorized(false);
     setSplitCount(1);
+    } finally {
+      setIsConfirmingPayment(false);
+    }
   };
 
   // Cash movement form
@@ -748,10 +755,11 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                     <button
                       type="button"
                       onClick={handleConfirmPayment}
-                      className="mt-1.5 w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-950/40 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                      disabled={isConfirmingPayment}
+                      className="mt-1.5 w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-950/40 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
                     >
                       <CheckCircle2 className="w-5 h-5" />
-                      <span>Confirmar Recebimento &amp; Liberar Mesa</span>
+                      <span>{isConfirmingPayment ? 'Processando...' : 'Confirmar Recebimento & Liberar Mesa'}</span>
                     </button>
                   </div>
                 </div>

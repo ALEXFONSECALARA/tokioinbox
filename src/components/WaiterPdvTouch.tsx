@@ -798,6 +798,22 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       setCurrentScreen('mesas');
       return;
     }
+    if (isClosingTable) return; // trava contra duplo clique / fechamento duplicado
+
+    // Não permitir fechar com saldo pendente: em dinheiro, o valor
+    // recebido precisa cobrir o total (salvo troco a favor do cliente).
+    if (paymentMethod === 'dinheiro') {
+      const given = parseFloat((cashGiven || '').replace(',', '.'));
+      if (isNaN(given) || given < finalBillTotal) {
+        const faltante = isNaN(given) ? finalBillTotal : finalBillTotal - given;
+        showToast(`Saldo pendente de R$ ${faltante.toFixed(2)}. Informe o valor recebido antes de fechar a conta.`, 'error');
+        return;
+      }
+    }
+
+    if (!confirm(`Deseja realmente finalizar esta conta e liberar a mesa?\n\nMesa ${selectedTable} — Total: R$ ${finalBillTotal.toFixed(2)} via ${paymentMethod.toUpperCase()}`)) {
+      return;
+    }
 
     setIsClosingTable(true);
     try {
@@ -1109,9 +1125,9 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                     <button key={tableNum} type="button" onClick={() => handleSelectTable(tableNum)} className={`group relative min-h-0 h-full rounded-2xl border-2 p-2 text-left overflow-hidden transition-all active:scale-[.98] ${status.cardBg} ${isCurrent ? 'ring-2 ring-amber-400/90 shadow-[0_0_28px_rgba(245,158,11,.25)]' : 'shadow-lg'}`}>
                       <div className="absolute inset-0 bg-gradient-to-b from-white/[.035] to-transparent pointer-events-none" />
                       <div className="relative z-10 flex items-start justify-between gap-1">
-                        <div>
-                          <div className="text-xl sm:text-2xl font-black text-white font-mono leading-none">{tableNum}</div>
-                          <div className="text-[8px] text-slate-500 uppercase font-black tracking-[.14em] mt-0.5">Mesa</div>
+                        <div className="inline-flex flex-col items-start rounded-xl bg-black/70 border border-white/15 px-2 py-1 shadow-[0_2px_8px_rgba(0,0,0,.6)]">
+                          <div className="text-2xl sm:text-3xl font-black text-white font-mono leading-none tracking-tight [text-shadow:0_1px_3px_rgba(0,0,0,.9)]">{tableNum}</div>
+                          <div className="text-[8px] text-amber-300 uppercase font-black tracking-[.14em] mt-0.5">Mesa</div>
                         </div>
                         <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${closed ? 'bg-red-500' : inUse ? 'bg-white' : 'bg-emerald-500'}`} />
                       </div>

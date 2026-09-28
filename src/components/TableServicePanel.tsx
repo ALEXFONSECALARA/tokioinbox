@@ -72,6 +72,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     currentUser,
     loginUser,
     updateOrderStatus,
+    closeTableOrder,
     requestTableBill,
     showToast,
     soundSettings,
@@ -106,6 +107,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [includeServiceFee, setIncludeServiceFee] = useState(true);
   const [splitCount, setSplitCount] = useState(2);
   const [isSendingOrder, setIsSendingOrder] = useState(false);
+  const [isClosingTable, setIsClosingTable] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   // V8 PRO PLUS: ao fechar a mesa, já abre o cupom para impressão — só libera
   // a mesa de fato (sai da tela) quando o garçom fecha/imprime esse cupom.
@@ -420,7 +422,20 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   };
 
   // Close and Free Table
+  //
+  // CORREÇÃO: esta função chamava updateOrderStatus (PATCH genérico de
+  // status), que só grava um texto livre na statusHistory — sem persistir
+  // paymentMethod, desconto, taxa de serviço, receiptType ou
+  // paymentDetails.paid como campos estruturados, sem invalidar a
+  // senha/QR da mesa (markTableSessionClosed) e sem nenhuma validação de
+  // saldo pendente no backend. Isso duplicava (mal) a lógica que já existe
+  // e funciona em closeTableOrder / closeTableOrderTransactional — a mesma
+  // usada pelo Caixa (CashierStationView) e pelo PDV do Garçom
+  // (WaiterPdvTouch). Agora reaproveita essa função existente em vez de
+  // duplicar o fechamento.
   const handleCloseTable = async (tableId: number) => {
+    if (isClosingTable) return; // trava contra duplo clique / fechamento duplicado
+
     const tableOrders = tableOrdersMap[tableId] || [];
     const activeOrders = tableOrders.filter((o) => o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado');
 
@@ -432,20 +447,67 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
 
     const totalToClose = includeServiceFee ? activeTableSubtotal * 1.1 : activeTableSubtotal;
 
+    // Não permitir fechar com saldo pendente: em dinheiro, o valor
+    // recebido precisa cobrir o total da mesa.
+    if (selectedPaymentMethod === 'dinheiro') {
+      const received = Number(cashReceived) || 0;
+      if (received < totalToClose) {
+        showToast(`Saldo pendente de R$ ${(totalToClose - received).toFixed(2)}. Informe o valor recebido antes de fechar a conta.`, 'error');
+        return;
+      }
+    }
+
     const receiptLabel = receiptType === 'fiscal' ? 'Nota Fiscal (NFC-e)' : 'Cupom Comum (não fiscal)';
 
-    if (confirm(`Confirmar fechamento e liberação da Mesa ${tableId}? Total: R$ ${totalToClose.toFixed(2)} via ${selectedPaymentMethod.toUpperCase()}. Comprovante: ${receiptLabel}.`)) {
-      for (const order of activeOrders) {
-        // BUG CORRIGIDO: aqui o fechamento gravava status 'entregue', que os
-        // filtros de "mesa com conta pendente" no Caixa não reconhecem como
-        // encerrado (eles checam 'finalizado'). Mesa fechada pelo garçom
-        // nunca saía da lista de pendências do Caixa. Ver mesma correção em
-        // server/orderService.ts (closeTableOrderTransactional).
-        await updateOrderStatus(
-          order.id,
-          'finalizado',
-          `Conta fechada via ${selectedPaymentMethod} (${receiptLabel}) e mesa liberada pelo garçom`
-        );
+    const confirmed = confirm(
+      `Deseja realmente finalizar esta conta e liberar a mesa?\n\nMesa ${tableId} — Total: R$ ${totalToClose.toFixed(2)} via ${selectedPaymentMethod.toUpperCase()}\nComprovante: ${receiptLabel}`
+    );
+    if (!confirmed) return;
+
+    setIsClosingTable(true);
+    try {
+      // Uma mesa pode ter mais de uma comanda ativa; o total/taxa é
+      // distribuído proporcionalmente entre elas (mesma lógica usada no
+      // Caixa) para não gravar o valor cheio em cada pedido.
+      const baseSubtotal = activeOrders.reduce((sum, o) => sum + (o.total || 0), 0) || 1;
+      let allocatedTotal = 0;
+      let allocatedService = 0;
+
+      for (let index = 0; index < activeOrders.length; index += 1) {
+        const order = activeOrders[index];
+        const isLast = index === activeOrders.length - 1;
+        const share = (order.total || 0) / baseSubtotal;
+        const orderServiceFee = includeServiceFee
+          ? isLast
+            ? Number((serviceFeeValue - allocatedService).toFixed(2))
+            : Number((serviceFeeValue * share).toFixed(2))
+          : 0;
+        const orderTotal = isLast
+          ? Number((totalToClose - allocatedTotal).toFixed(2))
+          : Number(((order.total || 0) + orderServiceFee).toFixed(2));
+
+        const result = await closeTableOrder({
+          orderId: order.id,
+          tableNumber: tableId,
+          paymentMethod: selectedPaymentMethod,
+          discount: 0,
+          serviceFee: orderServiceFee,
+          total: orderTotal,
+          splitCount,
+          operatorName: currentUser?.name,
+          waiterNotes:
+            selectedPaymentMethod === 'dinheiro' && Number(cashReceived) > totalToClose
+              ? `Troco: R$ ${(Number(cashReceived) - totalToClose).toFixed(2)}`
+              : undefined,
+          receiptType,
+        });
+
+        if (!result.success) {
+          throw new Error(result.error || `Falha ao fechar o pedido ${order.shortCode || order.id} da mesa`);
+        }
+
+        allocatedTotal += orderTotal;
+        allocatedService += orderServiceFee;
       }
 
       // Record in Shift History
@@ -465,6 +527,10 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
       setTableJustClosed(true);
       setShowPrintModal(true);
       showToast(`Mesa ${tableId} fechada com sucesso! (${receiptLabel}) Imprima o cupom abaixo.`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Erro ao fechar a conta da mesa.', 'error');
+    } finally {
+      setIsClosingTable(false);
     }
   };
 
@@ -1071,10 +1137,10 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="text-xl font-black text-white group-hover:text-amber-400 transition-colors">
+                    <span className="inline-block text-2xl sm:text-3xl font-black text-white group-hover:text-amber-400 transition-colors leading-none tracking-tight [text-shadow:0_1px_3px_rgba(0,0,0,.8)]">
                       {table.label}
                     </span>
-                    <p className="text-[11px] text-stone-400 flex items-center gap-1 mt-0.5">
+                    <p className="text-[11px] text-stone-400 flex items-center gap-1 mt-1.5">
                       <Users className="w-3 h-3" />
                       {table.capacity} Lugares
                     </p>
@@ -1719,10 +1785,11 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCloseTable(activeTableId)}
-                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-600/20"
+                      disabled={isClosingTable}
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-600/20"
                     >
                       <CheckCircle2 className="w-4 h-4" />
-                      Encerrar Atendimento &amp; Liberar Mesa
+                      {isClosingTable ? 'Fechando...' : 'Encerrar Atendimento & Liberar Mesa'}
                     </button>
 
                     <button
