@@ -24,12 +24,14 @@ interface ThermalTicketModalProps {
   order: Order;
   restaurant: RestaurantConfig;
   onClose: () => void;
+  ticketKind?: 'conferencia' | 'cupom';
 }
 
 export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
   order,
   restaurant,
   onClose,
+  ticketKind,
 }) => {
   const { updateOrderPrintStatus, printerSettings, updatePrinterSettings, showToast } = useStore();
   const [printStep, setPrintStep] = useState<'idle' | 'printing' | 'printed' | 'error'>(
@@ -120,7 +122,7 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Comanda {order.shortCode} • {order.customerName}
+                {ticketKind === 'cupom' ? 'Cupom Comum (não fiscal)' : ticketKind === 'conferencia' ? 'Conferência' : 'Comanda'} {order.shortCode} • {order.customerName}
               </p>
             </div>
           </div>

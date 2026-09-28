@@ -43,6 +43,8 @@ import {
   Ban,
   Tag,
   ChevronDown,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
 import { ThermalTicketModal } from './ThermalTicketModal';
@@ -80,6 +82,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     appendItemsToTableOrder,
     updateOrderItem,
     closeTableOrder,
+    requestTableBill,
+    reopenTable,
     activeRestaurantSlug,
     setActiveRestaurantSlug,
     restaurants,
@@ -136,7 +140,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [waiterName, setWaiterName] = useState('Garçom Salão');
 
   // Screen 1: Mesas Filters & Modal
-  const [tableFilter, setTableFilter] = useState<'todos' | 'livre' | 'atendimento' | 'pronto' | 'fechamento'>('todos');
+  const [tableFilter, setTableFilter] = useState<'todos' | 'livre' | 'atendimento' | 'pronto' | 'aguardando_pagamento'>('todos');
   const [tableModalOption, setTableModalOption] = useState<number | null>(null);
   const [showSwitchTableModal, setShowSwitchTableModal] = useState(false);
   const [showTableManagerModal, setShowTableManagerModal] = useState(false);
@@ -179,6 +183,11 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [isClosingTable, setIsClosingTable] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [isFinalizeExpanded, setIsFinalizeExpanded] = useState(false);
+  // V9: REABRIR CONTA (aviso obrigatório) e ação de FECHAMENTO em andamento
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false);
+  const [isFechando, setIsFechando] = useState(false);
+  const [isReopening, setIsReopening] = useState(false);
+  const [ticketKind, setTicketKind] = useState<'conferencia' | 'cupom'>('conferencia');
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
 
@@ -187,8 +196,11 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     const configured = Array.isArray(restaurant?.activeTables)
       ? restaurant.activeTables
       : Array.from({ length: 26 }, (_, i) => i + 1);
+    // V9: só entram mesas com comanda ATIVA. Antes, qualquer pedido antigo
+    // (já finalizado/cancelado) de um número fora do cadastro criava uma
+    // "mesa fantasma" sem pedido na tela.
     const activeFromOrders = orders
-      .filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber))
+      .filter((o) => o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && Number.isInteger(o.tableNumber) && o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado')
       .map((o) => Number(o.tableNumber));
     return Array.from(new Set([...configured, ...activeFromOrders]))
       .filter((n) => Number.isInteger(n) && n > 0 && n <= 999)
@@ -348,8 +360,18 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     return map;
   }, [orders, activeRestaurantSlug]);
 
+  // V9: mesa em AGUARDANDO PAGAMENTO = qualquer comanda ativa da mesa com awaitingPayment
+  const awaitingByTable = useMemo(() => {
+    const set = new Set<number>();
+    orders.forEach((o) => {
+      if (o.restaurantSlug === activeRestaurantSlug && o.orderType === 'mesa' && o.tableNumber && o.awaitingPayment && o.status !== 'entregue' && o.status !== 'finalizado' && o.status !== 'cancelado') set.add(Number(o.tableNumber));
+    });
+    return set;
+  }, [orders, activeRestaurantSlug]);
+
   // Current active order for selected table
   const currentTableOrder = selectedTable ? activeOrdersByTable[selectedTable] : null;
+  const selectedTableAwaiting = selectedTable ? awaitingByTable.has(selectedTable) : false;
 
   // Determine Table status label and visual theme
   const getTableStatus = (tableNum: number) => {
@@ -362,6 +384,16 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
         cardBg: 'bg-[#101522] border-slate-800/80 hover:border-emerald-500/50',
         dot: 'bg-emerald-400',
         hasOrder: false,
+      };
+    }
+    if (awaitingByTable.has(tableNum)) {
+      return {
+        key: 'aguardando_pagamento' as const,
+        label: 'AGUARDANDO PAGAMENTO',
+        badgeColor: 'bg-red-500 text-white font-black border-red-400 animate-pulse',
+        cardBg: 'bg-red-500/[.10] border-red-500/70 hover:border-red-400 animate-pulse',
+        dot: 'bg-red-500 animate-ping',
+        hasOrder: true,
       };
     }
     if (order.status === 'pronto') {
@@ -394,12 +426,13 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
         hasOrder: true,
       };
     }
+    // demais status (aceito, parcialmente_pronto...) = mesa EM USO
     return {
-      key: 'fechamento' as const,
-      label: 'Fechamento',
-      badgeColor: 'bg-red-500 text-white font-black border-red-400',
-      cardBg: 'bg-red-500/[.08] border-red-500/50 hover:border-red-400',
-      dot: 'bg-red-500',
+      key: 'atendimento' as const,
+      label: 'Em Uso',
+      badgeColor: 'bg-white text-slate-950 font-black border-white',
+      cardBg: 'bg-white/[.05] border-white/30 hover:border-white',
+      dot: 'bg-white',
       hasOrder: true,
     };
   };
@@ -546,6 +579,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   // Fast direct add to cart from the product card
   const handleQuickAdd = (e: React.MouseEvent, item: MenuItem) => {
     e.stopPropagation();
+    if (selectedTableAwaiting) { showToast('Mesa em AGUARDANDO PAGAMENTO: reabra a conta para adicionar itens.', 'error'); return; }
 
     // Check if item has mandatory option groups
     const hasRequiredOptions = item.optionGroups?.some((g) => g.required);
@@ -607,6 +641,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
   // Open item customizer (Touch Modal)
   const handleOpenItem = (item: MenuItem, existingDraftId?: string) => {
+    if (selectedTableAwaiting) { showToast('Mesa em AGUARDANDO PAGAMENTO: reabra a conta para adicionar itens.', 'error'); return; }
     setEditingItem(item);
     if (existingDraftId) {
       const draft = draftItems.find((d) => d.id === existingDraftId);
@@ -752,6 +787,11 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       return;
     }
 
+    if (selectedTableAwaiting) {
+      showToast('Mesa em AGUARDANDO PAGAMENTO: reabra a conta para adicionar itens.', 'error');
+      return;
+    }
+
     if (draftItems.length === 0) {
       showToast('Adicione pelo menos 1 item ao pedido antes de enviar', 'error');
       return;
@@ -790,9 +830,37 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     }
   };
 
-  // Close Table & Free (Screen 4)
+  // V9 — botão FECHAMENTO: só trava a conta (AGUARDANDO PAGAMENTO). Não paga.
+  const handleFechamentoAction = async () => {
+    if (!selectedTable || !currentTableOrder || isFechando) return;
+    setIsFechando(true);
+    try {
+      const r = await requestTableBill(selectedTable, activeRestaurantSlug);
+      if (r.success) { setDraftItems([]); playAlertSound('sound1', 0.5); }
+    } finally {
+      setIsFechando(false);
+    }
+  };
+
+  // V9 — REABRIR CONTA (após o aviso obrigatório)
+  const handleReopenAction = async () => {
+    if (!selectedTable || isReopening) return;
+    setIsReopening(true);
+    try {
+      const r = await reopenTable(selectedTable, activeRestaurantSlug);
+      if (r.success) { setShowReopenConfirm(false); setCurrentScreen('cardapio'); }
+    } finally {
+      setIsReopening(false);
+    }
+  };
+
+  // V9 — botão PAGAMENTO: confirma o recebimento, finaliza a conta e libera a mesa
   const handleCloseTableAction = async () => {
     if (!selectedTable) return;
+    if (!selectedTableAwaiting) {
+      showToast('Faça o FECHAMENTO da conta antes de registrar o pagamento.', 'error');
+      return;
+    }
     if (!currentTableOrder) {
       showToast('Esta mesa não possui comanda ativa para fechamento', 'error');
       setCurrentScreen('mesas');
@@ -1093,7 +1161,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                     { key: 'livre', label: 'Livre' },
                     { key: 'atendimento', label: 'Em Atendimento' },
                     { key: 'pronto', label: 'Pronto / Servir' },
-                    { key: 'fechamento', label: 'Fechamento' },
+                    { key: 'aguardando_pagamento', label: 'Aguardando Pgto' },
                   ] as const
                 ).map((f) => (
                   <button
@@ -1112,28 +1180,29 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
             </div>
 
             {/* Cadastro removido do fluxo de venda: fica em Ferramentas no topo. */}
-            <div className="table-isometric-canvas rounded-3xl border border-slate-800/90 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,.08),transparent_42%),#080C14] p-2 sm:p-3 overflow-hidden h-[calc(100dvh-17rem)] min-h-0">
-              <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 sm:gap-3 h-full auto-rows-fr">
+            <div className="table-isometric-canvas rounded-3xl border border-slate-800/90 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,.08),transparent_42%),#080C14] p-3 sm:p-4">
+              {/* V9: células de tamanho fixo, grade centralizada e sem corte (a área principal rola) */}
+              <div className="grid gap-3 sm:gap-4 justify-center justify-items-center" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 132px))' }}>
                 {tableNumbers.map((tableNum) => {
                   const status = getTableStatus(tableNum);
                   const order = activeOrdersByTable[tableNum];
                   if (tableFilter !== 'todos' && status.key !== tableFilter) return null;
                   const isCurrent = selectedTable === tableNum;
-                  const closed = status.key === 'fechamento';
+                  const closed = status.key === 'aguardando_pagamento';
                   const inUse = status.key !== 'livre';
                   return (
-                    <button key={tableNum} type="button" onClick={() => handleSelectTable(tableNum)} className={`group relative min-h-0 h-full rounded-2xl border-2 p-2 text-left overflow-hidden transition-all active:scale-[.98] ${status.cardBg} ${isCurrent ? 'ring-2 ring-amber-400/90 shadow-[0_0_28px_rgba(245,158,11,.25)]' : 'shadow-lg'}`}>
+                    <button key={tableNum} type="button" onClick={() => handleSelectTable(tableNum)} className={`group relative w-full aspect-square rounded-2xl border-2 p-2 text-left overflow-hidden transition-all active:scale-[.98] ${status.cardBg} ${isCurrent ? 'ring-2 ring-amber-400/90 shadow-[0_0_28px_rgba(245,158,11,.25)]' : 'shadow-lg'}`}>
                       <div className="absolute inset-0 bg-gradient-to-b from-white/[.035] to-transparent pointer-events-none" />
                       <div className="relative z-10 flex items-start justify-between gap-1">
                         <div className="inline-flex flex-col items-start rounded-xl bg-black/70 border border-white/15 px-2 py-1 shadow-[0_2px_8px_rgba(0,0,0,.6)]">
                           <div className="text-2xl sm:text-3xl font-black text-white font-mono leading-none tracking-tight [text-shadow:0_1px_3px_rgba(0,0,0,.9)]">{tableNum}</div>
                           <div className="text-[8px] text-amber-300 uppercase font-black tracking-[.14em] mt-0.5">Mesa</div>
                         </div>
-                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${closed ? 'bg-red-500' : inUse ? 'bg-white' : 'bg-emerald-500'}`} />
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${closed ? 'bg-red-500 animate-ping' : inUse ? 'bg-white' : 'bg-emerald-500'}`} />
                       </div>
                       <img src={getTableVisual(status.key)} alt={`Mesa ${tableNum}`} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[88%] max-w-[120px] h-auto object-contain opacity-95 drop-shadow-[0_12px_14px_rgba(0,0,0,.5)] transition-transform duration-300 group-hover:scale-105" />
                       <div className="absolute left-2 right-2 bottom-2 z-10 flex items-center justify-between gap-1 border-t border-white/10 pt-1.5">
-                        <span className={`text-[9px] sm:text-[10px] font-black uppercase truncate ${closed ? 'text-red-400' : inUse ? 'text-white' : 'text-emerald-400'}`}>{closed ? 'FECHADA' : inUse ? 'EM USO' : 'ABERTA'}</span>
+                        <span className={`text-[9px] sm:text-[10px] font-black uppercase truncate ${closed ? 'text-red-400 animate-pulse' : inUse ? 'text-white' : 'text-emerald-400'}`}>{closed ? 'AGUARD. PGTO' : inUse ? 'EM USO' : 'MESA LIVRE'}</span>
                         {order ? <span className="text-[9px] font-mono font-black text-amber-400 truncate">R$ {order.total.toFixed(2)}</span> : <Plus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
                       </div>
                     </button>
@@ -1215,6 +1284,13 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                 </button>
               </div>
             </div>
+
+            {selectedTableAwaiting && (
+              <div className="rounded-2xl border-2 border-red-500/70 bg-red-500/10 p-3 flex flex-col sm:flex-row items-center justify-between gap-2">
+                <span className="text-xs font-black text-red-300 uppercase animate-pulse">🔴 AGUARDANDO PAGAMENTO — conta travada, sem novos lançamentos</span>
+                <button type="button" onClick={() => setShowReopenConfirm(true)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-100 text-xs font-black uppercase border border-slate-600">Reabrir Conta</button>
+              </div>
+            )}
 
             {/* ================================================================= */}
             {/* LAYOUT PRINCIPAL: SPLIT DESKTOP/TABLET (GRID DE VENDA + CARRINHO FIXO) */}
@@ -2016,15 +2092,45 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowPrintModal(true)}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-black rounded-xl border border-slate-700 flex items-center gap-2 transition-all active:scale-95"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Imprimir Conferência</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap justify-center">
+                <button
+                  type="button"
+                  onClick={() => { setTicketKind('conferencia'); setShowPrintModal(true); }}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-black rounded-xl border border-slate-700 flex items-center gap-2 transition-all active:scale-95"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Imprimir Conferência</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTicketKind('cupom'); setShowPrintModal(true); }}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-black rounded-xl border border-slate-700 flex items-center gap-2 transition-all active:scale-95"
+                >
+                  <Receipt className="w-4 h-4" />
+                  <span>Cupom Comum</span>
+                </button>
+              </div>
             </div>
+
+            {/* V9: estado da conta */}
+            {selectedTableAwaiting ? (
+              <div className="rounded-3xl border-2 border-red-500/70 bg-red-500/10 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3 animate-pulse">
+                  <span className="w-3 h-3 rounded-full bg-red-500" />
+                  <div>
+                    <div className="text-sm font-black text-red-300 uppercase tracking-wider">AGUARDANDO PAGAMENTO</div>
+                    <div className="text-[11px] text-slate-400">Conta travada para novos lançamentos. Ainda não está paga.</div>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowReopenConfirm(true)} className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-black uppercase border border-slate-600 flex items-center gap-2">
+                  <Unlock className="w-4 h-4 text-sky-400" /> Reabrir Conta
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-slate-800 bg-[#111624] px-4 py-3 text-[11px] text-slate-400">
+                Mesa <span className="font-black text-white">EM USO</span>. Clique em <span className="font-black text-amber-400">FECHAMENTO</span> para travar a conta e aguardar o pagamento.
+              </div>
+            )}
 
             {/* Resumo dos Itens Consumidos */}
             <div className="bg-[#111624] border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
@@ -2056,7 +2162,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               </div>
             </div>
 
-            {/* Finalizar Comanda — ferramentas financeiras recolhidas por padrão */}
+            {/* Finalizar Comanda — só disponível em AGUARDANDO PAGAMENTO */}
+            {selectedTableAwaiting && (<>
             <div className="bg-[#111624] border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
               <button type="button" onClick={() => setIsFinalizeExpanded((v) => !v)} className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/[.02]">
                 <div>
@@ -2075,7 +2182,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                   <span className="text-xl font-black text-amber-400 font-mono">R$ {finalBillTotal.toFixed(2)}</span>
                 </div>
 
-                {isFinalizeExpanded && (
+                {(isFinalizeExpanded || selectedTableAwaiting) && (
                   <div className="space-y-3 pt-2">
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div className="rounded-2xl bg-[#0B1019] border border-slate-800 p-3 space-y-2">
@@ -2209,16 +2316,23 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                 </div>
               )}
             </div>
+            </>)}
 
-            {/* Ação principal: cobrar. Ações secundárias ficam discretas no rodapé. */}
+            {/* Ação principal: FECHAMENTO (trava a conta) ou PAGAMENTO (confirma e libera a mesa). */}
             <div className="bg-[#111624] border border-slate-800 rounded-3xl p-4 shadow-2xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-400 font-black uppercase">Total a pagar</span>
                 <span className="text-2xl font-black text-amber-400 font-mono">R$ {finalBillTotal.toFixed(2)}</span>
               </div>
-              <button type="button" onClick={handleCloseTableAction} disabled={isClosingTable || tableItems.length === 0} className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:brightness-110 disabled:opacity-50 text-slate-950 font-black text-sm uppercase rounded-2xl shadow-xl flex items-center justify-center gap-2">
-                {isClosingTable ? <><RefreshCw className="w-5 h-5 animate-spin" /> PROCESSANDO...</> : <><CheckCircle2 className="w-5 h-5" /> COBRAR MESA</>}
-              </button>
+              {!selectedTableAwaiting ? (
+                <button type="button" onClick={handleFechamentoAction} disabled={isFechando || !currentTableOrder || tableItems.length === 0} className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:brightness-110 disabled:opacity-50 text-slate-950 font-black text-sm uppercase rounded-2xl shadow-xl flex items-center justify-center gap-2">
+                  {isFechando ? <><RefreshCw className="w-5 h-5 animate-spin" /> PROCESSANDO...</> : <><Lock className="w-5 h-5" /> FECHAMENTO</>}
+                </button>
+              ) : (
+                <button type="button" onClick={handleCloseTableAction} disabled={isClosingTable || tableItems.length === 0} className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:brightness-110 disabled:opacity-50 text-slate-950 font-black text-sm uppercase rounded-2xl shadow-xl flex items-center justify-center gap-2">
+                  {isClosingTable ? <><RefreshCw className="w-5 h-5 animate-spin" /> PROCESSANDO...</> : <><CheckCircle2 className="w-5 h-5" /> PAGAMENTO</>}
+                </button>
+              )}
               <div className="flex items-center justify-end gap-3 pt-1">
                 <button type="button" onClick={() => setCurrentScreen('pedido')} className="text-[10px] font-bold text-slate-500 hover:text-slate-300">Cancelar</button>
                 <button type="button" onClick={handleSaveDraft} disabled={!draftItems.length} className="px-3 py-1.5 rounded-lg border border-slate-600 text-[10px] font-black text-slate-300 disabled:opacity-40">Salvar</button>
@@ -2608,8 +2722,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               <div className="shrink-0 border-t border-slate-800 bg-[#0B1019] px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
                 <div className="text-sm font-black text-white">TOTAL: <span className="text-amber-400 font-mono">R$ {(order?.total || 0).toFixed(2)}</span></div>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('cardapio'); }} className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-black">Adicionar Itens</button>
-                  <button type="button" disabled={!order} onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('fechamento'); }} className="px-5 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black uppercase disabled:opacity-40">Cobrar Mesa</button>
+                  <button type="button" disabled={awaitingByTable.has(table)} onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('cardapio'); }} className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-black disabled:opacity-40">{awaitingByTable.has(table) ? 'Conta travada' : 'Adicionar Itens'}</button>
+                  <button type="button" disabled={!order} onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('fechamento'); }} className={`px-5 py-2 rounded-xl text-slate-950 text-xs font-black uppercase disabled:opacity-40 ${awaitingByTable.has(table) ? 'bg-emerald-400 animate-pulse' : 'bg-amber-500'}`}>{awaitingByTable.has(table) ? 'Pagamento' : 'Fechamento'}</button>
                 </div>
               </div>
             </div>
@@ -2692,10 +2806,28 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
       {/* ========================================================================= */}
       {/* 9. MODAL DE IMPRESSÃO TÉRMICA */}
       {/* ========================================================================= */}
+      {showReopenConfirm && (
+        <div className="modal-viewport fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-[#121622] border border-amber-500/40 rounded-3xl p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0" />
+              <p className="text-sm font-semibold text-slate-100">
+                Atenção: ao reabrir a conta, a mesa voltará para EM USO e será possível adicionar novos itens. Deseja continuar?
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setShowReopenConfirm(false)} disabled={isReopening} className="py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-black uppercase border border-slate-700">Cancelar</button>
+              <button type="button" onClick={handleReopenAction} disabled={isReopening} className="py-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-black uppercase">{isReopening ? 'Reabrindo...' : 'Confirmar Reabertura'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPrintModal && currentTableOrder && (
         <ThermalTicketModal
           order={currentTableOrder}
           restaurant={restaurant}
+          ticketKind={ticketKind}
           onClose={() => setShowPrintModal(false)}
         />
       )}
