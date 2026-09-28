@@ -818,7 +818,7 @@ app.get('/api/print-agent/jobs', authenticateStaffOrAgent, (req, res) => {
 // 2. Enqueue print job with idempotency
 app.post('/api/print-agent/jobs', authenticateStaffOrAgent, (req, res) => {
   try {
-    const { orderId, orderShortCode, restaurantSlug, station, rawEscPos } = req.body;
+    const { orderId, orderShortCode, restaurantSlug, station, rawEscPos, printerId } = req.body;
     if (!orderId || !restaurantSlug || !station) {
       return res.status(400).json({ success: false, error: 'Dados incompletos para envio de impressão' });
     }
@@ -829,6 +829,7 @@ app.post('/api/print-agent/jobs', authenticateStaffOrAgent, (req, res) => {
       restaurantSlug,
       station,
       rawEscPos,
+      printerId,
     });
 
     res.status(result.deduplicated ? 200 : 201).json({
