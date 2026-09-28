@@ -1219,6 +1219,18 @@ export function closeTableOrderTransactional(params: {
   }
 
   const currentOrder = ordersCache[idx];
+
+  // Segurança (item 8 do checklist de fechamento): impede fechamento
+  // duplicado. Sem esta trava no backend, dois cliques no botão de fechar
+  // (ou duas abas/dispositivos fechando a mesma comanda) reabririam o
+  // fluxo de pagamento sobre uma conta já paga e gerariam duplicidade no
+  // histórico/auditoria mesmo com a trava de UI (disabled) do frontend.
+  if (currentOrder.status === 'finalizado' && currentOrder.paymentDetails?.paid) {
+    throw new Error(
+      `Esta conta (Mesa ${params.tableNumber}, pedido ${currentOrder.shortCode}) já foi fechada e paga anteriormente. Abra uma nova comanda para a mesa.`
+    );
+  }
+
   const nowIso = new Date().toISOString();
   const discount = Math.max(0, Number(params.discount) || 0);
   const serviceFee = Math.max(0, Number(params.serviceFee) || 0);
