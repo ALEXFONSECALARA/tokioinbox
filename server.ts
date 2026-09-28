@@ -1530,6 +1530,9 @@ app.post('/api/tables/:tableNumber/request-bill', authenticateStaff, requirePerm
     if (!restaurantSlug) {
       return res.status(400).json({ success: false, error: 'restaurantSlug é obrigatório.' });
     }
+    if (!canAccessRestaurant(req, restaurantSlug)) {
+      return res.status(403).json({ success: false, error: 'Seu usuário não tem acesso a este restaurante.' });
+    }
     const affected = requestTableBillTransactional({
       tableNumber: Number(req.params.tableNumber),
       restaurantSlug,
@@ -1559,6 +1562,14 @@ app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('ca
 
     if (!paymentMethod) {
       return res.status(400).json({ success: false, error: 'Forma de pagamento é obrigatória para fechar a conta' });
+    }
+
+    // Isolamento multi-restaurante (item 9): impede que um operador feche
+    // uma comanda de outro restaurante, mesmo conhecendo o orderId — a
+    // mesma checagem já usada em GET /api/orders/:id e POST /api/orders.
+    const existingOrder = getOrderById(req.params.id);
+    if (!existingOrder || !canAccessRestaurant(req, existingOrder.restaurantSlug)) {
+      return res.status(404).json({ success: false, error: 'Pedido não encontrado' });
     }
 
     const closed = closeTableOrderTransactional({
