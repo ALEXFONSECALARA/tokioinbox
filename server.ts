@@ -17,6 +17,7 @@ import {
   appendItemsToTableOrderTransactional,
   closeTableOrderTransactional,
   requestTableBillTransactional,
+  reopenTableOrderTransactional,
   updateOrderPrintStatusTransactional,
   updateOrderTableTransactional,
   updateOrderItemTransactional,
@@ -1539,6 +1540,38 @@ app.post('/api/tables/:tableNumber/request-bill', authenticateStaff, requirePerm
       operatorName: operatorName || req.userSession?.name,
     });
     affected.forEach((o) => broadcastOrdersUpdate('bill_requested', o));
+    res.json({ success: true, orders: affected });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// 5c-ter. V9 ULTRA-CORREÇÃO: "REABRIR CONTA" — desfaz o FECHAMENTO
+// temporário (não o pagamento). Mesa volta para EM USO e aceita novos itens.
+app.post('/api/tables/:tableNumber/reopen', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
+  try {
+    const { restaurantSlug, operatorName } = req.body;
+    if (!restaurantSlug) {
+      return res.status(400).json({ success: false, error: 'restaurantSlug é obrigatório.' });
+    }
+    if (!canAccessRestaurant(req, restaurantSlug)) {
+      return res.status(403).json({ success: false, error: 'Seu usuário não tem acesso a este restaurante.' });
+    }
+    const affected = reopenTableOrderTransactional({
+      tableNumber: Number(req.params.tableNumber),
+      restaurantSlug,
+      operatorName: operatorName || req.userSession?.name,
+    });
+    affected.forEach((o) => broadcastOrdersUpdate('table_reopened', o));
+
+    logAuditAction({
+      userName: operatorName || req.userSession?.name || 'Operador',
+      userRole: req.userSession?.role || 'painel',
+      action: `Reabriu a conta da Mesa ${req.params.tableNumber}`,
+      details: `${affected.length} comanda(s) voltaram para EM USO`,
+      category: 'order',
+    });
+
     res.json({ success: true, orders: affected });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
