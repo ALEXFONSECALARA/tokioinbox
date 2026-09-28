@@ -52,13 +52,7 @@ export type OrderStatus =
   | 'finalizado'
   | 'cancelado';
 
-// Estações padrão mantidas por compatibilidade. Cada restaurante pode adicionar
-// estações próprias (ex.: chapa, forno, montagem, fritura, confeitaria etc.).
-export type ProductionStation =
-  | 'cozinha'
-  | 'sushibar'
-  | 'bar'
-  | (string & {});
+export type ProductionStation = 'cozinha' | 'sushibar' | 'bar';
 
 export type StationItemStatus = 'recebido' | 'em_preparo' | 'pedido_feito';
 
@@ -190,14 +184,6 @@ export interface RestaurantThemeStyle {
   aura: string;
 }
 
-export interface ProductionStationConfig {
-  id: string;
-  name: string;
-  enabled: boolean;
-  description?: string;
-  printerStation?: string;
-}
-
 export interface RestaurantConfig {
   slug: RestaurantSlug;
   customUrlPath?: string; // Dedicated HTTP path alias, e.g. "SakuraSushiHouse", "CantinaBellaVista", "FornoDOro", "BurgerCraftBeer"
@@ -205,10 +191,6 @@ export interface RestaurantConfig {
   name: string;
   tagline: string;
   cuisine: string;
-  /** Tipo de cozinha/negócio do restaurante. Não limita as estações nem o cardápio. */
-  businessType?: string;
-  /** Estações de produção configuráveis por restaurante. */
-  productionStations?: ProductionStationConfig[];
   emoji: string;
   color: string; // Tailwind color class or hex
   accentColor: string;
