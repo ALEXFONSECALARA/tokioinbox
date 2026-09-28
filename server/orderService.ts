@@ -537,6 +537,9 @@ export function createOrderTransactional(
   if (!actor.isStaff && restaurant.isOpen === false) {
     throw new Error(`${restaurant.name} está fechado no momento e não está recebendo pedidos.`);
   }
+  if (canonicalRequestedType === 'mesa') {
+    assertTableNotAwaitingPayment(slug, Number(payload.tableNumber));
+  }
   const restaurantName = restaurant.name;
 
   // 4. Preços SEMPRE vindos do catálogo do servidor
@@ -1003,6 +1006,7 @@ export function appendItemsToTableOrderTransactional(params: {
   if (!Number.isInteger(params.tableNumber) || params.tableNumber < 1 || params.tableNumber > 999) {
     throw new Error('Número de mesa inválido.');
   }
+  assertTableNotAwaitingPayment(params.restaurantSlug, params.tableNumber);
 
   // Idempotência obrigatória para operações de mesa: retries/reloads com a mesma chave
   // devem devolver exatamente o mesmo resultado sem acrescentar itens novamente.
@@ -1160,6 +1164,33 @@ export function updateOrderItemTransactional(params: {
  * consumo. A confirmação do pagamento continua sendo feita por
  * closeTableOrderTransactional (que grava paid=true e status='finalizado').
  */
+/**
+ * V9 ULTRA-CORREÇÃO: trava de segurança usada tanto na criação de pedido
+ * (createOrderTransactional, orderType 'mesa') quanto no lançamento
+ * incremental (appendItemsToTableOrderTransactional). Enquanto a mesa está
+ * em AGUARDANDO PAGAMENTO (awaitingPayment=true numa comanda ativa), nenhum
+ * item novo pode ser lançado — a conta só volta a aceitar lançamentos após
+ * REABRIR CONTA (reopenTableOrderTransactional) ou depois de finalizada via
+ * PAGAMENTO.
+ */
+function assertTableNotAwaitingPayment(restaurantSlug: string, tableNumber?: number): void {
+  if (!Number.isInteger(tableNumber)) return;
+  const blocking = ordersCache.find(
+    (o) =>
+      o.restaurantSlug === restaurantSlug &&
+      o.orderType === 'mesa' &&
+      o.tableNumber === tableNumber &&
+      o.status !== 'finalizado' &&
+      o.status !== 'cancelado' &&
+      o.awaitingPayment
+  );
+  if (blocking) {
+    throw new Error(
+      `Mesa ${tableNumber} está em FECHAMENTO (aguardando pagamento) e não aceita novos itens. Reabra a conta para lançar novos pedidos.`
+    );
+  }
+}
+
 export function requestTableBillTransactional(params: {
   tableNumber: number;
   restaurantSlug: string;
@@ -1187,6 +1218,53 @@ export function requestTableBillTransactional(params: {
             status: order.status,
             timestamp: 'Agora mesmo',
             note: `Conta solicitada${params.operatorName ? ` por ${params.operatorName}` : ''} — aguardando pagamento no caixa.`,
+          },
+        ],
+        updatedAt: nowIso,
+      };
+      ordersCache[idx] = updated;
+      affected.push(updated);
+    }
+  });
+
+  if (affected.length > 0) persistOrdersSync();
+  return affected;
+}
+
+/**
+ * V9 ULTRA-CORREÇÃO — "REABRIR CONTA".
+ * Desfaz o FECHAMENTO temporário (awaitingPayment=true) sem tocar em itens,
+ * valores ou status do pedido: a mesa volta para EM USO e passa a aceitar
+ * novos lançamentos de novo. Nunca mexe em comandas já finalizadas/pagas —
+ * essa função não reverte um PAGAMENTO, só um pedido de conta.
+ */
+export function reopenTableOrderTransactional(params: {
+  tableNumber: number;
+  restaurantSlug: string;
+  operatorName?: string;
+}): Order[] {
+  initializeOrders();
+  const nowIso = new Date().toISOString();
+  const affected: Order[] = [];
+
+  ordersCache.forEach((order, idx) => {
+    if (
+      order.restaurantSlug === params.restaurantSlug &&
+      order.orderType === 'mesa' &&
+      order.tableNumber === params.tableNumber &&
+      order.status !== 'finalizado' &&
+      order.status !== 'cancelado' &&
+      order.awaitingPayment
+    ) {
+      const updated: Order = {
+        ...order,
+        awaitingPayment: false,
+        statusHistory: [
+          ...order.statusHistory,
+          {
+            status: order.status,
+            timestamp: 'Agora mesmo',
+            note: `Conta reaberta${params.operatorName ? ` por ${params.operatorName}` : ''} — mesa voltou para EM USO, novos itens liberados.`,
           },
         ],
         updatedAt: nowIso,
