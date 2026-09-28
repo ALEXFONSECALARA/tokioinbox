@@ -506,7 +506,28 @@ export interface SmartTicketAIAnalysis {
   fallback?: boolean;
 }
 
+/** Origem do botão de fechamento que dispara a conferência automática. */
+export type ConferenceSource = 'garcom' | 'caixa' | 'mesa' | 'balcao' | 'retirada' | 'delivery' | 'pedidos';
+
+/** V9 ULTRA PLUS — impressão automática do cupom de conferência ao clicar em FECHAR. */
+export interface ConferenceAutoPrintOptions {
+  enabled: boolean;
+  /** Liga/desliga por tela (garçom, caixa, salão, balcão, retirada, delivery, pedidos). */
+  sources: Record<ConferenceSource, boolean>;
+  copies: number;
+  /**
+   * auto    = usa o Agente de Impressão (impressora do CAIXA) e, se não houver, imprime pelo navegador.
+   * agent   = somente Agente de Impressão (100% silencioso).
+   * browser = somente impressão do navegador (usa a impressora padrão do computador).
+   */
+  mode: 'auto' | 'agent' | 'browser';
+  /** Impressora escolhida no Caixa (id do Agente de Impressão). */
+  printerId?: string;
+  printerName?: string;
+}
+
 export interface PrinterSettings {
+  conferenceAutoPrint?: ConferenceAutoPrintOptions;
   paperWidth: '80mm' | '58mm';
   autoPrintOnNewOrder: boolean;
   soundAlert: boolean;
