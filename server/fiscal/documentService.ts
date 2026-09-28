@@ -17,6 +17,7 @@ import {
   inutilizarNumeracaoSefaz,
 } from './sefazService';
 import { signXml } from './certificateService';
+import { getCertificateMetadata } from './certificateService';
 import { logFiscalAction } from './fiscalAudit';
 
 const FISCAL_DIR = path.join(process.cwd(), 'data', 'fiscal');
@@ -310,6 +311,19 @@ export async function emitFiscalDocument(params: {
   }
 
   const config = getFiscalConfig(params.restaurantSlug);
+
+  // REGRA FISCAL OBRIGATÓRIA (item 4 do checklist): nunca simular emissão.
+  // Sem certificado digital carregado para o restaurante, não há como
+  // assinar o XML/CF-e de verdade — a emissão é recusada aqui, antes de
+  // consumir numeração de série ou gerar chave de acesso, com a mensagem
+  // exata exigida: "Impressora fiscal não configurada."
+  const certMeta = getCertificateMetadata(params.restaurantSlug);
+  if (!certMeta.hasCertificate) {
+    return {
+      success: false,
+      error: 'Impressora fiscal não configurada.',
+    };
+  }
 
   // 2. Identify appropriate fiscal document model
   const isCompany = !!(
