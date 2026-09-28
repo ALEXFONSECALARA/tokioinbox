@@ -215,6 +215,7 @@ interface StoreContextType {
   // V8 PRO: "Fechar Mesa" (pedir a conta) é diferente de "Pagar Mesa" —
   // só sinaliza aguardando pagamento, não recebe pagamento nem libera a mesa.
   requestTableBill: (tableNumber: number, restaurantSlug: string) => Promise<{ success: boolean; error?: string }>;
+  reopenTable: (tableNumber: number, restaurantSlug: string) => Promise<{ success: boolean; error?: string }>;
   updateOrderPrintStatus: (orderId: string, printStatus: 'pendente' | 'imprimindo' | 'impresso') => Promise<void>;
   deleteOrder: (orderId: string) => Promise<void>;
   clearOrdersHistory: (slug?: RestaurantSlug, mode?: 'finished' | 'all') => Promise<void>;
@@ -413,6 +414,13 @@ const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   showQrCode: true,
   numberOfCopies: 1,
   headerCustomNote: 'VIA DA COZINHA / EXPEDIÇÃO',
+  // V9 ULTRA PLUS: cupom de conferência automático ao clicar em FECHAR
+  conferenceAutoPrint: {
+    enabled: true,
+    sources: { garcom: true, caixa: true, mesa: true, balcao: true, retirada: true, delivery: true, pedidos: true },
+    copies: 1,
+    mode: 'auto',
+  },
 };
 
 
@@ -1479,6 +1487,8 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         ...data.user,
         token: data.token,
       };
+      // V9 ULTRA PLUS: novo login sempre abre o Salão limpo (mesas centralizadas), sem restaurar mesa/tela do usuário anterior
+      try { sessionStorage.removeItem('nx_waiter_pdv_touch_session_v1'); } catch { /* ignorar */ }
       setCurrentUser(userWithToken);
       if (userWithToken.restaurantSlug && userWithToken.restaurantSlug !== 'all') {
         setActiveRestaurantSlug(userWithToken.restaurantSlug as RestaurantSlug);
@@ -1510,6 +1520,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     }
     setCurrentUser(null);
     setActiveRestaurantSlug('japones');
+    try { sessionStorage.removeItem('nx_waiter_pdv_touch_session_v1'); } catch { /* ignorar */ }
     sessionStorage.setItem('tokio_current_user_v25', 'logged_out');
     sessionStorage.removeItem('tokio_admin_auth');
     sessionStorage.removeItem('tokio_staff_token');
@@ -2200,6 +2211,38 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     }
   };
 
+  // V9 ULTRA-CORREÇÃO: REABRIR CONTA — desfaz o FECHAMENTO (awaitingPayment)
+  // sem tocar em itens/valores, devolvendo a mesa para EM USO.
+  const reopenTable = async (
+    tableNumber: number,
+    restaurantSlug: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
+      const res = await fetch(`/api/tables/${tableNumber}/reopen`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ restaurantSlug, operatorName: currentUser?.name }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Erro ao reabrir a conta da mesa');
+      }
+      if (Array.isArray(data.orders)) {
+        setOrders((prev) => prev.map((o) => data.orders.find((u: Order) => u.id === o.id) || o));
+      }
+      showToast(`Mesa ${tableNumber} reaberta — pode lançar novos itens.`, 'info');
+      return { success: true };
+    } catch (err: any) {
+      console.error('[REOPEN TABLE ERROR]:', err);
+      showToast(err.message || 'Falha ao reabrir a conta da mesa', 'error');
+      return { success: false, error: err.message };
+    }
+  };
+
   const updateOrderPrintStatus = async (
     orderId: string,
     printStatus: 'pendente' | 'imprimindo' | 'impresso'
@@ -2770,6 +2813,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         appendItemsToTableOrder,
         closeTableOrder,
         requestTableBill,
+        reopenTable,
         updateOrderPrintStatus,
         deleteOrder,
         clearOrdersHistory,
