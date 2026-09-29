@@ -1,0 +1,94 @@
+[
+  {
+    "id": "ord-1790658577761-1e91f519",
+    "shortCode": "#TK-9168",
+    "restaurantSlug": "japones",
+    "restaurantName": "Sakura Sushi House",
+    "customerName": "Teste",
+    "customerPhone": "(22) 99999-8888",
+    "customerPhoneNormalized": "5522999998888",
+    "orderType": "retirada",
+    "items": [
+      {
+        "id": "item-1790658577761-0",
+        "name": "Combinado Tokyo Premium (32 Peças)",
+        "quantity": 2,
+        "unitPrice": 84.9,
+        "totalPrice": 169.8,
+        "selectedOptions": [],
+        "station": "sushibar",
+        "stationStatus": "recebido"
+      }
+    ],
+    "stations": {
+      "sushibar": {
+        "station": "sushibar",
+        "status": "recebido",
+        "itemsCount": 2
+      }
+    },
+    "subtotal": 169.8,
+    "deliveryFee": 0,
+    "discount": 0,
+    "total": 169.8,
+    "paymentMethod": "pix",
+    "status": "recebido",
+    "statusHistory": [
+      {
+        "status": "recebido",
+        "timestamp": "Agora",
+        "note": "Pedido recebido e confirmado no servidor (RETIRADA)"
+      }
+    ],
+    "printStatus": "pendente",
+    "trackingToken": "trk-0f407c9289cc24c4198ee0d2",
+    "createdAt": "2026-09-29T05:09:37.761Z",
+    "updatedAt": "2026-09-29T05:09:37.761Z"
+  },
+  {
+    "id": "ord-1790658559493-76d08d13",
+    "shortCode": "#TK-5085",
+    "restaurantSlug": "japones",
+    "restaurantName": "Sakura Sushi House",
+    "customerName": "Teste",
+    "customerPhone": "(22) 99999-8888",
+    "customerPhoneNormalized": "5522999998888",
+    "orderType": "retirada",
+    "items": [
+      {
+        "id": "item-1790658559493-0",
+        "name": "Combinado Tokyo Premium (32 Peças)",
+        "quantity": 2,
+        "unitPrice": 84.9,
+        "totalPrice": 169.8,
+        "selectedOptions": [],
+        "station": "sushibar",
+        "stationStatus": "recebido"
+      }
+    ],
+    "stations": {
+      "sushibar": {
+        "station": "sushibar",
+        "status": "recebido",
+        "itemsCount": 2
+      }
+    },
+    "subtotal": 169.8,
+    "deliveryFee": 0,
+    "discount": 0,
+    "total": 169.8,
+    "paymentMethod": "pix",
+    "status": "recebido",
+    "statusHistory": [
+      {
+        "status": "recebido",
+        "timestamp": "Agora",
+        "note": "Pedido recebido e confirmado no servidor (RETIRADA)"
+      }
+    ],
+    "printStatus": "pendente",
+    "trackingToken": "trk-392e817b85e3d3f02cfc8fac",
+    "createdAt": "2026-09-29T05:09:19.493Z",
+    "updatedAt": "2026-09-29T05:09:19.493Z"
+  }
+]

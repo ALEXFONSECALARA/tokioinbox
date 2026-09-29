@@ -1,0 +1,100 @@
+[
+  {
+    "id": "log-1790658577733-b66a72",
+    "timestamp": "2026-09-29T05:09:37.733Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658577652-4ce75a",
+    "timestamp": "2026-09-29T05:09:37.652Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658577568-5695f8",
+    "timestamp": "2026-09-29T05:09:37.568Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658577476-bf57e0",
+    "timestamp": "2026-09-29T05:09:37.476Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658577380-275db4",
+    "timestamp": "2026-09-29T05:09:37.381Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658559452-e0621c",
+    "timestamp": "2026-09-29T05:09:19.452Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658559329-2d3b8f",
+    "timestamp": "2026-09-29T05:09:19.329Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658559238-d80b8f",
+    "timestamp": "2026-09-29T05:09:19.238Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658559152-0e32da",
+    "timestamp": "2026-09-29T05:09:19.153Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-1790658559057-fadc6d",
+    "timestamp": "2026-09-29T05:09:19.057Z",
+    "userName": "Super Administrador",
+    "userRole": "super_admin",
+    "action": "Tentativa de login falhou (@admin)",
+    "details": "IP 127.0.0.1",
+    "category": "user"
+  },
+  {
+    "id": "log-init",
+    "timestamp": "2026-09-29T05:09:19.057Z",
+    "userName": "Sistema Tokio inBox",
+    "userRole": "system",
+    "action": "Inicialização do motor de logs de auditoria e conformidade",
+    "category": "system"
+  }
+]
