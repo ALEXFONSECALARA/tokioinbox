@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { FiscalAuditEntry } from './types';
+import { DATA_DIR } from '../dataDir';
 
-const AUDIT_FILE = path.join(process.cwd(), 'data', 'fiscal', 'audit_logs.json');
+const AUDIT_FILE = path.join(DATA_DIR, 'fiscal', 'audit_logs.json'); // V9.3: respeita DATA_DIR (disco persistente)
 
 function ensureAuditFile() {
   const dir = path.dirname(AUDIT_FILE);

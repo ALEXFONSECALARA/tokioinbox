@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { DATA_DIR } from '../dataDir';
 import {
   FiscalDocument,
   FiscalDocumentStatus,
@@ -20,7 +21,7 @@ import { signXml } from './certificateService';
 import { getCertificateMetadata } from './certificateService';
 import { logFiscalAction } from './fiscalAudit';
 
-const FISCAL_DIR = path.join(process.cwd(), 'data', 'fiscal');
+const FISCAL_DIR = path.join(DATA_DIR, 'fiscal'); // V9.3: respeita DATA_DIR (disco persistente)
 const CONFIGS_FILE = path.join(FISCAL_DIR, 'configs.json');
 const DOCUMENTS_FILE = path.join(FISCAL_DIR, 'documents.json');
 const INUTILIZACOES_FILE = path.join(FISCAL_DIR, 'inutilizacoes.json');
@@ -30,7 +31,7 @@ function ensureFiscalStorage() {
     fs.mkdirSync(FISCAL_DIR, { recursive: true });
   }
   if (!fs.existsSync(CONFIGS_FILE)) {
-    fs.writeFileSync(CONFIGS_FILE, JSON.stringify(DEFAULT_CONFIGS, null, 2), 'utf-8');
+    fs.writeFileSync(CONFIGS_FILE, JSON.stringify({}, null, 2), 'utf-8'); // V9.3: começa vazio, sem CNPJ inventado
   }
   if (!fs.existsSync(DOCUMENTS_FILE)) {
     fs.writeFileSync(DOCUMENTS_FILE, JSON.stringify([], null, 2), 'utf-8');
@@ -40,118 +41,17 @@ function ensureFiscalStorage() {
   }
 }
 
-// Initial Brazilian fiscal configs for system restaurants
-const DEFAULT_CONFIGS: Record<string, RestaurantFiscalConfig> = {
-  japones: {
-    restaurantSlug: 'japones',
-    razaoSocial: 'TOKIO SAKURA RESTAURANTE ORIENTAL LTDA',
-    nomeFantasia: 'Tokio Sushi House & Japanese Bar',
-    cnpj: '38.412.981/0001-45',
-    inscricaoEstadual: '148.920.312.110',
-    inscricaoMunicipal: '4.892.100-3',
-    uf: 'SP',
-    municipio: 'São Paulo',
-    codigoMunicipioIbge: '3550308',
-    cep: '01310-100',
-    logradouro: 'Avenida Paulista',
-    numero: '1578',
-    bairro: 'Bela Vista',
-    complemento: 'Térreo Gastronômico',
-    regimeTributario: 'simples_nacional',
-    aliquotaSimplesNacional: 6.8, // % média 2ª faixa Anexo I
-    ambiente: 'homologacao',
-    serieNfce: 1,
-    numeroAtualNfce: 104,
-    serieNfe: 1,
-    numeroAtualNfe: 12,
-    cscId: '000001',
-    cscToken: 'TOKIO_CSC_SEFAZ_TOKEN_HOMOLOG_2026',
-    updatedAt: new Date().toISOString(),
-    updatedBy: 'Sistema Inicial',
-  },
-  italiano: {
-    restaurantSlug: 'italiano',
-    razaoSocial: 'BELLA VISTA CUCINA TRATTORIA LTDA',
-    nomeFantasia: 'Cantina Bella Vista',
-    cnpj: '41.829.102/0001-90',
-    inscricaoEstadual: '149.201.884.118',
-    inscricaoMunicipal: '5.102.394-1',
-    uf: 'SP',
-    municipio: 'São Paulo',
-    codigoMunicipioIbge: '3550308',
-    cep: '01311-200',
-    logradouro: 'Alameda Santos',
-    numero: '820',
-    bairro: 'Cerqueira César',
-    regimeTributario: 'simples_nacional',
-    aliquotaSimplesNacional: 6.5,
-    ambiente: 'homologacao',
-    serieNfce: 1,
-    numeroAtualNfce: 88,
-    serieNfe: 1,
-    numeroAtualNfe: 5,
-    cscId: '000001',
-    cscToken: 'BELLA_CSC_TOKEN_2026',
-    updatedAt: new Date().toISOString(),
-    updatedBy: 'Sistema Inicial',
-  },
-  pizza: {
-    restaurantSlug: 'pizza',
-    razaoSocial: 'FORNO D ORO PIZZARIA NAPOLITANA LTDA',
-    nomeFantasia: "Forno D'Oro Pizzas & Calzones",
-    cnpj: '45.192.304/0001-72',
-    inscricaoEstadual: '150.392.119.112',
-    inscricaoMunicipal: '5.390.112-9',
-    uf: 'SP',
-    municipio: 'São Paulo',
-    codigoMunicipioIbge: '3550308',
-    cep: '04530-001',
-    logradouro: 'Rua Amauri',
-    numero: '310',
-    bairro: 'Itaim Bibi',
-    regimeTributario: 'simples_nacional',
-    aliquotaSimplesNacional: 7.2,
-    ambiente: 'homologacao',
-    serieNfce: 1,
-    numeroAtualNfce: 142,
-    serieNfe: 1,
-    numeroAtualNfe: 8,
-    cscId: '000001',
-    cscToken: 'FORNO_CSC_TOKEN_2026',
-    updatedAt: new Date().toISOString(),
-    updatedBy: 'Sistema Inicial',
-  },
-  hamburgueria: {
-    restaurantSlug: 'hamburgueria',
-    razaoSocial: 'BURGER SMASH CRAFT BEER LTDA',
-    nomeFantasia: 'Burger & Craft House',
-    cnpj: '48.901.293/0001-11',
-    inscricaoEstadual: '151.849.201.115',
-    inscricaoMunicipal: '5.498.102-0',
-    uf: 'SP',
-    municipio: 'São Paulo',
-    codigoMunicipioIbge: '3550308',
-    cep: '05425-070',
-    logradouro: 'Rua dos Pinheiros',
-    numero: '450',
-    bairro: 'Pinheiros',
-    regimeTributario: 'simples_nacional',
-    aliquotaSimplesNacional: 7.0,
-    ambiente: 'homologacao',
-    serieNfce: 1,
-    numeroAtualNfce: 210,
-    serieNfe: 1,
-    numeroAtualNfe: 15,
-    cscId: '000001',
-    cscToken: 'BURGER_CSC_TOKEN_2026',
-    updatedAt: new Date().toISOString(),
-    updatedBy: 'Sistema Inicial',
-  },
-};
-
 /**
- * Retrieves fiscal configuration for restaurant
+ * V9.3 — CORREÇÃO CRÍTICA: antes deste ponto, cada um dos 7 restaurantes tinha um CNPJ,
+ * razão social, inscrição estadual e token CSC INVENTADOS gravados automaticamente em disco
+ * na primeira leitura. Isso é dado de identificação fiscal (usado para assinar e transmitir
+ * documentos perante a SEFAZ) — nunca pode ser fabricado pelo sistema. Preencher com dados
+ * fictícios e permitir emissão faria o restaurante emitir nota fiscal em nome de uma empresa
+ * que não é a sua. Agora não existe nenhum CNPJ pré-cadastrado: cada restaurante começa em
+ * branco e só fica pronto para emitir depois que o próprio dono cadastra CNPJ real + certificado.
  */
+const DEFAULT_CONFIGS: Record<string, RestaurantFiscalConfig> = {};
+
 export function getFiscalConfig(restaurantSlug: string): RestaurantFiscalConfig {
   ensureFiscalStorage();
   try {
@@ -164,36 +64,35 @@ export function getFiscalConfig(restaurantSlug: string): RestaurantFiscalConfig 
     console.error('Erro ao ler configs fiscais:', err);
   }
 
-  // Fallback to default template or create default
-  const baseDefault = DEFAULT_CONFIGS[restaurantSlug] || {
+  // V9.3: config em BRANCO (nenhum dado inventado) — e NÃO é gravada em disco por uma
+  // simples leitura (GET não deve ter efeito colateral de escrita). Só fica persistida
+  // quando o dono efetivamente salva pelo endpoint de configuração.
+  return {
     restaurantSlug,
-    razaoSocial: `RESTAURANTE ${restaurantSlug.toUpperCase()} GASTRONOMIA LTDA`,
-    nomeFantasia: `Restaurante ${restaurantSlug}`,
-    cnpj: '38.412.981/0001-45',
-    inscricaoEstadual: '148.920.312.110',
-    inscricaoMunicipal: '4.892.100-3',
-    uf: 'SP',
-    municipio: 'São Paulo',
-    codigoMunicipioIbge: '3550308',
-    cep: '01310-100',
-    logradouro: 'Avenida Paulista',
-    numero: '1000',
-    bairro: 'Bela Vista',
+    razaoSocial: '',
+    nomeFantasia: '',
+    cnpj: '',
+    inscricaoEstadual: '',
+    inscricaoMunicipal: '',
+    uf: '',
+    municipio: '',
+    codigoMunicipioIbge: '',
+    cep: '',
+    logradouro: '',
+    numero: '',
+    bairro: '',
     regimeTributario: 'simples_nacional',
-    aliquotaSimplesNacional: 6.8,
+    aliquotaSimplesNacional: 0,
     ambiente: 'homologacao',
     serieNfce: 1,
-    numeroAtualNfce: 1,
+    numeroAtualNfce: 0,
     serieNfe: 1,
-    numeroAtualNfe: 1,
-    cscId: '000001',
-    cscToken: 'TOKIO_CSC_KEY_2026',
-    updatedAt: new Date().toISOString(),
-    updatedBy: 'Sistema',
+    numeroAtualNfe: 0,
+    cscId: '',
+    cscToken: '',
+    updatedAt: '',
+    updatedBy: '',
   };
-
-  saveFiscalConfig(baseDefault, 'Sistema');
-  return baseDefault;
 }
 
 /**
@@ -360,6 +259,17 @@ export async function emitFiscalDocument(params: {
     numero: nextNumber,
     tpEmis,
   });
+
+  // V9.3: NFC-e usa o CSC (Código de Segurança do Contribuinte) para assinar o hash do QR Code
+  // impresso no cupom. Sem o CSC real cadastrado pelo dono no portal da SEFAZ do seu estado,
+  // o código antigo usava uma chave de exemplo ('SEFAZ_CSC_HOMOLOGACAO_TOKIO_KEY'), gerando um
+  // QR Code que parece válido mas a SEFAZ/o app do consumidor rejeitaria. Bloqueia antes de gerar.
+  if (documentType === 'nfce' && (!config.cscId?.trim() || !config.cscToken?.trim())) {
+    return {
+      success: false,
+      error: 'CSC (Código de Segurança do Contribuinte) não configurado. Cadastre o CSC do seu estado em Ferramentas → Fiscal antes de emitir NFC-e.',
+    };
+  }
 
   // 6. Generate QR Code URL
   const qrCodeUrl = generateNfceQrCodeUrl({

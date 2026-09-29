@@ -3,9 +3,10 @@ import path from 'path';
 import crypto from 'crypto';
 import forge from 'node-forge';
 import { CertificateMetadata } from './types';
+import { DATA_DIR } from '../dataDir';
 
 // Master key derived from server environment or a local runtime secret
-const CERT_STORAGE_DIR = path.join(process.cwd(), 'data', 'fiscal', 'certificates');
+const CERT_STORAGE_DIR = path.join(DATA_DIR, 'fiscal', 'certificates'); // V9.3: respeita DATA_DIR (disco persistente)
 const CERT_KEY_SECRET: string = (() => {
   const key = process.env.FISCAL_ENCRYPTION_KEY;
   if (key && key.length >= 24) return key;
@@ -83,18 +84,23 @@ export function inspectPfx(pfxBuffer: Buffer, password: string): {
     const p12Asn1 = forge.asn1.fromDer(p12Der);
     const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password);
 
-    // Look for key and cert bags
+    // Look for key and cert bags.
+    // BUG CORRIGIDO (V9.3): `p12.safeContents` é um ARRAY de ContentInfo (cada um com `.safeBags`),
+    // não um dicionário por tipo de bag. `Object.keys(array)` devolvia só os índices ('0','1'), e
+    // `array['0']` não é um array, então o filtro nunca encontrava o certificado — todo upload de
+    // certificado .pfx/.p12 real (gerado por OpenSSL 3.x ou por qualquer AC) falhava com
+    // "Certificado X.509 não encontrado". A forma correta é usar `p12.getBags(...)`.
     let certBag: forge.pkcs12.Bag | undefined;
     let keyBag: forge.pkcs12.Bag | undefined;
 
-    for (const bagType of Object.keys(p12.safeContents)) {
-      const safeContent = (p12.safeContents as any)[bagType];
-      if (Array.isArray(safeContent)) {
-        for (const bag of safeContent) {
-          if (bag.cert) certBag = bag;
-          if (bag.key) keyBag = bag;
-        }
-      }
+    const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
+    certBag = (certBags[forge.pki.oids.certBag] || [])[0];
+
+    const shroudedBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+    keyBag = (shroudedBags[forge.pki.oids.pkcs8ShroudedKeyBag] || [])[0];
+    if (!keyBag) {
+      const plainKeyBags = p12.getBags({ bagType: forge.pki.oids.keyBag });
+      keyBag = (plainKeyBags[forge.pki.oids.keyBag] || [])[0];
     }
 
     if (!certBag || !certBag.cert) {

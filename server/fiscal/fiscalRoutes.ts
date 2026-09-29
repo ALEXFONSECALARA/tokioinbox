@@ -2,7 +2,27 @@ import { Router, Request, Response } from 'express';
 import {
   authenticateStaff,
   requireRole,
+  canAccessRestaurant,
 } from '../authMiddleware';
+
+/**
+ * V9.3 — CORREÇÃO DE SEGURANÇA: nenhuma rota fiscal validava se o usuário logado tinha
+ * permissão sobre o RESTAURANTE informado na URL/corpo — só se ele estava logado como staff.
+ * Um usuário vinculado à loja A podia ler/alterar CNPJ, razão social, fazer upload de
+ * certificado digital e até emitir nota fiscal em nome de outra loja (B, C...) só trocando
+ * o slug na chamada. Este guard aplica a mesma regra usada no resto do sistema
+ * (`canAccessRestaurant`: super_admin/'all' acessa tudo; os demais, só a própria loja).
+ */
+function requireRestaurantAccess(getSlug: (req: Request) => string | undefined) {
+  return (req: Request, res: Response, next: () => void) => {
+    const slug = getSlug(req);
+    if (!slug) return res.status(400).json({ success: false, error: 'Restaurante não informado.' });
+    if (!canAccessRestaurant(req, slug)) {
+      return res.status(403).json({ success: false, error: 'Sem permissão sobre este restaurante.' });
+    }
+    next();
+  };
+}
 import { getOrderForTracking } from '../orderService';
 import {
   emitFiscalDocument,
@@ -36,6 +56,7 @@ export const fiscalRouter = Router();
 fiscalRouter.get(
   '/config/:restaurantSlug',
   authenticateStaff,
+  requireRestaurantAccess((req) => req.params.restaurantSlug),
   (req: Request, res: Response) => {
     try {
       const config = getFiscalConfig(req.params.restaurantSlug);
@@ -50,6 +71,7 @@ fiscalRouter.post(
   '/config/:restaurantSlug',
   authenticateStaff,
   requireRole('super_admin', 'administrador'),
+  requireRestaurantAccess((req) => req.params.restaurantSlug),
   (req: Request, res: Response) => {
     try {
       const operatorName = req.userSession?.name || 'Administrador';
@@ -73,6 +95,7 @@ fiscalRouter.post(
 fiscalRouter.get(
   '/certificate/:restaurantSlug',
   authenticateStaff,
+  requireRestaurantAccess((req) => req.params.restaurantSlug),
   (req: Request, res: Response) => {
     try {
       // SAFE: Only returns metadata (CN, validity, days remaining, status)
@@ -89,6 +112,7 @@ fiscalRouter.post(
   '/certificate/upload',
   authenticateStaff,
   requireRole('super_admin', 'administrador'),
+  requireRestaurantAccess((req) => req.body?.restaurantSlug),
   (req: Request, res: Response) => {
     try {
       const { restaurantSlug, pfxBase64, password } = req.body;
@@ -142,6 +166,7 @@ fiscalRouter.post(
   '/emit',
   authenticateStaff,
   requireRole('super_admin', 'administrador', 'caixa'),
+  requireRestaurantAccess((req) => req.body?.restaurantSlug),
   async (req: Request, res: Response) => {
     try {
       const operatorName = req.userSession?.name || 'Operador Caixa';
@@ -238,6 +263,14 @@ fiscalRouter.get('/documents', authenticateStaff, (req: Request, res: Response) 
   try {
     let docs = getAllFiscalDocuments();
 
+    // V9.3: nunca confiar no restaurantSlug vindo do cliente para decidir o que ele PODE ver —
+    // só para refinar dentro do que ele já tem acesso. Antes, um caixa da loja A podia omitir
+    // o filtro (ou trocar o slug) e ver notas fiscais, nomes e CPF/CNPJ de clientes de outra loja.
+    const own = req.userSession?.restaurantSlug;
+    if (own && own !== 'all') {
+      docs = docs.filter((d) => d.restaurantSlug === own);
+    }
+
     const {
       restaurantSlug,
       periodo,
@@ -250,7 +283,7 @@ fiscalRouter.get('/documents', authenticateStaff, (req: Request, res: Response) 
       tipo,
     } = req.query;
 
-    if (restaurantSlug) {
+    if (restaurantSlug && (!own || own === 'all')) {
       docs = docs.filter((d) => d.restaurantSlug === restaurantSlug);
     }
     if (numero) {
@@ -297,6 +330,10 @@ fiscalRouter.get('/documents/:idOrKey', authenticateStaff, (req: Request, res: R
       getAllFiscalDocuments().find((d) => d.id === param);
 
     if (!doc) {
+      return res.status(404).json({ success: false, error: 'Documento fiscal não encontrado.' });
+    }
+    // V9.3: não deixa um documento de outra loja ser lido pelo ID/chave (mesmo resultado do "não encontrado").
+    if (!canAccessRestaurant(req, doc.restaurantSlug)) {
       return res.status(404).json({ success: false, error: 'Documento fiscal não encontrado.' });
     }
 
@@ -413,6 +450,12 @@ fiscalRouter.post(
         });
       }
 
+      // V9.3: confere que o documento pertence a um restaurante que o operador pode gerenciar.
+      const existing = getDocumentByAccessKey(req.params.accessKey);
+      if (existing && !canAccessRestaurant(req, existing.restaurantSlug)) {
+        return res.status(403).json({ success: false, error: 'Sem permissão sobre este restaurante.' });
+      }
+
       const result = await cancelFiscalDocument({
         accessKey: req.params.accessKey,
         justificativa,
@@ -442,6 +485,11 @@ fiscalRouter.post(
   async (req: Request, res: Response) => {
     try {
       const operatorName = req.userSession?.name || 'Administrador';
+      // V9.3: confere que o documento pertence a um restaurante que o operador pode gerenciar.
+      const existing = getDocumentByAccessKey(req.params.accessKey);
+      if (existing && !canAccessRestaurant(req, existing.restaurantSlug)) {
+        return res.status(403).json({ success: false, error: 'Sem permissão sobre este restaurante.' });
+      }
       const result = await reprocessContingencyDocument(req.params.accessKey, operatorName);
 
       if (!result.success) {
@@ -462,6 +510,7 @@ fiscalRouter.post(
 fiscalRouter.get(
   '/simulation/:restaurantSlug',
   authenticateStaff,
+  requireRestaurantAccess((req) => req.params.restaurantSlug),
   (req: Request, res: Response) => {
     try {
       const periodo = (req.query.periodo as any) || 'mes';
@@ -480,6 +529,7 @@ fiscalRouter.get(
 fiscalRouter.get(
   '/export-accountant/:restaurantSlug',
   authenticateStaff,
+  requireRestaurantAccess((req) => req.params.restaurantSlug),
   (req: Request, res: Response) => {
     try {
       const exportData = generateAccountantExport(req.params.restaurantSlug);
@@ -501,7 +551,10 @@ fiscalRouter.get(
   (req: Request, res: Response) => {
     try {
       const limit = Number(req.query.limit) || 100;
-      const restaurantSlug = req.query.restaurantSlug as string | undefined;
+      const requested = req.query.restaurantSlug as string | undefined;
+      // V9.3: um admin restrito a uma loja não pode ver (nem filtrar por) auditoria de outra.
+      const own = req.userSession?.restaurantSlug;
+      const restaurantSlug = own && own !== 'all' ? own : requested;
       const logs = getFiscalAuditLogs(limit, restaurantSlug);
       res.json({ success: true, logs });
     } catch (err: any) {
@@ -517,6 +570,7 @@ fiscalRouter.get(
 fiscalRouter.get(
   '/inutilizacoes/:restaurantSlug',
   authenticateStaff,
+  requireRestaurantAccess((req) => req.params.restaurantSlug),
   (req: Request, res: Response) => {
     try {
       const records = getAllInutilizacoes(req.params.restaurantSlug);
@@ -531,6 +585,7 @@ fiscalRouter.post(
   '/inutilizacoes/:restaurantSlug',
   authenticateStaff,
   requireRole('super_admin', 'administrador', 'caixa'),
+  requireRestaurantAccess((req) => req.params.restaurantSlug),
   async (req: Request, res: Response) => {
     try {
       const { modelo, serie, numeroInicial, numeroFinal, justificativa } = req.body;

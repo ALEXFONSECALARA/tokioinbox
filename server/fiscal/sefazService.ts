@@ -126,8 +126,14 @@ export function generateNfceQrCodeUrl(params: {
 
   const versaoQr = '2';
   const tpAmb = params.ambiente === 'producao' ? '1' : '2';
-  const cIdToken = (params.cscId || '000001').padStart(6, '0');
-  const csc = params.cscToken || 'SEFAZ_CSC_HOMOLOGACAO_TOKIO_KEY';
+  // V9.3: nunca fabricar um CSC — antes caía em '000001'/'SEFAZ_CSC_HOMOLOGACAO_TOKIO_KEY' e
+  // gerava um QR Code com hash inválido para o estabelecimento real. Quem chama esta função
+  // deve garantir que o CSC foi configurado (ver checagem em documentService.emitFiscalDocument).
+  if (!params.cscToken?.trim()) {
+    throw new Error('CSC não configurado: não é possível gerar o QR Code da NFC-e sem o CSC real do estabelecimento.');
+  }
+  const cIdToken = (params.cscId?.trim() || '000001').padStart(6, '0');
+  const csc = params.cscToken;
 
   // String to hash for QR code: chNFe|versaoQr|tpAmb|cIdToken + CSC
   const stringToHash = `${params.chaveAcesso}|${versaoQr}|${tpAmb}|${parseInt(cIdToken, 10)}${csc}`;
