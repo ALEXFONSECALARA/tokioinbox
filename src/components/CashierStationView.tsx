@@ -70,6 +70,11 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   const [addingItemId, setAddingItemId] = useState<string | null>(null);
   const printConference = useConferencePrint();
 
+  // V9 PLUS ULTRA 02: CAIXA → 🖨 Reimprimir Conta. Apenas reimprime um pedido/conta
+  // já existente na impressora configurada do caixa — nunca cria venda, pedido ou pagamento.
+  const [showReprintModal, setShowReprintModal] = useState(false);
+  const [reprintSearch, setReprintSearch] = useState('');
+
   // Payment dialog state
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cartao_credito');
   // V8: comprovante de fechamento — Nota Fiscal (NFC-e) ou Cupom Comum.
@@ -138,6 +143,25 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     });
     return Array.from(map.values()).sort((a, b) => a.tableNumber - b.tableNumber);
   }, [mesaOrders]);
+
+  // V9 PLUS ULTRA 02: resultados de busca do modal "🖨 Reimprimir Conta" —
+  // procura em TODOS os pedidos (abertos ou já finalizados) por mesa, código
+  // ou cliente. Apenas leitura: nenhuma venda, pedido ou pagamento é criado.
+  const reprintResults = useMemo(() => {
+    const term = reprintSearch.trim().toLowerCase();
+    if (!term) return [] as Order[];
+    return orders
+      .filter((o) => {
+        const table = o.tableNumber ? `mesa ${o.tableNumber}` : '';
+        return (
+          (o.shortCode || '').toLowerCase().includes(term) ||
+          table.includes(term) ||
+          (o.customerName || '').toLowerCase().includes(term) ||
+          String(o.tableNumber || '').includes(term)
+        );
+      })
+      .slice(0, 20);
+  }, [orders, reprintSearch]);
 
   // Fonte única dos dados exibidos no recebimento. Para mesa, sempre usa os
   // pedidos ativos atuais do store (e não o snapshot de selectedOrder), para
@@ -401,6 +425,15 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
             <ConferenceAutoPrintPanel />
 
             <button
+              onClick={() => setShowReprintModal(true)}
+              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5"
+              title="Reimprimir uma conta já existente na impressora do caixa — não cria venda, pedido ou pagamento"
+            >
+              <Printer className="w-3.5 h-3.5 text-amber-400" />
+              <span>🖨 Reimprimir Conta</span>
+            </button>
+
+            <button
               onClick={() => setShowMovementModal(true)}
               className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5"
             >
@@ -620,10 +653,10 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                         type="button"
                         onClick={() => void printConference(mergeOrdersForConference(selectedFinancialOrders.length ? selectedFinancialOrders : [selectedOrder]), 'caixa', { force: true })}
                         className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 text-xs font-bold flex items-center gap-1.5"
-                        title="Imprimir conferência de mesa para o cliente"
+                        title="Imprimir cupom comum (conta completa) para o cliente — não registra pagamento"
                       >
                         <Printer className="w-4 h-4" />
-                        <span className="hidden sm:inline">Conferência</span>
+                        <span className="hidden sm:inline">🖨️ Cupom Comum</span>
                       </button>
                       <button
                         type="button"
@@ -1138,6 +1171,78 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
       {/* V9.2: Fechar Caixa com resumo, diferença e relatório */}
       {isConfirmingCloseShift && <CashCloseModal onClose={() => setIsConfirmingCloseShift(false)} />}
 
+      {/* V9 PLUS ULTRA 02: 🖨 Reimprimir Conta — só localiza e reimprime uma
+          conta já existente na impressora configurada do caixa. Não cria
+          nova venda, pedido ou pagamento. */}
+      {showReprintModal && (
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#121622] border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between gap-2 border-b border-slate-800 p-4">
+              <div>
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-amber-400" /> Reimprimir Conta
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Localize uma conta existente e reimprima. Não gera nova venda, pedido ou pagamento.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowReprintModal(false); setReprintSearch(''); }}
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 shrink-0">
+              <div className="relative">
+                <SearchIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Buscar por mesa, código ou cliente..."
+                  value={reprintSearch}
+                  onChange={(e) => setReprintSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 bg-[#0E121C] border border-slate-800 rounded-xl text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-2">
+              {reprintSearch.trim() === '' && (
+                <p className="text-xs text-slate-500 text-center py-6">Digite para buscar uma conta.</p>
+              )}
+              {reprintSearch.trim() !== '' && reprintResults.length === 0 && (
+                <p className="text-xs text-slate-500 text-center py-6">Nenhuma conta encontrada.</p>
+              )}
+              {reprintResults.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => {
+                    setTicketOrder(o);
+                    setShowReprintModal(false);
+                    setReprintSearch('');
+                  }}
+                  className="w-full text-left p-3 rounded-xl bg-[#0E121C] border border-slate-800 hover:border-amber-500/60 transition-colors flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white truncate">
+                      {o.orderType === 'mesa' ? `Mesa ${o.tableNumber}` : (o.customerName || o.shortCode)}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      {o.shortCode} • {o.status} • R$ {Number(o.total || 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <Printer className="w-4 h-4 text-amber-400 shrink-0" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Thermal Ticket Modal */}
       {/* BUG CORRIGIDO: faltava a prop `restaurant`, obrigatória no componente —
           o modal quebrava (referência undefined) sempre que o caixa tentava
@@ -1146,6 +1251,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
         <ThermalTicketModal
           order={ticketOrder}
           restaurant={restaurants[ticketOrder.restaurantSlug]}
+          ticketKind="cupom"
           onClose={() => setTicketOrder(null)}
         />
       )}

@@ -192,7 +192,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [isFechando, setIsFechando] = useState(false);
   const [isReopening, setIsReopening] = useState(false);
-  const [ticketKind, setTicketKind] = useState<'conferencia' | 'cupom'>('conferencia');
+  // V9 PLUS ULTRA 02: único cupom disponível no Fechamento é o Cupom Comum.
+  const [ticketKind, setTicketKind] = useState<'conferencia' | 'cupom'>('cupom');
 
   const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
 
@@ -2116,21 +2117,16 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
               </div>
 
               <div className="flex items-center gap-2 flex-wrap justify-center">
-                <button
-                  type="button"
-                  onClick={() => { setTicketKind('conferencia'); setShowPrintModal(true); }}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-black rounded-xl border border-slate-700 flex items-center gap-2 transition-all active:scale-95"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Imprimir Conferência</span>
-                </button>
+                {/* V9 PLUS ULTRA 02: "Imprimir Conferência" (Cupom Conferência) foi removido.
+                    Só existe FECHAMENTO → CUPOM COMUM, que imprime a conta completa e não
+                    registra pagamento nem libera a mesa. */}
                 <button
                   type="button"
                   onClick={() => { setTicketKind('cupom'); setShowPrintModal(true); }}
                   className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-black rounded-xl border border-slate-700 flex items-center gap-2 transition-all active:scale-95"
                 >
                   <Receipt className="w-4 h-4" />
-                  <span>Cupom Comum</span>
+                  <span>🖨️ Cupom Comum</span>
                 </button>
               </div>
             </div>

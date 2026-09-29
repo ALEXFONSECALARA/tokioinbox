@@ -1883,7 +1883,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                       className="w-full py-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-white font-bold text-xs flex items-center justify-center gap-2 border border-stone-700 transition-colors"
                     >
                       <Printer className="w-4 h-4 text-amber-400" />
-                      Imprimir Pré-Conta / Conferência Térmica
+                      🖨️ Cupom Comum
                     </button>
 
                     {!userCanReceivePayment(currentUser) && (
@@ -1932,7 +1932,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                 🔹 MESA {String(activeTableId).padStart(2, '0')}
               </div>
               <div className="text-[10px] text-neutral-400 font-mono">
-                CONFERÊNCIA DE MESA • NÃO É DOCUMENTO FISCAL
+                CUPOM COMUM • NÃO É DOCUMENTO FISCAL
               </div>
             </div>
 
