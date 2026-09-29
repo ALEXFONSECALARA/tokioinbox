@@ -27,6 +27,8 @@ import {
   ProductionStation,
   StationItemStatus,
   SalesChannelConfig,
+  SystemSettings,
+  DEFAULT_SYSTEM_SETTINGS,
 } from '../types/restaurant';
 import {
   getSimulatedOffline,
@@ -180,6 +182,7 @@ interface StoreContextType {
     status: StationItemStatus,
     operatorName?: string
   ) => Promise<void>;
+  removeOrderItem: (params: { orderId: string; itemId: string; quantity: number; reason?: string }) => Promise<any>;
   appendItemsToTableOrder: (params: {
     tableNumber: number;
     restaurantSlug?: RestaurantSlug;
@@ -249,7 +252,7 @@ interface StoreContextType {
   addDeliveryStaff: (data: { name: string; phone: string; vehicle: DeliveryPersonnel['vehicle']; commissionRate: number }) => void;
   removeDeliveryStaff: (staffId: string) => void;
   cashShiftHistory: CashRegisterShift[];
-  openCashShift: (initialAmount: number) => void;
+  openCashShift: (initialAmount: number, note?: string) => void;
   appMode: StoreMode;
 
   // Master Reset & Multi-Restaurant Order Flow
@@ -308,11 +311,15 @@ interface StoreContextType {
   // Cash Register / Fechamento de Caixa
   cashShift: CashRegisterShift;
   addCashMovement: (type: CashRegisterMovement['type'], amount: number, description: string) => void;
-  closeCashShift: () => void;
+  closeCashShift: (opts?: { countedCash?: number | null; note?: string; salesTotals?: { dinheiro: number; pix: number; cartao: number } }) => void;
 
   // Sales Channels Configuration (Canais de Venda)
   salesChannels: Record<string, SalesChannelConfig>;
   updateSalesChannel: (channelId: string, updates: Partial<SalesChannelConfig>) => void;
+
+  // V9.2: configurações globais (KDS on/off, tipos de relatório)
+  systemSettings: SystemSettings;
+  updateSystemSettings: (updates: Partial<SystemSettings>) => void;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -666,6 +673,12 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
   });
 
   const [delaySettings, setDelaySettings] = useServerDoc<DelayAlertSettings>('delaySettings', DEFAULT_DELAY_SETTINGS, { enabled: docsEnabled, onError: docError });
+
+  const [systemSettingsRaw, setSystemSettings] = useServerDoc<SystemSettings>('systemSettings', DEFAULT_SYSTEM_SETTINGS, { enabled: docsEnabled, onError: docError });
+  const systemSettings: SystemSettings = { ...DEFAULT_SYSTEM_SETTINGS, ...(systemSettingsRaw || {}) };
+  const updateSystemSettings = (updates: Partial<SystemSettings>) => {
+    setSystemSettings((prev) => ({ ...DEFAULT_SYSTEM_SETTINGS, ...(prev || {}), ...updates }));
+  };
 
   const [salesChannels, setSalesChannels] = useServerDoc<Record<string, SalesChannelConfig>>('salesChannels', INITIAL_SALES_CHANNELS, { enabled: docsEnabled, onError: docError });
 
@@ -1957,6 +1970,25 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     }
   };
 
+  const removeOrderItem = async (params: { orderId: string; itemId: string; quantity: number; reason?: string }) => {
+    try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
+      const res = await fetch(`/api/orders/${params.orderId}/items/${params.itemId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ quantity: params.quantity, reason: params.reason, confirmed: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Erro ao excluir item do pedido');
+      if (data.order) setOrders((prev) => prev.map((o) => (o.id === data.order.id ? data.order : o)));
+      showToast(`Excluído: ${data.removedQty}x ${data.removedName}`, 'success');
+      return data;
+    } catch (error: any) {
+      showToast(error.message || 'Erro ao excluir item', 'error');
+      return { success: false, error: error.message };
+    }
+  };
+
   const updateOrderStatus = async (orderId: string, status: OrderStatus, note?: string): Promise<void> => {
     // 1. Optimistic update
     setOrders((prev) =>
@@ -2644,7 +2676,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
   // Cash Register
   const nowLabel = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-  const openCashShift = (initialAmount: number) => {
+  const openCashShift = (initialAmount: number, note?: string) => {
     if (!cashShift.isClosed) {
       showToast('Já existe um caixa aberto.', 'error');
       return;
@@ -2656,6 +2688,9 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       openedAt: new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
       initialAmount: amount,
       isClosed: false,
+      openedAtIso: new Date().toISOString(),
+      openedBy: operator,
+      openingNote: note?.trim() ? note.trim().slice(0, 300) : undefined,
       movements: [
         {
           id: `mov-${Date.now()}`,
@@ -2688,7 +2723,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     });
   };
 
-  const closeCashShift = () => {
+  const closeCashShift = (opts?: { countedCash?: number | null; note?: string; salesTotals?: { dinheiro: number; pix: number; cartao: number } }) => {
     const closer = currentUser?.name || 'Operador de Caixa';
     const closedAt = nowLabel();
     let closedSnapshot: CashRegisterShift | null = null;
@@ -2696,15 +2731,25 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       if (prev.isClosed) return prev;
       const sum = (types: CashRegisterMovement['type'][]) =>
         prev.movements.filter((m) => types.includes(m.type)).reduce((t, m) => t + m.amount, 0);
-      const dinheiro = sum(['venda_dinheiro', 'suprimento']);
+      // V9.2: nenhum fluxo grava movimentos `venda_*`; as vendas reais vêm dos pedidos do turno
+      // (salesTotals, calculado pelo relatório). Sem salesTotals, mantém o cálculo antigo por movimentos.
+      const st = opts?.salesTotals;
+      const dinheiro = sum(['venda_dinheiro', 'suprimento']) + (st ? st.dinheiro : 0);
       const sangria = sum(['sangria']);
-      const pix = sum(['venda_pix']);
-      const cartao = sum(['venda_cartao']);
+      const pix = sum(['venda_pix']) + (st ? st.pix : 0);
+      const cartao = sum(['venda_cartao']) + (st ? st.cartao : 0);
       closedSnapshot = {
         ...prev,
         isClosed: true,
         closedAt,
+        closedAtIso: new Date().toISOString(),
         closedBy: closer,
+        closing: {
+          expectedCash: dinheiro - sangria,
+          countedCash: opts?.countedCash ?? null,
+          difference: opts?.countedCash == null ? null : Number((opts.countedCash - (dinheiro - sangria)).toFixed(2)),
+          note: opts?.note?.trim() ? opts.note.trim().slice(0, 300) : undefined,
+        },
         finalTotals: {
           dinheiro,
           pix,
@@ -2720,7 +2765,10 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     if (closedSnapshot) {
       const snap = closedSnapshot as CashRegisterShift;
       setCashShiftHistory((prev) => [snap, ...prev.filter((h) => h.id !== snap.id)].slice(0, 200));
-      logAction('Caixa fechado', 'system');
+      logAction(
+        `Caixa fechado${snap.closing?.difference != null ? ` (diferença R$ ${snap.closing.difference.toFixed(2)})` : ''}`,
+        'system'
+      );
     }
   };
 
@@ -2811,6 +2859,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         updateOrderItem,
         updateStationStatus,
         appendItemsToTableOrder,
+        removeOrderItem,
         closeTableOrder,
         requestTableBill,
         reopenTable,
@@ -2852,6 +2901,8 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         closeCashShift,
         salesChannels,
         updateSalesChannel,
+        systemSettings,
+        updateSystemSettings,
         showToast,
       }}
     >
