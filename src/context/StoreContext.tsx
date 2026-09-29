@@ -2054,7 +2054,16 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         }
       }
     } catch (err) {
+      // V9 PLUS ULTRA 02 — OFFLINE PRIORIDADE MÁXIMA: a alteração de status já
+      // ficou aplicada localmente (atualização otimista acima); agora também
+      // é enfileirada com um ID único para ser reenviada automaticamente
+      // quando a internet voltar, sem se perder e sem duplicar.
       console.warn('[OFFLINE] Status alterado offline, sincronizará ao reconectar:', err);
+      enqueueOfflineOperation(
+        'UPDATE_STATUS',
+        { orderId, status, note, operatorName: currentUser?.name || 'Operador', operatorRole: currentUser?.role || 'admin' },
+        `status-${orderId}-${status}-${Date.now()}`
+      );
     }
   };
 
@@ -2181,9 +2190,50 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     waiterNotes?: string;
     receiptType?: 'fiscal' | 'comum';
   }): Promise<{ success: boolean; order?: Order; error?: string }> => {
+    // V9 PLUS ULTRA 02 — OFFLINE PRIORIDADE MÁXIMA: pagamento e fechamento
+    // continuam funcionando sem internet. A operação é gravada localmente
+    // com um ID único (idempotencyKey) para nunca duplicar o pagamento ou o
+    // fechamento quando a sincronização automática rodar de volta online.
+    const isOfflineMode = getSimulatedOffline() || (typeof navigator !== 'undefined' && !navigator.onLine);
+    const idempotencyKey = `close-${params.orderId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    const buildOptimisticClosedOrder = (base: Order): Order => ({
+      ...base,
+      status: 'finalizado',
+      awaitingPayment: false,
+      paymentMethod: params.paymentMethod as PaymentMethod,
+      discount: Math.max(0, Number(params.discount) || 0),
+      deliveryFee: Math.max(0, Number(params.serviceFee) || 0),
+      total: params.total !== undefined ? Number(params.total) : base.total,
+      paymentDetails: { ...(base.paymentDetails || {}), paid: true, receiptType: params.receiptType || 'comum' },
+      statusHistory: [
+        ...base.statusHistory,
+        {
+          status: 'finalizado',
+          timestamp: 'Agora mesmo',
+          note: `Conta da Mesa ${params.tableNumber} fechada via ${params.paymentMethod.toUpperCase()} — registrado localmente no PDV Offline (${idempotencyKey}).`,
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    });
+
+    if (isOfflineMode) {
+      const current = orders.find((o) => o.id === params.orderId);
+      enqueueOfflineOperation('CLOSE_TABLE', params, idempotencyKey);
+      if (current) {
+        const optimistic = buildOptimisticClosedOrder(current);
+        setOrders((prev) => prev.map((o) => (o.id === params.orderId ? optimistic : o)));
+        showToast(`Mesa ${params.tableNumber} fechada localmente (Modo Offline). Será sincronizada ao voltar a internet.`, 'info');
+        return { success: true, order: optimistic };
+      }
+      showToast(`Mesa ${params.tableNumber} marcada para fechamento assim que a internet voltar.`, 'info');
+      return { success: true };
+    }
+
+    let res: Response;
     try {
       const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
-      const res = await fetch(`/api/orders/${params.orderId}/close-table`, {
+      res = await fetch(`/api/orders/${params.orderId}/close-table`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2194,7 +2244,25 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
           operatorName: params.operatorName || currentUser?.name || 'Garçom',
         }),
       });
+    } catch (networkErr: any) {
+      // Falha de REDE (sem resposta do servidor) — cai para o modo offline,
+      // igual à criação de pedidos, para não travar o caixa. Um erro de
+      // NEGÓCIO (conta já paga, forma de pagamento ausente, etc.) chega com
+      // resposta do servidor e é tratado abaixo, sem entrar na fila offline.
+      console.warn('[CLOSE TABLE] Falha na rede, enfileirando fechamento localmente:', networkErr);
+      const current = orders.find((o) => o.id === params.orderId);
+      enqueueOfflineOperation('CLOSE_TABLE', params, idempotencyKey);
+      if (current) {
+        const optimistic = buildOptimisticClosedOrder(current);
+        setOrders((prev) => prev.map((o) => (o.id === params.orderId ? optimistic : o)));
+        showToast(`Sem conexão: Mesa ${params.tableNumber} fechada localmente e será sincronizada depois.`, 'warning');
+        return { success: true, order: optimistic };
+      }
+      showToast(`Sem conexão: fechamento da Mesa ${params.tableNumber} será sincronizado depois.`, 'warning');
+      return { success: true };
+    }
 
+    try {
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Erro ao fechar conta da mesa');
@@ -2207,6 +2275,8 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       showToast(`Mesa ${params.tableNumber} fechada e liberada com sucesso!`, 'success');
       return { success: true, order: data.order };
     } catch (err: any) {
+      // Resposta do servidor recebida, mas com erro de negócio: nunca
+      // enfileirar (reenviar só repetiria o mesmo erro / poderia duplicar).
       console.error('[CLOSE TABLE ERROR]:', err);
       showToast(err.message || 'Falha ao fechar conta da mesa', 'error');
       return { success: false, error: err.message };
