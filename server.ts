@@ -63,6 +63,11 @@ import {
   reconnectDevice,
   updateDeviceSettings,
   disconnectDevice,
+  roleCanReceivePayment,
+  getDeviceById,
+  setDeviceScreenRole,
+  setDeviceRestaurant,
+  DEVICE_SCREEN_ROLES,
   getAuditLogs,
   logAuditAction,
   listUsersWithDefaultPassword,
@@ -127,6 +132,7 @@ import {
   optionalStaffAuth,
   requireRole,
   requirePermission,
+  requirePaymentAuthority,
   createUserSession,
   revokeUserSession,
   revokeAllSessionsForUser,
@@ -1400,6 +1406,18 @@ app.patch('/api/orders/:id/status', authenticateStaff, requirePermission('can_ch
     if (!status) {
       return res.status(400).json({ success: false, error: 'Status é obrigatório' });
     }
+    // V9 PLUS ULTRA 01: 'finalizado' de comanda de MESA = finalização financeira (libera a mesa).
+    // Só quem pode receber pagamento; senão bastaria o garçom chamar este PATCH para contornar o Caixa.
+    if (status === 'finalizado') {
+      const target = getOrderById(req.params.id);
+      if (target?.orderType === 'mesa' && !roleCanReceivePayment(req.userSession?.role, req.userSession?.permissions)) {
+        return res.status(403).json({
+          success: false,
+          code: 'PAYMENT_FORBIDDEN',
+          error: 'Acesso proibido: a finalização da conta da mesa é feita pelo CAIXA após o pagamento.',
+        });
+      }
+    }
     const updated = updateOrderStatusTransactional(req.params.id, status, note);
 
     // Broadcast Real-Time SSE update immediately
@@ -1606,7 +1624,9 @@ function cashRequiredForTablesError(): string | null {
   return null;
 }
 
-app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
+// V9 PLUS ULTRA 01: PAGAMENTO só para Caixa/Administrador autorizado — garçom é recusado no servidor,
+// mesmo chamando a rota direto (o garçom só faz FECHAMENTO via /request-bill).
+app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('can_change_status'), requirePaymentAuthority, (req, res) => {
   try {
     const cashError = cashRequiredForTablesError();
     if (cashError) return res.status(409).json({ success: false, code: 'CASH_CLOSED', error: cashError });
@@ -1658,9 +1678,9 @@ app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('ca
 
     // Audit log
     logAuditAction({
-      userName: operatorName || 'Garçom',
-      userRole: 'garcom',
-      action: `Fechou conta da Mesa ${tableNumber} via ${paymentMethod.toUpperCase()} (${closed.shortCode})`,
+      userName: req.userSession?.name || operatorName || 'Caixa',
+      userRole: req.userSession?.role || 'caixa',
+      action: `Recebeu pagamento e finalizou a conta da Mesa ${tableNumber} via ${paymentMethod.toUpperCase()} (${closed.shortCode})`,
       details: `Total R$ ${closed.total.toFixed(2)}${discount ? ` - Desc: R$ ${discount}` : ''}`,
       category: 'order',
     });
@@ -2150,10 +2170,18 @@ app.delete('/api/users/:id', authenticateStaff, requireRole('super_admin'), (req
 // CONNECTED DEVICES (MOBILE RECEIVERS) API
 // ==========================================
 
+// V9 PLUS ULTRA 01: multi-restaurante — um administrador só enxerga/altera aparelhos do PRÓPRIO
+// restaurante (aparelhos ainda sem restaurante vinculado ficam visíveis para poderem ser vinculados).
+function deviceInScope(req: any, dev: { restaurantSlug?: string } | undefined): boolean {
+  if (!dev) return false;
+  if (!dev.restaurantSlug) return true;
+  return canAccessRestaurant(req, dev.restaurantSlug);
+}
+
 app.get('/api/devices', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
-    const devices = getAllDevices();
-    res.json({ success: true, devices });
+    const devices = getAllDevices().filter((d) => deviceInScope(req, d));
+    res.json({ success: true, devices, screenRoles: DEVICE_SCREEN_ROLES });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -2239,13 +2267,17 @@ app.get('/api/devices/qr/claim/:claimId', authenticateStaff, rateLimit({ key: 'q
 });
 
 app.get('/api/devices/qr/pending', authenticateStaff, requireRole('super_admin', 'administrador'), (_req, res) => {
-  res.json({ success: true, claims: listPendingQrClaims() });
+  res.json({ success: true, claims: listPendingQrClaims().filter((c) => deviceInScope(_req, c)) });
 });
 
 app.post('/api/devices/qr/claim/:claimId/decision', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
     const approve = req.body?.approve === true;
-    const dev = decideQrClaim(req.params.claimId, approve, req.userSession?.name || 'Administrador');
+    const claim = listPendingQrClaims().find((c) => c.id === req.params.claimId);
+    if (claim && !deviceInScope(req, claim)) {
+      return res.status(403).json({ success: false, error: 'Sem acesso a este restaurante.' });
+    }
+    const dev = decideQrClaim(req.params.claimId, approve, req.userSession?.name || 'Administrador', req.body?.screenRole);
     res.json({ success: true, approved: approve, device: dev });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
@@ -2254,6 +2286,9 @@ app.post('/api/devices/qr/claim/:claimId/decision', authenticateStaff, requireRo
 
 app.post('/api/devices/:id/revoke', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
+    if (!deviceInScope(req, getDeviceById(req.params.id))) {
+      return res.status(403).json({ success: false, error: 'Dispositivo de outro restaurante ou inexistente.' });
+    }
     const dev = req.body?.reconnect === true
       ? reconnectDevice(req.params.id, req.userSession?.name || 'Administrador')
       : revokeDevice(req.params.id, req.userSession?.name || 'Administrador');
@@ -2265,11 +2300,32 @@ app.post('/api/devices/:id/revoke', authenticateStaff, requireRole('super_admin'
 
 app.patch('/api/devices/:id', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
+    const target = getDeviceById(req.params.id);
+    if (!target) return res.status(404).json({ success: false, error: 'Dispositivo não encontrado.' });
+    if (!deviceInScope(req, target)) {
+      return res.status(403).json({ success: false, error: 'Dispositivo de outro restaurante.' });
+    }
+    const operator = req.userSession?.name || 'Administrador';
+
+    // V9 PLUS ULTRA 01: vínculo com restaurante (validado) e função ÚNICA do aparelho.
+    if (req.body && req.body.restaurantSlug !== undefined) {
+      const slug = String(req.body.restaurantSlug || '');
+      if (!restaurantExists(slug)) return res.status(400).json({ success: false, error: 'Restaurante inexistente.' });
+      if (!canAccessRestaurant(req, slug)) {
+        return res.status(403).json({ success: false, error: 'Sem acesso a este restaurante.' });
+      }
+      setDeviceRestaurant(req.params.id, slug, operator);
+    }
+    if (req.body && req.body.screenRole !== undefined) {
+      // Só um valor (string) ou null. Array/objeto = tentativa de multi-função -> recusado.
+      setDeviceScreenRole(req.params.id, req.body.screenRole, operator);
+    }
+
     const allowed = ['soundEnabled', 'soundType', 'volume', 'vibrationEnabled', 'delayAlertsEnabled', 'delayMinutesThreshold', 'delayRepeatMinutes', 'deviceName'];
     const safe: Record<string, unknown> = {};
     for (const k of allowed) if (req.body && req.body[k] !== undefined) safe[k] = req.body[k];
     if (typeof safe.deviceName === 'string') safe.deviceName = (safe.deviceName as string).trim().slice(0, 60);
-    const updated = updateDeviceSettings(req.params.id, safe as any);
+    const updated = Object.keys(safe).length > 0 ? updateDeviceSettings(req.params.id, safe as any) : getDeviceById(req.params.id);
     res.json({ success: true, device: updated });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
@@ -2278,6 +2334,10 @@ app.patch('/api/devices/:id', authenticateStaff, requireRole('super_admin', 'adm
 
 app.delete('/api/devices/:id', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
+    const targetDev = getDeviceById(req.params.id);
+    if (targetDev && !deviceInScope(req, targetDev)) {
+      return res.status(403).json({ success: false, error: 'Dispositivo de outro restaurante.' });
+    }
     const operatorName = (req.query.operatorName as string) || req.userSession?.name || 'Administrador';
     const disconnected = disconnectDevice(req.params.id, operatorName);
     if (!disconnected) {
