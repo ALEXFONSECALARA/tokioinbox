@@ -5,6 +5,7 @@ import {
   findUserById,
   initializeUsers,
   ROLE_DEFAULT_PERMISSIONS,
+  roleCanReceivePayment,
 } from './authAndDeviceService';
 
 export interface AuthenticatedUserSession {
@@ -269,6 +270,25 @@ export function requireRole(...allowedRoles: UserRole[]) {
 /**
  * Permission Guard: Checks granular permission flag
  */
+/**
+ * V9 PLUS ULTRA 01 — exige autoridade de PAGAMENTO. Garçom é sempre recusado (mesmo que alguém
+ * tente chamar a rota direto por URL/API); Caixa e Administrador seguem a permissão configurada.
+ */
+export function requirePaymentAuthority(req: Request, res: Response, next: NextFunction) {
+  const user = req.userSession;
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Acesso negado: Usuário não autenticado.', code: 'UNAUTHENTICATED' });
+  }
+  if (!roleCanReceivePayment(user.role, user.permissions)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Acesso proibido: apenas o CAIXA (ou administrador autorizado) pode receber pagamento. O garçom solicita o FECHAMENTO da conta.',
+      code: 'PAYMENT_FORBIDDEN',
+    });
+  }
+  next();
+}
+
 export function requirePermission(permissionKey: keyof UserPermissions) {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = req.userSession;

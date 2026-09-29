@@ -1012,6 +1012,16 @@ export function appendItemsToTableOrderTransactional(params: {
   if (!restaurantExists(params.restaurantSlug)) {
     throw new Error('Restaurante não encontrado.');
   }
+  // V9 PLUS ULTRA 01: pausa também vale para pedidos de mesa feitos pelo cliente (QR).
+  // Vale só para o restaurante informado; a equipe continua podendo lançar.
+  if (!actor.isStaff) {
+    const rest = getRestaurant(params.restaurantSlug);
+    if (rest?.isActive === false) throw new Error('Este restaurante não está recebendo pedidos.');
+    assertCanAcceptNewOrder(params.restaurantSlug, false);
+    if (rest?.isOpen === false) {
+      throw new Error('Restaurante temporariamente fechado para novos pedidos.');
+    }
+  }
   if (!Number.isInteger(params.tableNumber) || params.tableNumber < 1 || params.tableNumber > 999) {
     throw new Error('Número de mesa inválido.');
   }

@@ -32,6 +32,8 @@ export interface UserPermissions {
   can_manage_notifications: boolean;
   can_delete_orders?: boolean;
   can_print_tickets?: boolean;
+  /** V9 PLUS ULTRA 01 — PAGAMENTO/finalização financeira/liberação de mesa por pagamento. */
+  can_receive_payment?: boolean;
 }
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
@@ -52,6 +54,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     can_view_reports: true,
     can_configure_restaurant: true,
     can_manage_notifications: true,
+    can_receive_payment: true,
   },
   administrador: {
     can_view_orders: true,
@@ -70,6 +73,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     can_view_reports: true,
     can_configure_restaurant: false,
     can_manage_notifications: true,
+    can_receive_payment: true,
   },
   caixa: {
     can_view_orders: true,
@@ -88,6 +92,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     can_view_reports: false,
     can_configure_restaurant: false,
     can_manage_notifications: false,
+    can_receive_payment: true,
   },
   cozinha: {
     can_view_orders: true,
@@ -106,6 +111,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     can_view_reports: false,
     can_configure_restaurant: false,
     can_manage_notifications: false,
+    can_receive_payment: false,
   },
   sushi_bar: {
     can_view_orders: true,
@@ -124,6 +130,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     can_view_reports: false,
     can_configure_restaurant: false,
     can_manage_notifications: false,
+    can_receive_payment: false,
   },
   bar: {
     can_view_orders: true,
@@ -142,6 +149,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     can_view_reports: false,
     can_configure_restaurant: false,
     can_manage_notifications: false,
+    can_receive_payment: false,
   },
   entrega: {
     can_view_orders: true,
@@ -160,6 +168,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     can_view_reports: false,
     can_configure_restaurant: false,
     can_manage_notifications: false,
+    can_receive_payment: false,
   },
   garcom: {
     can_view_orders: true,
@@ -178,8 +187,22 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
     can_view_reports: false,
     can_configure_restaurant: false,
     can_manage_notifications: false,
+    can_receive_payment: false,
   },
 };
+
+/**
+ * V9 PLUS ULTRA 01 — quem pode RECEBER PAGAMENTO.
+ * O perfil GARÇOM nunca recebe pagamento (nem por permissão personalizada); os demais seguem a
+ * permissão `can_receive_payment`, com o padrão do perfil quando o cadastro é anterior a esta versão.
+ */
+export function roleCanReceivePayment(role: UserRole | string | undefined, perms?: Partial<UserPermissions> | null): boolean {
+  if (role === 'garcom') return false;
+  if (role === 'super_admin') return true;
+  const explicit = perms?.can_receive_payment;
+  if (typeof explicit === 'boolean') return explicit;
+  return Boolean((ROLE_DEFAULT_PERMISSIONS as any)[role as string]?.can_receive_payment);
+}
 
 export interface UserAccount {
   id: string;
@@ -193,6 +216,17 @@ export interface UserAccount {
   permissions: UserPermissions;
   createdAt: string;
   lastLoginAt?: string;
+}
+
+/**
+ * V9 PLUS ULTRA 01 — UMA ÚNICA função (tela) por dispositivo, definida pelo administrador.
+ * O campo é um valor único (nunca lista): um aparelho não acumula funções.
+ */
+export const DEVICE_SCREEN_ROLES = ['garcom', 'caixa', 'cliente', 'cozinha_kds', 'sushibar_kds', 'barra_kds'] as const;
+export type DeviceScreenRole = (typeof DEVICE_SCREEN_ROLES)[number];
+
+export function isDeviceScreenRole(v: unknown): v is DeviceScreenRole {
+  return typeof v === 'string' && (DEVICE_SCREEN_ROLES as readonly string[]).includes(v);
 }
 
 export interface ConnectedDevice {
@@ -219,6 +253,8 @@ export interface ConnectedDevice {
   connectedBy?: string; // usuário que autorizou
   deviceType?: string; // celular | tablet
   connectedVia?: 'qr' | 'code';
+  // V9 PLUS ULTRA 01 — função única do aparelho (null/ausente = ainda não definida)
+  screenRole?: DeviceScreenRole | null;
 }
 
 export interface AuditActionLog {
@@ -435,6 +471,21 @@ export function initializeUsers() {
   }
   usersInitialized = true;
   neutralizeDefaultCredentials();
+  migratePaymentPermission();
+}
+
+/** Migração: usuários criados antes da V9 PLUS ULTRA 01 ganham `can_receive_payment` pelo padrão do perfil. */
+function migratePaymentPermission() {
+  let changed = false;
+  for (const u of usersCache) {
+    if (!u.permissions) continue;
+    const want = roleCanReceivePayment(u.role, u.permissions);
+    if (u.permissions.can_receive_payment !== want) {
+      u.permissions.can_receive_payment = want;
+      changed = true;
+    }
+  }
+  if (changed) persistUsersSync();
 }
 
 function persistUsersSync() {
@@ -493,6 +544,7 @@ export function createUser(data: {
     can_print_tickets: Boolean(basePerms.can_create_orders || basePerms.can_view_orders),
     ...(data.customPermissions || {}),
   };
+  finalPerms.can_receive_payment = roleCanReceivePayment(data.role, finalPerms);
 
   const newUser: UserAccount = {
     id: `usr-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
@@ -559,6 +611,8 @@ export function updateUser(
   if (updates.permissions) {
     newPermissions = { ...newPermissions, ...updates.permissions };
   }
+
+  newPermissions.can_receive_payment = roleCanReceivePayment(newRole, newPermissions);
 
   const updated: UserAccount = {
     ...user,
@@ -731,7 +785,7 @@ export function getQrClaimStatus(claimId: string): { status: 'pending' | 'approv
   return { status: c.status, deviceId: c.deviceId };
 }
 
-export function decideQrClaim(claimId: string, approve: boolean, operatorName: string): ConnectedDevice | null {
+export function decideQrClaim(claimId: string, approve: boolean, operatorName: string, screenRole?: unknown): ConnectedDevice | null {
   initializeDevices();
   const c = qrClaims.get(claimId);
   if (!c || c.expiresAt <= Date.now() || c.status !== 'pending') throw new Error('Solicitação inexistente, expirada ou já decidida.');
@@ -749,6 +803,7 @@ export function decideQrClaim(claimId: string, approve: boolean, operatorName: s
     status: 'online', lastPingAt: now, connectedAt: now,
     restaurantSlug: c.restaurantSlug, connectedBy: `${c.requestedBy} (autorizado por ${operatorName})`,
     deviceType: c.deviceType, connectedVia: 'qr',
+    screenRole: isDeviceScreenRole(screenRole) ? screenRole : null,
   };
   devicesCache.push(dev);
   persistDevicesSync();
@@ -862,6 +917,50 @@ export function updateDeviceSettings(
 
   persistDevicesSync();
   return devicesCache[idx];
+}
+
+export function getDeviceById(id: string): ConnectedDevice | undefined {
+  initializeDevices();
+  return devicesCache.find((d) => d.id === id);
+}
+
+/**
+ * Define a função única do aparelho. Aceita SOMENTE um valor do conjunto oficial (ou null para
+ * "sem função"). Listas/objetos/valores desconhecidos são recusados — não existe multi-função.
+ */
+export function setDeviceScreenRole(id: string, role: unknown, operatorName: string): ConnectedDevice {
+  initializeDevices();
+  const dev = devicesCache.find((d) => d.id === id);
+  if (!dev) throw new Error('Dispositivo não encontrado.');
+  if (role !== null && !isDeviceScreenRole(role)) {
+    throw new Error(`Função inválida. Escolha UMA entre: ${DEVICE_SCREEN_ROLES.join(', ')}.`);
+  }
+  const before = dev.screenRole || null;
+  dev.screenRole = role as DeviceScreenRole | null;
+  persistDevicesSync();
+  logAuditAction({
+    userName: operatorName,
+    userRole: 'admin',
+    action: `Definiu a função do dispositivo "${dev.deviceName}": ${before || 'nenhuma'} → ${dev.screenRole || 'nenhuma'}`,
+    category: 'device',
+  });
+  return dev;
+}
+
+/** Associa o aparelho a UM restaurante (multi-restaurante: dispositivos nunca se misturam). */
+export function setDeviceRestaurant(id: string, slug: string, operatorName: string): ConnectedDevice {
+  initializeDevices();
+  const dev = devicesCache.find((d) => d.id === id);
+  if (!dev) throw new Error('Dispositivo não encontrado.');
+  dev.restaurantSlug = slug;
+  persistDevicesSync();
+  logAuditAction({
+    userName: operatorName,
+    userRole: 'admin',
+    action: `Vinculou o dispositivo "${dev.deviceName}" ao restaurante "${slug}"`,
+    category: 'device',
+  });
+  return dev;
 }
 
 export function disconnectDevice(id: string, operatorName?: string): boolean {
