@@ -1,6 +1,7 @@
 import { RestaurantConfig, MenuCategory, MenuItem, Order, CustomerRecord } from '../types/restaurant';
+import { sanitizeDemoRestaurant } from '../utils/demoData';
 
-export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
+const RAW_RESTAURANTS: Record<string, RestaurantConfig> = {
   japones: {
     slug: 'japones',
     customUrlPath: 'SakuraSushiHouse',
@@ -584,7 +585,7 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
   vegano: {
     slug: 'vegano',
     customUrlPath: 'BotaniquePrimeVegan',
-    name: 'Botanique Gastronomia Vegetal Prime',
+    name: 'Botanique Gastronomia Vegetal',
     tagline: 'Alta gastronomia vegetal autoral, insumos botânicos orgânicos e afeto consciente',
     cuisine: 'Gastronomia Vegetal & Plant-Based Prime',
     emoji: '🌿',
@@ -677,6 +678,14 @@ export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = {
     activeTables: Array.from({ length: 30 }, (_, i) => i + 1),
   },
 };
+
+/**
+ * V9.3 — Os 7 restaurantes oficiais. Telefone, WhatsApp, endereço, PIX e avaliações NÃO são
+ * inventados: ficam vazios até o dono cadastrar os dados reais em Restaurantes → Editar.
+ */
+export const INITIAL_RESTAURANTS: Record<string, RestaurantConfig> = Object.fromEntries(
+  Object.entries(RAW_RESTAURANTS).map(([slug, r]) => [slug, sanitizeDemoRestaurant(r).value])
+) as Record<string, RestaurantConfig>;
 
 export const INITIAL_CATEGORIES: MenuCategory[] = [
   // Japonês
