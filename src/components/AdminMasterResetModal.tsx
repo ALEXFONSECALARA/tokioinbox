@@ -76,7 +76,7 @@ export const AdminMasterResetModal: React.FC<AdminMasterResetModalProps> = ({ is
           </div>
           <p className="text-slate-300 leading-relaxed">
             Esta operação irá apagar permanentemente <strong>todos os {orders.length} pedidos</strong>{' '}
-            gravados no servidor e na base de dados de todos os 4 restaurantes, limpando filas de
+            gravados no servidor e na base de dados de todos os restaurantes, limpando filas de
             cozinha KDS, entregas e relatórios operacionais.
           </p>
           <p className="text-[11px] text-slate-400">

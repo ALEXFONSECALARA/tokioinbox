@@ -54,6 +54,9 @@ export const HomeHub: React.FC<HomeHubProps> = ({
   onOpenTracker,
 }) => {
   const { restaurants, categories, menuItems } = useStore();
+  const sectionTitle =
+    Object.values(restaurants).map((r) => (r.vitrineSectionTitle || '').trim()).find(Boolean) ||
+    'Promoções & Rodízios em Destaque';
   const [searchFilter, setSearchFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<RestaurantSlug | 'all'>('all');
   const [sortFilter, setSortFilter] = useState<'recommended' | 'rating' | 'time' | 'fee'>('recommended');
@@ -253,7 +256,7 @@ export const HomeHub: React.FC<HomeHubProps> = ({
           <div className="flex items-center gap-2">
             <Flame className="w-5 h-5 text-[#FF7A00]" />
             <h2 className="text-lg sm:text-xl font-black text-[#F5F5F5] tracking-tight uppercase">
-              Promoções &amp; Rodízios em Destaque
+              {sectionTitle}
             </h2>
           </div>
           <span className="text-xs text-[#E3BD6A] font-semibold flex items-center gap-1">

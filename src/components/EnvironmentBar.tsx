@@ -44,7 +44,7 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
   className = '',
   condensed = false,
 }) => {
-  const { currentUser, salesChannels } = useStore();
+  const { currentUser, salesChannels, systemSettings } = useStore();
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false);
 
   // Perfis e áreas liberadas seguem exatamente os nomes do servidor (ver painel/access.ts).
@@ -73,7 +73,7 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
   const canAccessBalcao = canUse('balcao') && isAreaEnabledByChannels('balcao', salesChannels);
   const canAccessDelivery = canUse('delivery') && isAreaEnabledByChannels('delivery', salesChannels);
   const canAccessCaixa = canUse('caixa');
-  const canAccessProducao = canUse('cozinha') || canUse('sushibar') || canUse('bar');
+  const canAccessProducao = systemSettings.kdsEnabled && (canUse('cozinha') || canUse('sushibar') || canUse('bar'));
   const canAccessAdmin = canUse('admin');
   const canAccessKanban = canUse('kanban');
 

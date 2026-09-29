@@ -33,10 +33,21 @@ interface AdminFiscalModuleProps {
 }
 
 export const AdminFiscalModule: React.FC<AdminFiscalModuleProps> = ({
-  selectedSlug = 'japones',
+  selectedSlug,
 }) => {
-  const { currentUser } = useStore();
-  const currentSlug = selectedSlug === 'all' ? 'japones' : selectedSlug;
+  const { currentUser, restaurants } = useStore();
+  // V9.3: nunca escolher um restaurante "por padrão" silenciosamente — se vier 'all' ou vazio,
+  // o operador escolhe explicitamente qual loja está configurando.
+  const allowedSlugs = Object.keys(restaurants).filter(
+    (s) => currentUser?.restaurantSlug === 'all' || s === currentUser?.restaurantSlug
+  );
+  const [pickedSlug, setPickedSlug] = useState<string>(
+    selectedSlug && selectedSlug !== 'all' ? selectedSlug : allowedSlugs[0] || ''
+  );
+  useEffect(() => {
+    if (selectedSlug && selectedSlug !== 'all') setPickedSlug(selectedSlug);
+  }, [selectedSlug]);
+  const currentSlug = pickedSlug;
 
   const [activeSubTab, setActiveSubTab] = useState<
     'config' | 'certificate' | 'documents' | 'simulation' | 'audit' | 'inutilizacao'
@@ -461,8 +472,35 @@ export const AdminFiscalModule: React.FC<AdminFiscalModuleProps> = ({
     return true;
   });
 
+  if (!currentSlug) {
+    return (
+      <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-sm text-slate-300">
+        Nenhum restaurante disponível para configurar dados fiscais.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
+      {/* V9.3: seletor explícito de restaurante quando o admin gerencia mais de uma loja */}
+      {allowedSlugs.length > 1 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
+          <Building className="w-4 h-4 text-amber-400 shrink-0" />
+          <label className="text-xs font-bold text-slate-300 shrink-0">Configurando dados fiscais de:</label>
+          <select
+            value={currentSlug}
+            onChange={(e) => setPickedSlug(e.target.value)}
+            className="flex-1 bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+          >
+            {allowedSlugs.map((s) => (
+              <option key={s} value={s}>
+                {restaurants[s]?.emoji} {restaurants[s]?.name || s}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Top Banner / SEFAZ Status Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">

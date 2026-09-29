@@ -1,3 +1,4 @@
+import { waLink } from '../utils/contactLinks';
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, OrderStatus } from '../types/restaurant';
@@ -335,12 +336,10 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               </div>
 
               {/* Contact Restaurant */}
-              {restaurant && (
+              {restaurant && waLink(restaurant.whatsapp) && (
                 <div className="pt-2">
                   <a
-                    href={`https://wa.me/${restaurant.whatsapp}?text=Ol%C3%A1%2C%20estou%20acompanhando%20o%20pedido%20${encodeURIComponent(
-                      currentOrder.shortCode
-                    )}%20e%20gostaria%20de%20uma%20informa%C3%A7%C3%A3o.`}
+                    href={waLink(restaurant.whatsapp, `Olá, estou acompanhando o pedido ${currentOrder.shortCode} e gostaria de uma informação.`) || undefined}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition-colors"

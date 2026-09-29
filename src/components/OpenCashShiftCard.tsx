@@ -9,6 +9,7 @@ import { useStore } from '../context/StoreContext';
 export const OpenCashShiftCard: React.FC = () => {
   const { cashShift, openCashShift, currentUser } = useStore();
   const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
 
   if (!cashShift.isClosed) return null;
 
@@ -16,8 +17,9 @@ export const OpenCashShiftCard: React.FC = () => {
     e.preventDefault();
     const value = parseFloat(amount.replace(',', '.'));
     if (isNaN(value) || value < 0) return;
-    openCashShift(value);
+    openCashShift(value, note);
     setAmount('');
+    setNote('');
   };
 
   const last = cashShift.finalTotals;
@@ -53,6 +55,17 @@ export const OpenCashShiftCard: React.FC = () => {
           placeholder="0,00"
           data-testid="cash-initial-amount"
           className="w-full bg-[#0B0F19] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-amber-400"
+        />
+      </label>
+      <label className="space-y-1 lg:w-56">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Observação</span>
+        <input
+          type="text"
+          maxLength={300}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Opcional"
+          className="w-full bg-[#0B0F19] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"
         />
       </label>
       <button

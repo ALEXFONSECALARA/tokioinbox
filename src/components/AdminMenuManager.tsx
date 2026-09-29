@@ -54,6 +54,15 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
   const [formImage, setFormImage] = useState('');
   const [formCategory, setFormCategory] = useState('');
   const [formStation, setFormStation] = useState<ProductionStation>('cozinha');
+  // V9.2: destinos de impressão (vários setores por produto). O 1º é o setor principal (KDS).
+  const [formPrintStations, setFormPrintStations] = useState<ProductionStation[]>(['cozinha']);
+  const togglePrintStation = (s: ProductionStation) =>
+    setFormPrintStations((prev) => {
+      const next = prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s];
+      if (next.length === 0) return prev; // pelo menos um destino
+      setFormStation(next[0]);
+      return next;
+    });
   const [formIsAvailable, setFormIsAvailable] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -147,6 +156,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
     );
     setFormCategory(restaurantCategories[0]?.id || '');
     setFormStation('cozinha');
+    setFormPrintStations(['cozinha']);
     setFormIsAvailable(true);
     // Fiscal defaults
     setFormNcm('2106.90.90');
@@ -169,6 +179,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
     setFormImage(item.image);
     setFormCategory(item.categoryId);
     setFormStation(item.station || 'cozinha');
+    setFormPrintStations(item.printStations?.length ? item.printStations : [item.station || 'cozinha']);
     setFormIsAvailable(item.available);
     // Fiscal fields
     setFormNcm(item.ncm || '2106.90.90');
@@ -207,7 +218,8 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
         cmvCost: cmvCostNum,
         image: formImage.trim(),
         categoryId: formCategory,
-        station: formStation,
+        station: formPrintStations[0] || formStation,
+        printStations: formPrintStations,
         available: formIsAvailable,
         // Fiscal
         ncm: formNcm.trim() || '2106.90.90',
@@ -231,7 +243,8 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
         image:
           formImage.trim() ||
           'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
-        station: formStation,
+        station: formPrintStations[0] || formStation,
+        printStations: formPrintStations,
         available: formIsAvailable,
         tags: ['destaque'],
         // Fiscal
@@ -608,9 +621,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => setFormStation('cozinha')}
+                    onClick={() => togglePrintStation('cozinha')}
                     className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold flex flex-col items-center gap-1 transition-all ${
-                      formStation === 'cozinha'
+                      formPrintStations.includes('cozinha')
                         ? 'bg-amber-500/20 text-amber-300 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
                         : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                     }`}
@@ -622,9 +635,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setFormStation('sushibar')}
+                    onClick={() => togglePrintStation('sushibar')}
                     className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold flex flex-col items-center gap-1 transition-all ${
-                      formStation === 'sushibar'
+                      formPrintStations.includes('sushibar')
                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
                         : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                     }`}
@@ -636,9 +649,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setFormStation('bar')}
+                    onClick={() => togglePrintStation('bar')}
                     className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold flex flex-col items-center gap-1 transition-all ${
-                      formStation === 'bar'
+                      formPrintStations.includes('bar')
                         ? 'bg-purple-500/20 text-purple-300 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.2)]'
                         : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                     }`}

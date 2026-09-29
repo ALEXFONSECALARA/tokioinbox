@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
+import { AdminSystemSettings } from './AdminSystemSettings';
 import { SalesChannelConfig, OrderType, PaymentMethod, ProductionStation } from '../types/restaurant';
 import {
   SlidersHorizontal,
@@ -133,6 +134,7 @@ export const AdminSalesChannelsSettings: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
+      <AdminSystemSettings />
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-[#0E1526] to-indigo-950/40 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-wrap items-center justify-between gap-4">
         <div>

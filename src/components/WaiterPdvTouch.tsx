@@ -1,3 +1,4 @@
+import { RemoveOrderItemButton } from './RemoveOrderItemButton';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import {
@@ -2740,6 +2741,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                 <div className="text-sm font-black text-white">TOTAL: <span className="text-amber-400 font-mono">R$ {(order?.total || 0).toFixed(2)}</span></div>
                 <div className="flex gap-2">
                   <button type="button" disabled={awaitingByTable.has(table)} onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('cardapio'); }} className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-black disabled:opacity-40">{awaitingByTable.has(table) ? 'Conta travada' : 'Adicionar Itens'}</button>
+                  <RemoveOrderItemButton order={order} disabled={awaitingByTable.has(table)} />
                   <button type="button" disabled={!order} onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('fechamento'); }} className={`px-5 py-2 rounded-xl text-slate-950 text-xs font-black uppercase disabled:opacity-40 ${awaitingByTable.has(table) ? 'bg-emerald-400 animate-pulse' : 'bg-amber-500'}`}>{awaitingByTable.has(table) ? 'Pagamento' : 'Fechamento'}</button>
                 </div>
               </div>

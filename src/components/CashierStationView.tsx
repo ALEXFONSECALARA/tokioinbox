@@ -1,3 +1,4 @@
+import { CashCloseModal } from './CashCloseModal';
 import { OpenCashShiftCard } from './OpenCashShiftCard';
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
@@ -1134,41 +1135,8 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
         </div>
       )}
 
-      {/* Close Shift Confirmation Modal */}
-      {isConfirmingCloseShift && (
-        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#121622] border border-red-500/40 rounded-3xl max-w-md w-full max-h-[92vh] overflow-y-auto my-auto p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-black text-white flex items-center gap-2">
-              <Lock className="w-5 h-5 text-red-400" />
-              <span>Encerrar Turno &amp; Fechar Caixa?</span>
-            </h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Esta ação registrará o fechamento oficial do turno. O saldo em dinheiro na gaveta no momento é de{' '}
-              <strong className="text-amber-400">R$ {saldoGaveta.toFixed(2)}</strong> e o total faturado é{' '}
-              <strong className="text-emerald-400">R$ {faturamentoTotal.toFixed(2)}</strong>.
-            </p>
-
-            <div className="flex gap-2 pt-3">
-              <button
-                onClick={() => setIsConfirmingCloseShift(false)}
-                className="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  closeCashShift();
-                  setIsConfirmingCloseShift(false);
-                  showToast('Turno de caixa encerrado com sucesso!', 'success');
-                }}
-                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black"
-              >
-                Sim, Fechar Caixa
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* V9.2: Fechar Caixa com resumo, diferença e relatório */}
+      {isConfirmingCloseShift && <CashCloseModal onClose={() => setIsConfirmingCloseShift(false)} />}
 
       {/* Thermal Ticket Modal */}
       {/* BUG CORRIGIDO: faltava a prop `restaurant`, obrigatória no componente —

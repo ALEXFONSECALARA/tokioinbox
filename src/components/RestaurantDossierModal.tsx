@@ -1,3 +1,4 @@
+import { waLink, instagramProfileUrl } from '../utils/contactLinks';
 import React, { useState } from 'react';
 import { RestaurantConfig, MenuItem, MenuCategory, RestaurantSlug } from '../types/restaurant';
 import {
@@ -134,10 +135,12 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
                 <span className="text-[10px] font-black uppercase tracking-widest text-[#E3BD6A] bg-[#111111]/90 border border-[#E3BD6A]/30 px-2 py-0.5 rounded-md backdrop-blur-md">
                   {restaurant.themeStyle?.badge || restaurant.cuisine}
                 </span>
-                <span className="text-[11px] text-amber-400 font-bold flex items-center gap-1">
-                  <Star className="w-3 h-3 fill-[#E3BD6A] text-[#E3BD6A]" />
-                  {restaurant.rating.toFixed(1)} ({restaurant.reviewCount} avaliações)
-                </span>
+                {restaurant.reviewCount > 0 && (
+                  <span className="text-[11px] text-amber-400 font-bold flex items-center gap-1">
+                    <Star className="w-3 h-3 fill-[#E3BD6A] text-[#E3BD6A]" />
+                    {restaurant.rating.toFixed(1)} ({restaurant.reviewCount} avaliações)
+                  </span>
+                )}
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-[#F5F5F5] tracking-tight leading-tight truncate mt-1">
                 {restaurant.name}
@@ -383,7 +386,12 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
           )}
 
           {/* TAB 3: AVALIAÇÕES & DEPOIMENTOS */}
-          {activeTab === 'avaliacoes' && (
+          {activeTab === 'avaliacoes' && restaurant.reviewCount <= 0 && (
+            <div className="p-6 rounded-2xl bg-[#111111] border border-slate-800 text-center text-sm text-slate-300">
+              Este restaurante ainda não recebeu avaliações.
+            </div>
+          )}
+          {activeTab === 'avaliacoes' && restaurant.reviewCount > 0 && (
             <div className="space-y-5">
               {/* Rating Overview Box */}
               <div className="p-4 sm:p-6 rounded-2xl bg-[#111111] border border-[#E3BD6A]/30 flex flex-col sm:flex-row items-center justify-between gap-6">
@@ -404,7 +412,7 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
                     </div>
                   </div>
                   <p className="text-xs text-[#E3BD6A]">
-                    {restaurant.reviewsInfo?.fiveStarsPercent || 96}% das avaliações são 5 estrelas
+                    {restaurant.reviewsInfo?.fiveStarsPercent ?? 0}% das avaliações são 5 estrelas
                   </p>
                 </div>
 
@@ -499,8 +507,9 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                   {/* Instagram */}
+                  {instagramProfileUrl(restaurant.instagram) && (
                   <a
-                    href={`https://instagram.com/${restaurant.instagram?.replace('@', '')}`}
+                    href={instagramProfileUrl(restaurant.instagram) || undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-3 rounded-xl bg-[#050505] border border-pink-500/30 hover:border-pink-500/70 text-slate-200 hover:text-white flex items-center gap-3 transition-colors"
@@ -513,10 +522,12 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
                       <span className="text-xs text-white">{restaurant.instagram}</span>
                     </div>
                   </a>
+                  )}
 
                   {/* WhatsApp */}
+                  {waLink(restaurant.whatsapp) && (
                   <a
-                    href={`https://wa.me/${restaurant.whatsapp}`}
+                    href={waLink(restaurant.whatsapp) || undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-3 rounded-xl bg-[#050505] border border-emerald-500/30 hover:border-emerald-500/70 text-slate-200 hover:text-white flex items-center gap-3 transition-colors"
@@ -527,6 +538,7 @@ export const RestaurantDossierModal: React.FC<RestaurantDossierModalProps> = ({
                       <span className="text-xs text-white">{restaurant.phone}</span>
                     </div>
                   </a>
+                  )}
 
                   {/* Address / Map */}
                   <a

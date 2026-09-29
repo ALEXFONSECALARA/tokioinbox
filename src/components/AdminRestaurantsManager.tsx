@@ -81,16 +81,21 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
   const [formAccentColor, setFormAccentColor] = useState('#E3BD6A');
   const [formLogo, setFormLogo] = useState(SUGGESTED_LOGOS[0]);
   const [formBanner, setFormBanner] = useState(SUGGESTED_BANNERS[0]);
-  const [formPhone, setFormPhone] = useState('(11) 98888-7777');
-  const [formWhatsapp, setFormWhatsapp] = useState('5511988887777');
-  const [formAddress, setFormAddress] = useState('Av. Paulista, 1000 - São Paulo, SP');
+  const [formPhone, setFormPhone] = useState('');
+  const [formWhatsapp, setFormWhatsapp] = useState('');
+  const [formInstagram, setFormInstagram] = useState('');
+  const [formFacebook, setFormFacebook] = useState('');
+  const [formBtnWa, setFormBtnWa] = useState(true);
+  const [formBtnIg, setFormBtnIg] = useState(true);
+  const [formBtnFb, setFormBtnFb] = useState(true);
+  const [formAddress, setFormAddress] = useState('');
   const [formOpeningHours, setFormOpeningHours] = useState('Segunda a Domingo das 11h às 23h');
   const [formDeliveryFee, setFormDeliveryFee] = useState('7.00');
   const [formMinOrder, setFormMinOrder] = useState('35.00');
   const [formTimeMin, setFormTimeMin] = useState('30');
   const [formTimeMax, setFormTimeMax] = useState('45');
-  const [formPixKey, setFormPixKey] = useState('contato@restaurante.com.br');
-  const [formPixReceiver, setFormPixReceiver] = useState('Empresa Tokio Alimentação Ltda');
+  const [formPixKey, setFormPixKey] = useState('');
+  const [formPixReceiver, setFormPixReceiver] = useState('');
 
   // Handle Name change and auto-generate clean url path
   const handleNameChange = (name: string) => {
@@ -119,6 +124,8 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
     setFormAccentColor('#E3BD6A');
     setFormLogo(SUGGESTED_LOGOS[0]);
     setFormBanner(SUGGESTED_BANNERS[0]);
+    setFormPhone(''); setFormWhatsapp(''); setFormAddress(''); setFormPixKey(''); setFormPixReceiver('');
+    setFormInstagram(''); setFormFacebook(''); setFormBtnWa(true); setFormBtnIg(true); setFormBtnFb(true);
     setIsCreatingNew(false);
     setEditingRestaurant(null);
   };
@@ -135,6 +142,11 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
     setFormBanner(rest.banner);
     setFormPhone(rest.phone);
     setFormWhatsapp(rest.whatsapp);
+    setFormInstagram(rest.instagram || rest.socials?.instagram || '');
+    setFormFacebook(rest.facebook || '');
+    setFormBtnWa(rest.orderButtons?.whatsapp !== false);
+    setFormBtnIg(rest.orderButtons?.instagram !== false);
+    setFormBtnFb(rest.orderButtons?.facebook !== false);
     setFormAddress(rest.address);
     setFormOpeningHours(rest.openingHours);
     setFormDeliveryFee(rest.deliveryFee.toString());
@@ -165,6 +177,9 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
         banner: formBanner,
         phone: formPhone.trim(),
         whatsapp: formWhatsapp.trim(),
+        instagram: formInstagram.trim(),
+        facebook: formFacebook.trim(),
+        orderButtons: { whatsapp: formBtnWa, instagram: formBtnIg, facebook: formBtnFb },
         address: formAddress.trim(),
         openingHours: formOpeningHours.trim(),
         deliveryFee: parseFloat(formDeliveryFee) || 0,
@@ -188,8 +203,8 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
         accentColor: formAccentColor,
         logo: formLogo,
         banner: formBanner,
-        rating: 5.0,
-        reviewCount: 1,
+        rating: 0,
+        reviewCount: 0,
         estimatedTimeMin: parseInt(formTimeMin, 10) || 30,
         estimatedTimeMax: parseInt(formTimeMax, 10) || 45,
         deliveryFee: parseFloat(formDeliveryFee) || 6.0,
@@ -197,6 +212,9 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
         minOrderValue: parseFloat(formMinOrder) || 30.0,
         phone: formPhone.trim(),
         whatsapp: formWhatsapp.trim(),
+        instagram: formInstagram.trim(),
+        facebook: formFacebook.trim(),
+        orderButtons: { whatsapp: formBtnWa, instagram: formBtnIg, facebook: formBtnFb },
         address: formAddress.trim(),
         openingHours: formOpeningHours.trim(),
         isOpen: true,
@@ -430,6 +448,37 @@ export const AdminRestaurantsManager: React.FC<AdminRestaurantsManagerProps> = (
                   placeholder="5511987654321"
                   className="w-full bg-[#050505] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
                 />
+              </div>
+
+              {/* Redes sociais e botões de pedido */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">Instagram (@usuário)</label>
+                  <input
+                    type="text"
+                    value={formInstagram}
+                    onChange={(e) => setFormInstagram(e.target.value)}
+                    placeholder="@sualoja"
+                    className="w-full bg-[#050505] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">Facebook (página)</label>
+                  <input
+                    type="text"
+                    value={formFacebook}
+                    onChange={(e) => setFormFacebook(e.target.value)}
+                    placeholder="nome.da.pagina"
+                    className="w-full bg-[#050505] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3 text-[11px] text-slate-300">
+                <span className="font-bold uppercase tracking-wider">Botões de pedido no cardápio:</span>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={formBtnWa} onChange={(e) => setFormBtnWa(e.target.checked)} /> WhatsApp</label>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={formBtnIg} onChange={(e) => setFormBtnIg(e.target.checked)} /> Instagram</label>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={formBtnFb} onChange={(e) => setFormBtnFb(e.target.checked)} /> Facebook</label>
+                <span className="text-slate-500">Só aparecem se o dado estiver preenchido.</span>
               </div>
 
               {/* Endereço */}

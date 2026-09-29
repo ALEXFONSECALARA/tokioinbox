@@ -1,3 +1,4 @@
+import { CashCloseModal } from './CashCloseModal';
 import { OpenCashShiftCard } from './OpenCashShiftCard';
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
@@ -559,59 +560,7 @@ export const AdminCashRegister: React.FC = () => {
         />
       )}
 
-      {isConfirmingClose && (
-        <div className="modal-viewport fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#151922] border border-slate-700 rounded-3xl max-w-md w-full max-h-[92vh] overflow-y-auto my-auto p-6 shadow-2xl space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto">
-              <Lock className="w-6 h-6" />
-            </div>
-
-            <div className="text-center">
-              <h3 className="text-base font-black text-white">Fechar Caixa e Encerrar Turno?</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Ao fechar, os totais serão consolidados e as movimentações deste turno serão
-                arquivadas para auditoria.
-              </p>
-            </div>
-
-            <div className="bg-[#0E1015] p-3.5 rounded-2xl border border-slate-800 space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Total Vendas:</span>
-                <strong className="text-white font-mono">R$ {faturamentoTotal.toFixed(2)}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Dinheiro Físico em Gaveta:</span>
-                <strong className="text-amber-400 font-mono">R$ {saldoGaveta.toFixed(2)}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Total PIX:</span>
-                <strong className="text-teal-400 font-mono">R$ {revenuePix.toFixed(2)}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Total Cartão:</span>
-                <strong className="text-sky-400 font-mono">R$ {revenueCartao.toFixed(2)}</strong>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsConfirmingClose(false)}
-                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl"
-              >
-                Voltar
-              </button>
-              <button
-                type="button"
-                onClick={handleExecuteClose}
-                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white font-black text-xs rounded-xl shadow"
-              >
-                Confirmar Fechamento
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {isConfirmingClose && <CashCloseModal onClose={() => setIsConfirmingClose(false)} />}
     </div>
   );
 };

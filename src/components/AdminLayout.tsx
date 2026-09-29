@@ -1,8 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
+import { CashRequiredGate } from './CashRequiredGate';
+const AdminMenuAllStores = React.lazy(() => import('./AdminMenuAllStores').then((m) => ({ default: m.AdminMenuAllStores })));
+const AdminFiscalModule = React.lazy(() => import('./AdminFiscalModule').then((m) => ({ default: m.AdminFiscalModule })));
 import { RestaurantSlug } from '../types/restaurant';
 import { AdminKanban } from './AdminKanban';
-import { AdminKds } from './AdminKds';
+const AdminKds = React.lazy(() => import('./AdminKds').then((m) => ({ default: m.AdminKds })));
 import { AdminDispatch } from './AdminDispatch';
 import { AdminCashRegister } from './AdminCashRegister';
 import { AdminPricingCmv } from './AdminPricingCmv';
@@ -137,6 +140,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
     connectedDevices,
     soundSettings,
     updateSoundSettings,
+    systemSettings,
   } = useStore();
 
   const [usernameInput, setUsernameInput] = useState('admin');
@@ -153,6 +157,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
     | 'tables'
     | 'dispatch'
     | 'cashier'
+    | 'fiscal'
     | 'pricing'
     | 'vitrine'
     | 'menu'
@@ -220,7 +225,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
       case 'EQUIPE':
         return ['users', 'devices', 'audit'].includes(tab);
       case 'GESTÃO':
-        return ['dashboard', 'cashier', 'customers', 'crm_recovery', 'auditor'].includes(tab);
+        return ['dashboard', 'cashier', 'customers', 'crm_recovery', 'auditor', 'fiscal'].includes(tab);
       case 'INTELIGÊNCIA':
         return ['ai_engine', 'ai_sales', 'marketing', 'promotions'].includes(tab);
       case 'SISTEMA':
@@ -863,7 +868,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* KDS Cozinha Tab */}
-          {isTabInCategory('kds') && (
+          {isTabInCategory('kds') && systemSettings.kdsEnabled && (
             <button
               onClick={() => setActiveTab('kds')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -929,6 +934,21 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             >
               <Wallet className="w-3.5 h-3.5" />
               <span>Caixa &amp; Turnos</span>
+            </button>
+          )}
+
+          {/* V9.3: Fiscal (NFC-e/NF-e via certificado digital A1) */}
+          {(currentUser.role === 'super_admin' || currentUser.permissions?.can_configure_restaurant) && isTabInCategory('fiscal') && (
+            <button
+              onClick={() => setActiveTab('fiscal')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'fiscal'
+                  ? 'bg-[#E3BD6A] text-slate-950 font-black shadow-[0_0_15px_rgba(227,189,106,0.3)]'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Fiscal</span>
             </button>
           )}
 
@@ -1271,15 +1291,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           <AdminKanban selectedFilterSlug={selectedFilterSlug} />
         )}
 
-        {activeTab === 'kds' && (
-          <AdminKds selectedFilterSlug={selectedFilterSlug} />
+        {activeTab === 'kds' && systemSettings.kdsEnabled && (
+          <React.Suspense fallback={null}>
+            <AdminKds selectedFilterSlug={selectedFilterSlug} />
+          </React.Suspense>
         )}
 
         {activeTab === 'tables' && (
-          <TableServicePanel
-            onBackToApp={() => setActiveTab('dashboard')}
-            onOpenAdmin={() => setActiveTab('dashboard')}
-          />
+          <CashRequiredGate onGoToCashier={() => setActiveTab('cashier')}>
+            <TableServicePanel
+              onBackToApp={() => setActiveTab('dashboard')}
+              onOpenAdmin={() => setActiveTab('dashboard')}
+            />
+          </CashRequiredGate>
         )}
 
         {activeTab === 'dispatch' && (
@@ -1290,6 +1314,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           <AdminCashRegister />
         )}
 
+        {activeTab === 'fiscal' && (
+          <React.Suspense fallback={null}>
+            <AdminFiscalModule selectedSlug={selectedFilterSlug} />
+          </React.Suspense>
+        )}
+
         {activeTab === 'pricing' && (
           <AdminPricingCmv selectedFilterSlug={selectedFilterSlug} />
         )}
@@ -1298,7 +1328,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           <AdminVitrineManager />
         )}
 
-        {activeTab === 'menu' && (
+        {activeTab === 'menu' && selectedFilterSlug === 'all' && (
+          <React.Suspense fallback={null}>
+            <AdminMenuAllStores onEditRestaurant={(slug) => setSelectedFilterSlug(slug)} />
+          </React.Suspense>
+        )}
+        {activeTab === 'menu' && selectedFilterSlug !== 'all' && (
           <AdminMenuManager currentRestaurantSlug={activeSingleSlug} />
         )}
 

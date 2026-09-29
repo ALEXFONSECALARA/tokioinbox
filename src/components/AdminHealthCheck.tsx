@@ -1,3 +1,4 @@
+import { missingRealData, hasDemoData } from '../utils/demoData';
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { RestaurantSlug } from '../types/restaurant';
@@ -45,7 +46,7 @@ export const AdminHealthCheck: React.FC = () => {
     }, 600);
   };
 
-  // Run audit checks across all 4 restaurants
+  // Auditoria de todos os restaurantes cadastrados (sem limite fixo)
   const auditResults = Object.values(restaurants).map((rest) => {
     const items = menuItems.filter((m) => m.restaurantSlug === rest.slug);
     const cats = categories.filter((c) => c.restaurantSlug === rest.slug);
@@ -75,16 +76,34 @@ export const AdminHealthCheck: React.FC = () => {
     .filter((o) => o.status === 'entregue' || o.status === 'pronto' || o.status === 'em_preparo')
     .reduce((sum, o) => sum + o.total, 0);
 
-  const areAllRestaurantsOpen = Object.values(restaurants).every((r) => r.isOpen);
+  // V9.2: controle INDIVIDUAL por restaurante (ativo / pausado / desativado).
+  type StoreMode = 'ativo' | 'pausado' | 'desativado';
+  const modeOf = (r: { isOpen: boolean; isActive?: boolean }): StoreMode =>
+    r.isActive === false ? 'desativado' : r.isOpen ? 'ativo' : 'pausado';
+  // Motivos pelos quais um restaurante NÃO aparece na vitrine pública (mesma regra do servidor).
+  const hiddenReasons = (r: any): string[] => {
+    const reasons: string[] = [];
+    if (r.isActive === false) reasons.push('desativado');
+    if (r.vitrineStatus === 'OCULTO') reasons.push('vitrine = OCULTO');
+    if (r.isActiveInVitrine === false) reasons.push('fora da vitrine');
+    return reasons;
+  };
+  const publicCount = Object.values(restaurants).filter((r) => hiddenReasons(r).length === 0).length;
+  const [selectedSlugs, setSelectedSlugs] = useState<string[]>([]);
+  const toggleSelected = (slug: string) =>
+    setSelectedSlugs((prev) => (prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]));
 
-  const handleToggleAllStores = () => {
-    const targetState = !areAllRestaurantsOpen;
-    const actionLabel = targetState ? 'ABRIR' : 'FECHAR/PAUSAR';
-    if (window.confirm(`Deseja realmente ${actionLabel} simultaneamente todos os 4 restaurantes?`)) {
-      (Object.keys(restaurants) as RestaurantSlug[]).forEach((slug) => {
-        updateRestaurantConfig(slug, { isOpen: targetState });
+  const applyMode = (slugs: string[], mode: StoreMode) => {
+    if (slugs.length === 0) return;
+    const names = slugs.map((s) => restaurants[s]?.name || s).join(', ');
+    const label = mode === 'ativo' ? 'ATIVAR' : mode === 'pausado' ? 'PAUSAR' : 'DESATIVAR';
+    if (!window.confirm(`Deseja ${label}: ${names}?\nSomente o(s) restaurante(s) listado(s) será(ão) alterado(s).`)) return;
+    slugs.forEach((slug) => {
+      updateRestaurantConfig(slug, {
+        isActive: mode !== 'desativado',
+        isOpen: mode === 'ativo',
       });
-    }
+    });
   };
 
   const handleClearFinishedHistory = () => {
@@ -264,23 +283,88 @@ export const AdminHealthCheck: React.FC = () => {
           <span>Ferramentas de Controle Geral Multicardápio</span>
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
-          <button
-            onClick={handleToggleAllStores}
-            className={`py-3 px-4 rounded-xl border flex items-center justify-center gap-2 font-bold transition-all ${
-              areAllRestaurantsOpen
-                ? 'bg-rose-500/15 border-rose-500/30 text-rose-300 hover:bg-rose-500 hover:text-white'
-                : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500 hover:text-white'
-            }`}
-          >
-            <Power className="w-4 h-4" />
-            <span>
-              {areAllRestaurantsOpen
-                ? 'Pausar Todas as 4 Lojas Simultaneamente'
-                : 'Abrir Todas as 4 Lojas Simultaneamente'}
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-slate-400 font-semibold">
+              {Object.keys(restaurants).length} restaurante(s) cadastrado(s) • {publicCount} visível(is) na vitrine pública • selecionados: {selectedSlugs.length}
             </span>
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                setSelectedSlugs(
+                  selectedSlugs.length === Object.keys(restaurants).length ? [] : Object.keys(restaurants)
+                )
+              }
+              className="px-2 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+            >
+              {selectedSlugs.length === Object.keys(restaurants).length ? 'Limpar seleção' : 'Selecionar todos'}
+            </button>
+            {(['ativo', 'pausado', 'desativado'] as StoreMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                disabled={selectedSlugs.length === 0}
+                onClick={() => applyMode(selectedSlugs, m)}
+                className="px-2.5 py-1 rounded-lg border border-slate-700 text-slate-200 font-bold disabled:opacity-40 hover:bg-slate-800"
+              >
+                {m === 'ativo' ? 'ATIVAR' : m === 'pausado' ? 'PAUSAR' : 'DESATIVAR'} selecionados
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            {Object.values(restaurants).map((r) => {
+              const mode = modeOf(r);
+              return (
+                <div key={r.slug} className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedSlugs.includes(r.slug)}
+                    onChange={() => toggleSelected(r.slug)}
+                    aria-label={`Selecionar ${r.name}`}
+                  />
+                  <span className="text-lg">{r.emoji}</span>
+                  <span className="flex-1 min-w-0 text-xs">
+                    <span className="block truncate font-bold text-white">{r.name}</span>
+                    {(missingRealData(r).length > 0 || hasDemoData(r).length > 0) && (
+                      <span className="block text-[10px] text-amber-400">
+                        Cadastrar dado real: {[...missingRealData(r), ...hasDemoData(r)].join(', ')}
+                      </span>
+                    )}
+                    {hiddenReasons(r).length > 0 && (
+                      <span className="block text-[10px] text-rose-400">
+                        Oculto na vitrine pública: {hiddenReasons(r).join(', ')}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded font-bold border ${
+                      mode === 'ativo'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        : mode === 'pausado'
+                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                    }`}
+                  >
+                    {mode.toUpperCase()}
+                  </span>
+                  {(['ativo', 'pausado', 'desativado'] as StoreMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={mode === m}
+                      onClick={() => applyMode([r.slug], m)}
+                      className="text-[10px] px-1.5 py-1 rounded border border-slate-700 text-slate-300 disabled:opacity-30 hover:bg-slate-800"
+                    >
+                      {m === 'ativo' ? 'Ativar' : m === 'pausado' ? 'Pausar' : 'Desativar'}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
           <button
             onClick={handleExportFullReport}
             className="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl border border-slate-700 flex items-center justify-center gap-2 transition-colors"

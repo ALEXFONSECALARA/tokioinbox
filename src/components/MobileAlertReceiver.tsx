@@ -64,7 +64,16 @@ export const MobileAlertReceiver: React.FC<MobileAlertReceiverProps> = ({ onBack
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idOrCode: deviceId }),
-      }).catch(() => {});
+      })
+        .then((r) => {
+          // V9.2: dispositivo revogado pelo administrador → desvincula localmente
+          if (r.status === 403) {
+            localStorage.removeItem('tokio_mobile_paired_id');
+            setIsPaired(false);
+            setDeviceId('');
+          }
+        })
+        .catch(() => {});
     };
 
     sendPing();

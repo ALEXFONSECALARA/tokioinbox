@@ -541,6 +541,18 @@ export const AdminVitrineManager: React.FC = () => {
                     {currentRest.heroPromoSlide?.enabled ? 'Exibindo na Home' : 'Oculto na Home'}
                   </button>
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Título da seção na Home</label>
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={currentRest.vitrineSectionTitle ?? ''}
+                    onChange={(e) => updateVitrineConfig(currentRest.slug, { vitrineSectionTitle: e.target.value })}
+                    placeholder="Promoções & Rodízios em Destaque (ex: Ofertas da Semana)"
+                    className="w-full bg-[#0E1015] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                  <p className="text-[10px] text-slate-500">Deixe vazio para usar o título padrão. Salvo por restaurante.</p>
+                </div>
                 <p className="text-[10px] text-slate-500">
                   Este é o carrossel grande no topo da página pública, com "Ofertas ativas hoje". Preencha e ative para este restaurante aparecer nele.
                 </p>

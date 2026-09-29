@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { ConnectedDevice } from '../types/restaurant';
+import { AdminDeviceQrPanel } from './AdminDeviceQrPanel';
 import { SOUND_PRESETS, playAlertSound, playDelayAlertSound } from '../utils/audioAlert';
 import {
   Smartphone,
@@ -76,6 +77,41 @@ export const AdminDevices: React.FC<AdminDevicesProps> = ({ onOpenMobileReceiver
     }
   };
 
+  const handleRename = async (dev: ConnectedDevice) => {
+    const next = window.prompt('Novo nome do dispositivo:', dev.deviceName);
+    if (!next || !next.trim() || next.trim() === dev.deviceName) return;
+    try {
+      const res = await fetch(`/api/devices/${dev.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceName: next.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
+      await refreshDevices();
+    } catch (err) {
+      console.error('Error renaming device:', err);
+    }
+  };
+
+  const handleRevoke = async (dev: ConnectedDevice, reconnect: boolean) => {
+    if (!reconnect && !window.confirm(`REVOGAR o acesso de "${dev.deviceName}"? O aparelho será desvinculado no próximo contato.`)) return;
+    try {
+      const res = await fetch(`/api/devices/${dev.id}/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reconnect }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
+      await refreshDevices();
+      setSuccessMsg(reconnect ? `"${dev.deviceName}" reconectado.` : `"${dev.deviceName}" revogado.`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      console.error('Error revoking device:', err);
+    }
+  };
+
   const handleTestDeviceAlert = (device: ConnectedDevice) => {
     setTestingDeviceId(device.id);
     playAlertSound(device.soundType, device.volume);
@@ -134,6 +170,8 @@ export const AdminDevices: React.FC<AdminDevicesProps> = ({ onOpenMobileReceiver
           <span>{successMsg}</span>
         </div>
       )}
+
+      <AdminDeviceQrPanel />
 
       {/* Pairing Code Card */}
       <div className="bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-900 border border-amber-500/30 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
@@ -245,11 +283,23 @@ export const AdminDevices: React.FC<AdminDevicesProps> = ({ onOpenMobileReceiver
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400">
-                          {dev.platform.toUpperCase()} • Código: {dev.pairingCode}
+                          {dev.revoked ? 'REVOGADO • ' : ''}
+                          {dev.deviceType || 'celular'} • {dev.platform.toUpperCase()} • Código: {dev.pairingCode}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {dev.restaurantSlug ? `Loja: ${dev.restaurantSlug} • ` : ''}
+                          {dev.connectedBy ? `Por: ${dev.connectedBy} • ` : ''}
+                          Conectado: {new Date(dev.connectedAt).toLocaleString('pt-BR')} • Último acesso: {new Date(dev.lastPingAt).toLocaleString('pt-BR')}
                         </p>
                       </div>
                     </div>
 
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => handleRename(dev)} className="px-1.5 py-1 text-[10px] text-slate-300 border border-slate-700 rounded-lg hover:bg-slate-800">Renomear</button>
+                      <button onClick={() => handleRevoke(dev, !!dev.revoked)} className="px-1.5 py-1 text-[10px] text-amber-300 border border-amber-500/30 rounded-lg hover:bg-amber-500/10">
+                        {dev.revoked ? 'Reconectar' : 'Revogar'}
+                      </button>
+                    </div>
                     <button
                       onClick={() => handleDisconnect(dev.id, dev.deviceName)}
                       className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors"

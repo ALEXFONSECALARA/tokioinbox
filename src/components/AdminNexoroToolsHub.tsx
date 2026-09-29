@@ -580,7 +580,7 @@ export const AdminNexoroToolsHub: React.FC<AdminNexoroToolsHubProps> = ({
           {/* Category Chips */}
           <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto no-scrollbar">
             {[
-              { id: 'all', label: 'Todas (23)' },
+              { id: 'all', label: `Todas (${NEXORO_TOOLS.length})` },
               { id: 'operacao', label: 'Operação & KDS' },
               { id: 'inteligencia', label: 'IA & Vendas' },
               { id: 'vendas', label: 'Marketing & CRM' },

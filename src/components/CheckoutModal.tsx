@@ -5,6 +5,9 @@ import { formatPhoneMask } from '../utils/phoneUtils';
 import { geocodeAddress, haversineDistanceKm, findMatchingDeliveryZone } from '../utils/geo';
 import { OrderType, PaymentMethod, Order } from '../types/restaurant';
 import confetti from 'canvas-confetti';
+import { buildPixBrCode, cityFromAddress } from '../utils/pix';
+import { waLink, orderChannels } from '../utils/contactLinks';
+import { QrCodeImage } from './QrCodeImage';
 import {
   X,
   CheckCircle2,
@@ -181,9 +184,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const deliveryFee = orderType === 'delivery' ? (matchedZone?.fee ?? currentRestaurant.deliveryFee) : 0;
   const total = Math.max(0, subtotal - discount + deliveryFee);
 
-  const simulatedPixCode = `00020126580014BR.GOV.BCB.PIX0136${currentRestaurant.pixKey}520400005303986540${total.toFixed(
-    2
-  )}5802BR5920${currentRestaurant.name.slice(0, 20)}6009SAOPAULO62070503***6304E8B2`;
+  // V9.3: PIX "copia e cola" VÁLIDO (BR Code com CRC16). Sem chave cadastrada → string vazia
+  // (a tela avisa que o PIX ainda não está disponível em vez de mostrar um código que o banco recusa).
+  const pixCodeFor = (amount: number): string => {
+    if (!currentRestaurant.pixKey?.trim()) return '';
+    try {
+      return buildPixBrCode({
+        key: currentRestaurant.pixKey,
+        name: currentRestaurant.pixReceiverName || currentRestaurant.name,
+        city: cityFromAddress(currentRestaurant.address),
+        amount,
+      });
+    } catch {
+      return '';
+    }
+  };
+  const simulatedPixCode = pixCodeFor(total);
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -273,7 +289,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   // WhatsApp formatted string generator
-  const getWhatsAppShareUrl = () => {
+  const getOrderMessage = (): string => {
     if (!createdOrder) return '';
 
     const itemsText = createdOrder.items
@@ -323,7 +339,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       `💳 *Forma de Pagamento:* ${paymentText}\n` +
       (createdOrder.notes ? `\n💬 *Observações:* ${createdOrder.notes}` : '');
 
-    return `https://wa.me/${currentRestaurant.whatsapp}?text=${encodeURIComponent(message)}`;
+    return message;
+  };
+  const getWhatsAppShareUrl = (): string | null => waLink(currentRestaurant.whatsapp, getOrderMessage());
+
+  // Instagram/Facebook não aceitam texto pré-preenchido: copia o pedido e abre a conversa.
+  const openSocialChannel = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(getOrderMessage().replace(/\*/g, ''));
+      alert('Pedido copiado! Cole a mensagem na conversa que vai abrir.');
+    } catch {
+      /* sem permissão de área de transferência: abre mesmo assim */
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -391,40 +419,38 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
 
-                  {/* Visual QR Code simulation */}
-                  <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3.5 rounded-xl">
-                    <div className="w-32 h-32 bg-slate-900 rounded-lg p-2 flex flex-col items-center justify-center shrink-0 border-2 border-slate-950">
-                      {/* Stylized QR Code matrix representation */}
-                      <div className="grid grid-cols-5 gap-1.5 w-full h-full p-1 bg-white rounded">
-                        <div className="bg-black col-span-2 row-span-2 rounded-xs" />
-                        <div className="bg-black" />
-                        <div className="bg-black col-span-2 row-span-2 rounded-xs" />
-                        <div className="bg-black" />
-                        <div className="bg-black" />
-                        <div className="bg-black col-span-2" />
-                        <div className="bg-black" />
-                        <div className="bg-black" />
-                        <div className="bg-black" />
-                        <div className="bg-black" />
+                  {/* QR Code PIX real (BR Code) */}
+                  {(createdOrder.paymentDetails?.pixCode || pixCodeFor(createdOrder.total)) ? (
+                    <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3.5 rounded-xl">
+                      <QrCodeImage
+                        url={createdOrder.paymentDetails?.pixCode || pixCodeFor(createdOrder.total)}
+                        size={150}
+                        alt="QR Code PIX"
+                      />
+                      <div className="text-slate-900 text-xs space-y-1">
+                        <p className="font-extrabold text-sm">Escaneie com seu banco</p>
+                        {currentRestaurant.pixReceiverName && (
+                          <p className="text-[11px] text-slate-700">
+                            Favorecido: <strong>{currentRestaurant.pixReceiverName}</strong>
+                          </p>
+                        )}
+                        <p className="text-[11px] text-slate-700">
+                          Valor: <strong>R$ {createdOrder.total.toFixed(2)}</strong>
+                        </p>
                       </div>
                     </div>
-                    <div className="text-slate-900 text-xs space-y-1">
-                      <p className="font-extrabold text-sm">Escaneie com seu banco</p>
-                      <p className="text-[11px] text-slate-700">
-                        Favorecido: <strong>{currentRestaurant.pixReceiverName}</strong>
-                      </p>
-                      <p className="text-[11px] text-slate-700">
-                        Chave: <code>{currentRestaurant.pixKey}</code>
-                      </p>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs">
+                      O restaurante ainda não cadastrou a chave PIX. Combine o pagamento pelo WhatsApp ou pague na entrega/retirada.
                     </div>
-                  </div>
+                  )}
 
                   {/* Copy Code */}
                   <div className="flex gap-2">
                     <input
                       type="text"
                       readOnly
-                      value={createdOrder.paymentDetails?.pixCode || simulatedPixCode}
+                      value={createdOrder.paymentDetails?.pixCode || pixCodeFor(createdOrder.total)}
                       className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[10px] text-slate-300 font-mono select-all truncate"
                     />
                     <button
@@ -440,15 +466,29 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
               {/* Action Buttons */}
               <div className="space-y-2.5 pt-2">
-                <a
-                  href={getWhatsAppShareUrl()}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-600/30 transition-all"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>Enviar Comprovante / Notificar no WhatsApp</span>
-                </a>
+                {getWhatsAppShareUrl() && (
+                  <a
+                    href={getWhatsAppShareUrl() || undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Enviar Comprovante / Notificar no WhatsApp</span>
+                  </a>
+                )}
+                {orderChannels(currentRestaurant, getOrderMessage())
+                  .filter((c) => c.id !== 'whatsapp')
+                  .map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => openSocialChannel(c.url)}
+                      className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2"
+                    >
+                      <span>{c.id === 'instagram' ? 'Enviar pedido pelo Instagram' : 'Enviar pedido pelo Messenger (Facebook)'}</span>
+                    </button>
+                  ))}
 
                 <button
                   onClick={() => {

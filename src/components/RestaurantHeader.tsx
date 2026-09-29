@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { RestaurantConfig, OrderType } from '../types/restaurant';
 import { useStore } from '../context/StoreContext';
+import { orderChannels } from '../utils/contactLinks';
 import {
   Clock,
   Bike,
@@ -86,11 +87,15 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
 
                 {/* Rating & Details Row */}
                 <div className="flex items-center gap-3 sm:gap-4 mt-2.5 text-xs text-slate-400 flex-wrap">
-                  <span className="flex items-center gap-1 font-semibold text-amber-400">
-                    <Star className="w-3.5 h-3.5 fill-amber-400" />
-                    {restaurant.rating.toFixed(1)} ({restaurant.reviewCount} avaliações)
-                  </span>
-                  <span>•</span>
+                  {restaurant.reviewCount > 0 && (
+                    <>
+                      <span className="flex items-center gap-1 font-semibold text-amber-400">
+                        <Star className="w-3.5 h-3.5 fill-amber-400" />
+                        {restaurant.rating.toFixed(1)} ({restaurant.reviewCount} avaliações)
+                      </span>
+                      <span>•</span>
+                    </>
+                  )}
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-slate-400" />
                     {restaurant.estimatedTimeMin} - {restaurant.estimatedTimeMax} min
@@ -109,17 +114,26 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
 
             {/* Quick Actions / WhatsApp */}
             <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
-              <a
-                href={`https://wa.me/${restaurant.whatsapp}?text=Ol%C3%A1%2C%20gostaria%20de%20tirar%20uma%20d%C3%BAvida%20sobre%20o%20card%C3%A1pio%20do%20${encodeURIComponent(
-                  restaurant.name
-                )}`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center gap-2 transition-colors"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>WhatsApp</span>
-              </a>
+              {orderChannels(restaurant, `Olá! Gostaria de fazer um pedido no ${restaurant.name}.`).map((c) => (
+                <a
+                  key={c.id}
+                  href={c.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={c.label}
+                  data-testid={`order-channel-${c.id}`}
+                  className={`px-3.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-colors ${
+                    c.id === 'whatsapp'
+                      ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border-emerald-500/30'
+                      : c.id === 'instagram'
+                      ? 'bg-pink-600/20 hover:bg-pink-600/30 text-pink-300 border-pink-500/30'
+                      : 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border-blue-500/30'
+                  }`}
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>{c.id === 'whatsapp' ? 'WhatsApp' : c.id === 'instagram' ? 'Instagram' : 'Facebook'}</span>
+                </a>
+              ))}
 
               <button
                 onClick={() => setShowInfoModal(true)}

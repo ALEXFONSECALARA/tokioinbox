@@ -110,7 +110,7 @@ export const AdminCustomers: React.FC = () => {
               Gestão de Cadastros de Clientes (CRM Multicardápio)
             </h2>
             <p className="text-xs text-slate-400">
-              Controle individual de clientes, histórico de consumo e preferências dos 4 restaurantes
+              Controle individual de clientes, histórico de consumo e preferências de todos os restaurantes
             </p>
           </div>
         </div>
