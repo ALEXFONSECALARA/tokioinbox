@@ -121,6 +121,8 @@ export interface MenuItem {
   available: boolean;
   code?: string; // Código/SKU curto exibido em telas compactas (Balcão Touch)
   station?: ProductionStation; // Optional explicit station override ('cozinha' | 'sushibar' | 'bar')
+  // V9.2: rotas de IMPRESSÃO (1 ou mais setores). Independe do KDS. Vazio = usa `station`.
+  printStations?: ProductionStation[];
   tags?: ('mais_vendido' | 'promocao' | 'vegetariano' | 'destaque')[];
   optionGroups?: MenuItemOptionGroup[];
   // Dados Fiscais para SEFAZ (NFC-e / NF-e)
@@ -252,6 +254,11 @@ export interface RestaurantConfig {
   // V7: slide editável do carrossel "Promoções & Rodízios em Destaque" da
   // Home pública — antes fixo no código (LuxuryPromoSlider.tsx), agora
   // editado pelo super_admin em Vitrine Principal e salvo por restaurante.
+  // V9.3: canais de pedido por redes sociais (só aparecem se houver dado real cadastrado)
+  facebook?: string;
+  orderButtons?: { whatsapp?: boolean; instagram?: boolean; facebook?: boolean };
+  // V9.2: título editável da seção de destaques na Home (padrão: "Promoções & Rodízios em Destaque").
+  vitrineSectionTitle?: string;
   heroPromoSlide?: {
     enabled: boolean;
     badge: string;
@@ -292,6 +299,7 @@ export interface OrderItemRecord {
   selectedOptions?: CartItemOptionSelected[];
   notes?: string;
   station?: ProductionStation; // 'cozinha' | 'sushibar' | 'bar'
+  printStations?: ProductionStation[]; // V9.2: destinos de impressão copiados do produto
   stationStatus?: StationItemStatus; // 'recebido' | 'em_preparo' | 'pedido_feito'
 }
 
@@ -464,6 +472,12 @@ export interface ConnectedDevice {
   status: 'online' | 'offline';
   lastPingAt: string;
   connectedAt: string;
+  // V9.2
+  revoked?: boolean;
+  restaurantSlug?: string;
+  connectedBy?: string;
+  deviceType?: string;
+  connectedVia?: 'qr' | 'code';
 }
 
 export interface AuditActionLog {
@@ -566,6 +580,17 @@ export interface CashRegisterShift {
   initialAmount: number;
   movements: CashRegisterMovement[];
   isClosed: boolean;
+  // V9.2 — janela exata do turno (ISO) e dados de abertura/fechamento
+  openedAtIso?: string;
+  closedAtIso?: string;
+  openedBy?: string;
+  openingNote?: string;
+  closing?: {
+    expectedCash: number;
+    countedCash: number | null;
+    difference: number | null;
+    note?: string;
+  };
   closedBy?: string;
   finalTotals?: {
     dinheiro: number;
@@ -633,3 +658,22 @@ export interface CmvRecipeItem {
   suggestedPrice: number;
 }
 
+
+
+/** V9.2 — Configurações globais editáveis pelo administrador (documento `systemSettings`). */
+export type ReportKind = 'dinheiro' | 'pix' | 'credito' | 'debito' | 'delivery' | 'mesa' | 'retirada' | 'balcao' | 'outros';
+
+export interface SystemSettings {
+  /** false = módulo KDS não é carregado/exibido. NUNCA afeta a impressão. */
+  kdsEnabled: boolean;
+  /** tipos incluídos por padrão no relatório de venda do fechamento de caixa */
+  reportKinds: ReportKind[];
+  /** true (padrão) = Mesas só operam com o Caixa aberto. Editável pelo administrador. */
+  requireCashForTables: boolean;
+}
+
+export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  kdsEnabled: true,
+  requireCashForTables: true,
+  reportKinds: ['dinheiro', 'pix', 'credito', 'debito', 'delivery', 'mesa', 'retirada', 'balcao', 'outros'],
+};
