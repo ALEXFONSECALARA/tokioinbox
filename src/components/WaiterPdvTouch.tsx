@@ -53,6 +53,7 @@ import { useConferencePrint } from '../utils/useConferencePrint';
 import { FitTableGrid } from './FitTableGrid';
 import { EnvironmentBar, OperationalEnvironment } from './EnvironmentBar';
 import { OfflineStatusIndicator } from './OfflineStatusIndicator';
+import { userCanReceivePayment } from '../painel/access';
 
 interface WaiterPdvTouchProps {
   onBackToApp?: () => void;
@@ -866,6 +867,10 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
   // V9 — botão PAGAMENTO: confirma o recebimento, finaliza a conta e libera a mesa
   const handleCloseTableAction = async () => {
     if (!selectedTable) return;
+    if (!userCanReceivePayment(currentUser)) {
+      showToast('Somente o CAIXA pode receber o pagamento.', 'error');
+      return;
+    }
     if (!selectedTableAwaiting) {
       showToast('Faça o FECHAMENTO da conta antes de registrar o pagamento.', 'error');
       return;
@@ -2346,6 +2351,10 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                 <button type="button" onClick={handleFechamentoAction} disabled={isFechando || !currentTableOrder || tableItems.length === 0} className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:brightness-110 disabled:opacity-50 text-slate-950 font-black text-sm uppercase rounded-2xl shadow-xl flex items-center justify-center gap-2">
                   {isFechando ? <><RefreshCw className="w-5 h-5 animate-spin" /> PROCESSANDO...</> : <><Lock className="w-5 h-5" /> FECHAMENTO</>}
                 </button>
+              ) : !userCanReceivePayment(currentUser) ? (
+                <div className="w-full py-3.5 px-3 rounded-2xl bg-rose-500/10 border border-rose-500/40 text-rose-300 font-black text-xs uppercase text-center animate-pulse" role="status">
+                  🔴 AGUARDANDO PAGAMENTO — o CAIXA recebe o pagamento e libera a mesa
+                </div>
               ) : (
                 <button type="button" onClick={handleCloseTableAction} disabled={isClosingTable || tableItems.length === 0} className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:brightness-110 disabled:opacity-50 text-slate-950 font-black text-sm uppercase rounded-2xl shadow-xl flex items-center justify-center gap-2">
                   {isClosingTable ? <><RefreshCw className="w-5 h-5 animate-spin" /> PROCESSANDO...</> : <><CheckCircle2 className="w-5 h-5" /> PAGAMENTO</>}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { ConnectedDevice } from '../types/restaurant';
+import { DEVICE_ROLE_LABELS, DeviceScreenRole } from '../painel/access';
 import { AdminDeviceQrPanel } from './AdminDeviceQrPanel';
 import { SOUND_PRESETS, playAlertSound, playDelayAlertSound } from '../utils/audioAlert';
 import {
@@ -27,7 +28,7 @@ interface AdminDevicesProps {
 }
 
 export const AdminDevices: React.FC<AdminDevicesProps> = ({ onOpenMobileReceiver }) => {
-  const { connectedDevices, refreshDevices, logAction, testSound } = useStore();
+  const { connectedDevices, refreshDevices, logAction, testSound, restaurants } = useStore();
 
   const [activePairingCode, setActivePairingCode] = useState<string | null>(null);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
@@ -109,6 +110,44 @@ export const AdminDevices: React.FC<AdminDevicesProps> = ({ onOpenMobileReceiver
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
       console.error('Error revoking device:', err);
+    }
+  };
+
+  // V9 PLUS ULTRA 01: define a função ÚNICA do aparelho (um único valor; nunca várias).
+  const handleSetScreenRole = async (dev: ConnectedDevice, role: string) => {
+    try {
+      const res = await fetch(`/api/devices/${dev.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ screenRole: role === '' ? null : role }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao definir a função.');
+      await refreshDevices();
+      setSuccessMsg(
+        role
+          ? `"${dev.deviceName}" agora é ${DEVICE_ROLE_LABELS[role as DeviceScreenRole]}.`
+          : `"${dev.deviceName}" ficou sem função definida.`
+      );
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      window.alert(err?.message || 'Não foi possível definir a função do dispositivo.');
+    }
+  };
+
+  const handleSetRestaurant = async (dev: ConnectedDevice, slug: string) => {
+    if (!slug) return;
+    try {
+      const res = await fetch(`/api/devices/${dev.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restaurantSlug: slug }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao vincular o restaurante.');
+      await refreshDevices();
+    } catch (err: any) {
+      window.alert(err?.message || 'Não foi possível vincular o restaurante.');
     }
   };
 
@@ -307,6 +346,36 @@ export const AdminDevices: React.FC<AdminDevicesProps> = ({ onOpenMobileReceiver
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                  </div>
+
+                  {/* V9 PLUS ULTRA 01 — Função única do aparelho */}
+                  <div className="mt-3 pt-3 border-t border-slate-850 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                      Função da tela (uma só)
+                      <select
+                        value={dev.screenRole || ''}
+                        onChange={(e) => handleSetScreenRole(dev, e.target.value)}
+                        className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white font-bold normal-case"
+                      >
+                        <option value="">— Selecione a função —</option>
+                        {(Object.keys(DEVICE_ROLE_LABELS) as DeviceScreenRole[]).map((r) => (
+                          <option key={r} value={r}>{DEVICE_ROLE_LABELS[r]}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                      Restaurante
+                      <select
+                        value={dev.restaurantSlug || ''}
+                        onChange={(e) => handleSetRestaurant(dev, e.target.value)}
+                        className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white font-bold normal-case"
+                      >
+                        {!dev.restaurantSlug && <option value="">— Vincular restaurante —</option>}
+                        {Object.values(restaurants).map((r) => (
+                          <option key={r.slug} value={r.slug}>{r.name}</option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
 
                   {/* Device Configuration Details */}

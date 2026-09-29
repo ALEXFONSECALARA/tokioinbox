@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
+import { isRestaurantAcceptingOrders, PAUSED_ORDERS_MESSAGE } from '../utils/restaurantStatus';
 import {
   X,
   ShoppingBag,
@@ -45,7 +46,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     activeRestaurantSlug,
     orderType,
     selectedTable,
+    appMode,
   } = useStore();
+  const ordersPaused = appMode !== 'staff' && !isRestaurantAcceptingOrders(restaurants[activeRestaurantSlug]);
 
   const isCartVisible = propIsOpen !== undefined ? propIsOpen : contextIsOpen;
   const handleClose = () => {
@@ -54,6 +57,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   };
 
   const handleCheckoutClick = () => {
+    if (ordersPaused) return;
     if (onProceedToCheckout) onProceedToCheckout();
     else if (onOpenCheckout) onOpenCheckout();
   };
@@ -503,13 +507,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               )}
 
+              {ordersPaused && (
+                <div className="p-2.5 bg-rose-500/10 border border-rose-500/40 rounded-xl flex items-center gap-2 text-xs font-bold text-rose-300" role="alert">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{PAUSED_ORDERS_MESSAGE}</span>
+                </div>
+              )}
+
               {/* Checkout Button */}
               <button
                 onClick={() => {
+                  if (ordersPaused) return;
                   setIsCartOpen(false);
                   handleCheckoutClick();
                 }}
-                disabled={!isMinOrderReached}
+                disabled={!isMinOrderReached || ordersPaused}
                 className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-xl hover:shadow-amber-500/20 transition-all"
               >
                 <span>Finalizar Pedido</span>

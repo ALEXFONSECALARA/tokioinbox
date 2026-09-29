@@ -43,6 +43,7 @@ import { QrCodeImage } from './QrCodeImage';
 import { playAlertSound } from '../utils/audioAlert';
 import { useConferencePrint } from '../utils/useConferencePrint';
 import { mergeOrdersForConference } from '../utils/conferencePrint';
+import { userCanReceivePayment } from '../painel/access';
 
 interface TableServicePanelProps {
   onBackToApp: () => void;
@@ -449,6 +450,10 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   // (WaiterPdvTouch). Agora reaproveita essa função existente em vez de
   // duplicar o fechamento.
   const handleCloseTable = async (tableId: number) => {
+    if (!userCanReceivePayment(currentUser)) {
+      showToast('Somente o CAIXA pode receber o pagamento e liberar a mesa.', 'error');
+      return;
+    }
     if (isClosingTable) return; // trava contra duplo clique / fechamento duplicado
 
     const tableOrders = tableOrdersMap[tableId] || [];
@@ -1881,6 +1886,12 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                       Imprimir Pré-Conta / Conferência Térmica
                     </button>
 
+                    {!userCanReceivePayment(currentUser) && (
+                      <div className="w-full py-3 px-3 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-300 font-black text-[11px] uppercase text-center" role="status">
+                        Pagamento é feito pelo CAIXA — use "Fechamento" para enviar a conta
+                      </div>
+                    )}
+                    {userCanReceivePayment(currentUser) && (
                     <button
                       type="button"
                       onClick={() => handleCloseTable(activeTableId)}
@@ -1890,6 +1901,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                       <CheckCircle2 className="w-4 h-4" />
                       {isClosingTable ? 'Fechando...' : 'Encerrar Atendimento & Liberar Mesa'}
                     </button>
+                    )}
 
                     <button
                       type="button"

@@ -102,6 +102,7 @@ export const AdminUsers: React.FC = () => {
           can_manage_users: newRole === 'super_admin',
           can_configure_alerts: true,
           can_print_tickets: true,
+          can_receive_payment: true,
         });
         break;
       case 'caixa':
@@ -113,6 +114,7 @@ export const AdminUsers: React.FC = () => {
           can_manage_users: false,
           can_configure_alerts: false,
           can_print_tickets: true,
+          can_receive_payment: true,
         });
         break;
       case 'cozinha':
@@ -574,11 +576,13 @@ export const AdminUsers: React.FC = () => {
                     ['can_manage_notifications','Gerenciar notificações'],
                     ['can_delete_orders','Excluir pedidos'],
                     ['can_print_tickets','Imprimir comandas'],
+                    ['can_receive_payment','Receber pagamento / finalizar conta (Caixa)'],
                   ].map(([key,label]) => (
                     <label key={key} className="flex items-center gap-2 p-2 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={Boolean((permissions as any)[key])}
+                        checked={key === 'can_receive_payment' && role === 'garcom' ? false : Boolean((permissions as any)[key])}
+                        disabled={key === 'can_receive_payment' && role === 'garcom'}
                         onChange={(e) => setPermissions((p) => ({ ...p, [key]: e.target.checked }))}
                         className="accent-amber-500"
                       />

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { RestaurantConfig, OrderType } from '../types/restaurant';
 import { useStore } from '../context/StoreContext';
 import { orderChannels } from '../utils/contactLinks';
+import { isRestaurantAcceptingOrders, PAUSED_ORDERS_MESSAGE } from '../utils/restaurantStatus';
 import {
   Clock,
   Bike,
@@ -53,10 +54,19 @@ export const RestaurantHeader: React.FC<RestaurantHeaderProps> = ({ restaurant: 
                 restaurant.isOpen ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
               }`}
             />
-            {restaurant.isOpen ? 'Aberto Agora' : 'Fechado no Momento'}
+            {isRestaurantAcceptingOrders(restaurant) ? "Aberto Agora" : "Fechado no Momento"}
           </div>
         </div>
       </div>
+
+      {/* V9 PLUS ULTRA 01: aviso de pausa (somente deste restaurante) */}
+      {!isRestaurantAcceptingOrders(restaurant) && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 mb-8 relative z-30" role="alert">
+          <div className="rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-sm font-bold text-center py-3 px-4 shadow-xl">
+            {PAUSED_ORDERS_MESSAGE}
+          </div>
+        </div>
+      )}
 
       {/* Main Info Card */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-16 sm:-mt-20 relative z-20">

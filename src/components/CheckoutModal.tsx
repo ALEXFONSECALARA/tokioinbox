@@ -8,6 +8,7 @@ import confetti from 'canvas-confetti';
 import { buildPixBrCode, cityFromAddress } from '../utils/pix';
 import { waLink, orderChannels } from '../utils/contactLinks';
 import { QrCodeImage } from './QrCodeImage';
+import { isRestaurantAcceptingOrders, PAUSED_ORDERS_MESSAGE } from '../utils/restaurantStatus';
 import {
   X,
   CheckCircle2,
@@ -47,6 +48,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setSelectedTable,
     appliedCoupon,
     createOrder,
+    appMode,
   } = useStore();
 
   const { customer, isAuthenticated } = useCustomerAuth();
@@ -203,6 +205,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // V9 PLUS ULTRA 01: restaurante pausado não recebe novos pedidos (o servidor também recusa).
+    if (appMode !== 'staff' && !isRestaurantAcceptingOrders(currentRestaurant)) {
+      alert(PAUSED_ORDERS_MESSAGE);
+      return;
+    }
 
     if (!customerName.trim() || !customerPhone.trim()) {
       alert('Por favor informe seu nome e telefone/WhatsApp.');

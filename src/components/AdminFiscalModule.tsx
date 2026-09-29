@@ -123,7 +123,10 @@ export const AdminFiscalModule: React.FC<AdminFiscalModuleProps> = ({
   const [isCancellingDoc, setIsCancellingDoc] = useState(false);
 
   // Helper token
-  const getAuthToken = () => localStorage.getItem('tokio_staff_token') || 'token-demo';
+  // V9 PLUS ULTRA 01: o token da sessão do colaborador fica em sessionStorage (e em currentUser.token).
+  // Antes lia localStorage com fallback 'token-demo' -> o servidor respondia 401 -> o handler global
+  // 'nx-staff-unauthorized' derrubava a sessão e o usuário voltava ao LOGIN ao abrir o Fiscal.
+  const getAuthToken = () => currentUser?.token || sessionStorage.getItem('tokio_staff_token') || '';
 
   // Load initial data
   useEffect(() => {

@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
+import { isRestaurantAcceptingOrders, PAUSED_ORDERS_MESSAGE } from '../utils/restaurantStatus';
 
 interface ClientTableViewProps {
   tableNumber: number;
@@ -88,7 +89,13 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
     });
   }, [restaurantMenuItems, selectedCategory, searchQuery]);
 
+  const ordersPaused = !isRestaurantAcceptingOrders(restaurant);
+
   const addToCart = (item: MenuItem) => {
+    if (ordersPaused) {
+      showToast(PAUSED_ORDERS_MESSAGE, 'error');
+      return;
+    }
     setClientCart((prev) => {
       const idx = prev.findIndex((c) => c.item.id === item.id);
       if (idx >= 0) {
@@ -126,6 +133,10 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
 
   const handleSendOrder = async () => {
     if (clientCart.length === 0) return;
+    if (ordersPaused) {
+      showToast(PAUSED_ORDERS_MESSAGE, 'error');
+      return;
+    }
     setIsSending(true);
 
     try {
@@ -250,6 +261,11 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
 
       {/* Main Content: Categories & Menu */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-6">
+        {ordersPaused && (
+          <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-300 text-sm font-bold text-center">
+            {PAUSED_ORDERS_MESSAGE}
+          </div>
+        )}
         {/* Search */}
         <div className="relative">
           <Search className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -319,7 +335,8 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
                   </span>
                   <button
                     onClick={() => addToCart(item)}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-lg shadow flex items-center gap-1 active:scale-95"
+                    disabled={ordersPaused}
+                    className="disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-lg shadow flex items-center gap-1 active:scale-95"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Adicionar</span>
@@ -425,7 +442,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
 
               <button
                 onClick={handleSendOrder}
-                disabled={isSending || clientCart.length === 0}
+                disabled={isSending || clientCart.length === 0 || ordersPaused}
                 className="w-full py-4 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-40"
               >
                 <Send className="w-4 h-4" />

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MenuItem, CartItemOptionSelected } from '../types/restaurant';
 import { useStore } from '../context/StoreContext';
 import { X, Plus, Minus, Check, Sparkles } from 'lucide-react';
+import { isRestaurantAcceptingOrders, PAUSED_ORDERS_MESSAGE } from '../utils/restaurantStatus';
 
 interface ProductModalProps {
   item?: MenuItem;
@@ -12,7 +13,9 @@ interface ProductModalProps {
 export const ProductModal: React.FC<ProductModalProps> = ({ item: propItem, product, onClose }) => {
   const item = propItem || product;
   if (!item) return null;
-  const { addToCart } = useStore();
+  const { addToCart, restaurants, appMode } = useStore();
+  // Pausa: só o restaurante DESTE item; equipe (painel) continua podendo lançar.
+  const paused = appMode !== 'staff' && !isRestaurantAcceptingOrders(restaurants[item.restaurantSlug]);
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<CartItemOptionSelected[]>([]);
@@ -74,6 +77,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ item: propItem, prod
   };
 
   const handleAdd = () => {
+    if (paused) return;
     addToCart(item, quantity, selectedOptions, notes.trim() || undefined);
     onClose();
   };
@@ -253,9 +257,15 @@ export const ProductModal: React.FC<ProductModalProps> = ({ item: propItem, prod
           </div>
 
           {/* Add to Cart CTA */}
+          {paused && (
+            <p className="basis-full text-center text-xs font-bold text-rose-300 order-first" role="alert">
+              {PAUSED_ORDERS_MESSAGE}
+            </p>
+          )}
           <button
             onClick={handleAdd}
-            className="flex-1 py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-between shadow-lg hover:shadow-amber-500/20 transition-all active:scale-[0.98]"
+            disabled={paused}
+            className="disabled:opacity-40 disabled:cursor-not-allowed flex-1 py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-between shadow-lg hover:shadow-amber-500/20 transition-all active:scale-[0.98]"
           >
             <span>Adicionar ao Pedido</span>
             <span>R$ {totalPrice.toFixed(2)}</span>
