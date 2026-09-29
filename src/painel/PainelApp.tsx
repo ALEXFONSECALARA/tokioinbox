@@ -13,6 +13,9 @@ import {
   areaFromPathname,
   areasForRole,
   isAreaEnabledByChannels,
+  DEVICE_ROLE_AREA,
+  DEVICE_ROLE_LABELS,
+  DeviceScreenRole,
 } from './access';
 
 /**
@@ -116,8 +119,50 @@ const Loading = () => (
 );
 
 export function PainelApp() {
-  const { currentUser, loginUser, logoutUser, salesChannels, systemSettings } = useStore();
+  const { currentUser, loginUser, logoutUser, salesChannels, systemSettings, setActiveRestaurantSlug } = useStore();
   const role = currentUser?.role;
+
+  // V9 PLUS ULTRA 01 — função ÚNICA do aparelho (definida pelo administrador em Dispositivos).
+  // O aparelho pareado consulta o servidor (ping) e carrega SOMENTE a interface da sua função.
+  const [deviceRole, setDeviceRole] = useState<DeviceScreenRole | null>(null);
+  useEffect(() => {
+    const pairedId = localStorage.getItem('tokio_mobile_paired_id');
+    if (!currentUser || !pairedId) {
+      setDeviceRole(null);
+      return undefined;
+    }
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const r = await fetch('/api/devices/ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idOrCode: pairedId }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (stopped) return;
+        setDeviceRole((d?.device?.screenRole as DeviceScreenRole) || null);
+        if (d?.device?.restaurantSlug) setActiveRestaurantSlug(d.device.restaurantSlug);
+      } catch {
+        /* sem rede: mantém a última função conhecida */
+      }
+    };
+    tick();
+    const t = setInterval(tick, 30000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [currentUser?.id]);
+
+  /** Áreas liberadas = permissões do usuário ∩ função única do aparelho (se houver). */
+  const computeAllowed = (): StaffArea[] => {
+    const base = allowedAreasForUser(currentUser, salesChannels);
+    if (!deviceRole) return base;
+    const target = DEVICE_ROLE_AREA[deviceRole];
+    if (target === 'cliente') return [];
+    return base.filter((a) => a === target);
+  };
 
   // A navegação das ferramentas do painel é interna ao React.
   // Não altera a URL nem cria links /pdv, /balcao, /caixa etc.
@@ -148,10 +193,17 @@ export function PainelApp() {
   useEffect(() => {
     if (!currentUser) return;
     if (area === null) {
-      const def = allowedAreasForUser(currentUser, salesChannels)[0] || null;
+      const def = computeAllowed()[0] || null;
       if (def) goArea(def);
     }
   }, [currentUser?.id, area]);
+
+  // Aparelho com função definida: força a área da função (e volta a ela se a função mudar).
+  useEffect(() => {
+    if (!currentUser || !deviceRole) return;
+    const only = computeAllowed()[0];
+    if (only && area !== only) goArea(only);
+  }, [deviceRole, currentUser?.id, salesChannels]);
 
   const handleNavigateEnvironment = (env: OperationalEnvironment, subOption?: string) => {
     if (env === 'cliente') {
@@ -162,13 +214,13 @@ export function PainelApp() {
       return;
     }
     const target = ENV_TO_AREA[env];
-    if (!target || !allowedAreasForUser(currentUser, salesChannels).includes(target)) return;
+    if (!target || !computeAllowed().includes(target)) return;
     if (target === 'admin' && subOption) setAdminInitialTab(subOption);
     goArea(target);
   };
 
   const backToStart = () => {
-    const def = allowedAreasForUser(currentUser, salesChannels)[0] || null;
+    const def = computeAllowed()[0] || null;
     if (def && area !== def) goArea(def);
     else setArea(null);
   };
@@ -193,7 +245,7 @@ export function PainelApp() {
     );
   }
 
-  const allowed = allowedAreasForUser(currentUser, salesChannels);
+  const allowed = computeAllowed();
   const logoutChip = (
     <button
       onClick={() => {
@@ -209,6 +261,36 @@ export function PainelApp() {
       </span>
     </button>
   );
+
+  // Aparelho configurado como CLIENTE: só o cardápio do cliente (sem ferramentas da equipe).
+  if (deviceRole === 'cliente') {
+    return (
+      <>
+        <ClientMenuPreviewModal isOpen onClose={() => { /* aparelho CLIENTE não sai desta tela */ }} />
+        {logoutChip}
+      </>
+    );
+  }
+
+  // Função do aparelho não compatível com o perfil de quem fez login
+  if (deviceRole && allowed.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#07090E] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-[#0E121B] border border-rose-500/30 rounded-3xl p-6 sm:p-8 text-center space-y-3">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-400 flex items-center justify-center">
+            <ShieldAlert className="w-7 h-7" />
+          </div>
+          <h1 className="text-lg font-black text-white">Acesso não autorizado neste aparelho</h1>
+          <p className="text-xs text-slate-400">
+            Este aparelho foi configurado como <b className="text-amber-400">{DEVICE_ROLE_LABELS[deviceRole]}</b>, mas o usuário{' '}
+            <b className="text-amber-400">@{currentUser.username}</b> ({ROLE_LABELS[role as StaffRole] || role}) não tem permissão para essa tela.
+            Entre com um usuário adequado ou peça ao administrador para alterar a função do aparelho.
+          </p>
+        </div>
+        {logoutChip}
+      </div>
+    );
+  }
 
   // Área inexistente ou sem permissão
   if (!area || !allowed.includes(area)) {

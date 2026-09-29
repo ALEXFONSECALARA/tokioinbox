@@ -31,7 +31,8 @@ const PRODUCTION: StaffArea[] = ['cozinha', 'sushibar', 'bar', 'kanban'];
 export const ROLE_AREAS: Record<StaffRole, StaffArea[]> = {
   super_admin: ALL_AREAS,
   administrador: ALL_AREAS,
-  caixa: ['caixa', 'balcao', 'delivery', 'kanban'],
+  // V9 PLUS ULTRA 01: Caixa também acessa Salão / Mesas (visualizar contas, fechamento, pagamento, liberar mesa)
+  caixa: ['caixa', 'pdv', 'balcao', 'delivery', 'kanban'],
   garcom: ['pdv', 'balcao'],
   cozinha: PRODUCTION,
   sushi_bar: PRODUCTION,
@@ -63,6 +64,19 @@ export const AREA_LABELS: Record<StaffArea, string> = {
   courier: 'Portal do entregador',
 };
 
+/**
+ * V9 PLUS ULTRA 01 — espelho da regra do servidor (roleCanReceivePayment): garçom NUNCA recebe
+ * pagamento; os demais seguem `can_receive_payment` (padrão do perfil quando ausente).
+ */
+export function userCanReceivePayment(user?: { role?: string; permissions?: any } | null): boolean {
+  if (!user) return false;
+  if (user.role === 'garcom') return false;
+  if (user.role === 'super_admin') return true;
+  const explicit = user.permissions?.can_receive_payment;
+  if (typeof explicit === 'boolean') return explicit;
+  return user.role === 'administrador' || user.role === 'caixa';
+}
+
 export function areasForRole(role?: string | null): StaffArea[] {
   if (!role) return [];
   return ROLE_AREAS[role as StaffRole] || [];
@@ -78,6 +92,31 @@ export function defaultAreaForRole(role?: string | null): StaffArea | null {
   if (role === 'super_admin' || role === 'administrador') return 'admin';
   return areas[0];
 }
+
+/**
+ * V9 PLUS ULTRA 01 — função única de um DISPOSITIVO → interface que ele carrega.
+ * 'cliente' não é uma área da equipe (abre o cardápio do cliente).
+ */
+import type { DeviceScreenRole } from '../types/restaurant';
+export type { DeviceScreenRole };
+
+export const DEVICE_ROLE_LABELS: Record<DeviceScreenRole, string> = {
+  garcom: 'GARÇOM',
+  caixa: 'CAIXA',
+  cliente: 'CLIENTE',
+  cozinha_kds: 'COZINHA KDS',
+  sushibar_kds: 'SUSHIBAR KDS',
+  barra_kds: 'BARRA KDS',
+};
+
+export const DEVICE_ROLE_AREA: Record<DeviceScreenRole, StaffArea | 'cliente'> = {
+  garcom: 'pdv',
+  caixa: 'caixa',
+  cliente: 'cliente',
+  cozinha_kds: 'cozinha',
+  sushibar_kds: 'sushibar',
+  barra_kds: 'bar',
+};
 
 /** Caminho (URL) de cada área do painel. */
 export const AREA_PATHS: Record<StaffArea, string> = {
