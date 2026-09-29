@@ -4,6 +4,7 @@ import { useStore } from '../context/StoreContext';
 import { EnvironmentBar, OperationalEnvironment } from '../components/EnvironmentBar';
 import { ClientMenuPreviewModal } from '../components/ClientMenuPreviewModal';
 import { StaffLogin } from './StaffLogin';
+const QrPairScreen = lazy(() => import('./QrPairScreen').then((m) => ({ default: m.QrPairScreen })));
 import {
   AREA_LABELS,
   ROLE_LABELS,
@@ -115,7 +116,7 @@ const Loading = () => (
 );
 
 export function PainelApp() {
-  const { currentUser, loginUser, logoutUser, salesChannels } = useStore();
+  const { currentUser, loginUser, logoutUser, salesChannels, systemSettings } = useStore();
   const role = currentUser?.role;
 
   // A navegação das ferramentas do painel é interna ao React.
@@ -174,6 +175,22 @@ export function PainelApp() {
 
   if (!currentUser) {
     return <StaffLogin onLogin={loginUser} />;
+  }
+
+  // V9.2: celular escaneou o QR Code → tela de autorização (após o login da equipe).
+  const qrPairToken = new URLSearchParams(window.location.search).get('qrpair');
+  if (qrPairToken) {
+    return (
+      <Suspense fallback={<Loading />}>
+        <QrPairScreen
+          token={qrPairToken}
+          onDone={() => {
+            window.history.replaceState({}, '', window.location.pathname);
+            window.location.reload();
+          }}
+        />
+      </Suspense>
+    );
   }
 
   const allowed = allowedAreasForUser(currentUser, salesChannels);
@@ -270,7 +287,24 @@ export function PainelApp() {
     case 'cozinha':
     case 'sushibar':
     case 'bar':
-      screen = withBar(<ProducaoModule key={area} initialStation={area} onBackToApp={backToStart} />);
+      // V9.2: KDS desativado → módulo não é montado (nenhum chunk/consulta/conexão do KDS).
+      // A impressão por setor continua funcionando pelo roteamento de impressão no servidor.
+      screen = systemSettings.kdsEnabled ? (
+        withBar(<ProducaoModule key={area} initialStation={area} onBackToApp={backToStart} />)
+      ) : (
+        withBar(
+          <div className="min-h-[60vh] flex items-center justify-center p-6 text-center">
+            <div className="max-w-sm space-y-2">
+              <p className="text-white font-bold">KDS desativado</p>
+              <p className="text-xs text-slate-400">
+                Os pedidos continuam sendo impressos nas impressoras de cada setor. Para reativar o painel de
+                produção, use Ferramentas → Configurações do Sistema.
+              </p>
+              <button onClick={backToStart} className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold">Voltar</button>
+            </div>
+          </div>
+        )
+      );
       break;
     case 'courier':
       screen = (
