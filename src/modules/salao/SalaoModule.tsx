@@ -1,6 +1,7 @@
 import React from 'react';
 import { WaiterPdvTouch } from '../../components/WaiterPdvTouch';
 import { OperationalEnvironment } from '../../components/EnvironmentBar';
+import { CashRequiredGate } from '../../components/CashRequiredGate';
 
 interface SalaoModuleProps {
   onBackToApp?: () => void;
@@ -26,11 +27,13 @@ export const SalaoModule: React.FC<SalaoModuleProps> = ({
     // #root já reserva, e quem rola internamente é só a área de conteúdo
     // dentro do WaiterPdvTouch (ver comentário lá).
     <div className="w-full h-full bg-[#07090E]">
-      <WaiterPdvTouch
-        onBackToApp={onBackToApp}
-        onOpenAdmin={onOpenAdmin}
-        onNavigateToEnvironment={onNavigateToEnvironment}
-      />
+      <CashRequiredGate onGoToCashier={onNavigateToEnvironment ? () => onNavigateToEnvironment('caixa') : undefined}>
+        <WaiterPdvTouch
+          onBackToApp={onBackToApp}
+          onOpenAdmin={onOpenAdmin}
+          onNavigateToEnvironment={onNavigateToEnvironment}
+        />
+      </CashRequiredGate>
     </div>
   );
 };
