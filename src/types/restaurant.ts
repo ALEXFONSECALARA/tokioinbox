@@ -440,6 +440,7 @@ export interface UserPermissions {
   // não foi alterada aqui.
   can_delete_orders?: boolean;
   can_print_tickets?: boolean;
+  can_receive_payment?: boolean;
 }
 
 export interface UserAccount {
@@ -478,7 +479,11 @@ export interface ConnectedDevice {
   connectedBy?: string;
   deviceType?: string;
   connectedVia?: 'qr' | 'code';
+  // V9 PLUS ULTRA 01 — função ÚNICA do aparelho, definida pelo administrador
+  screenRole?: DeviceScreenRole | null;
 }
+
+export type DeviceScreenRole = 'garcom' | 'caixa' | 'cliente' | 'cozinha_kds' | 'sushibar_kds' | 'barra_kds';
 
 export interface AuditActionLog {
   id: string;
