@@ -24,6 +24,7 @@ export interface OrderItem {
   selectedOptions?: OrderItemOption[];
   notes?: string;
   station?: ProductionStation;
+  printStations?: ProductionStation[];
   stationStatus?: StationItemStatus;
 }
 
@@ -368,6 +369,13 @@ export function initializeOrders() {
     const raw = fs.existsSync(ORDERS_FILE) ? fs.readFileSync(ORDERS_FILE, 'utf-8').trim() : '';
     if (raw) {
       ordersCache = JSON.parse(raw);
+      // V9.3: pedidos de demonstração do seed (id `seed-ord-*`) nunca são pedidos reais: são removidos.
+      const before = ordersCache.length;
+      ordersCache = ordersCache.filter((o: any) => !String(o?.idempotencyKey || '').startsWith('seed-ord-'));
+      if (ordersCache.length !== before) {
+        persistOrdersSync();
+        console.log(`[ORDER STORAGE] ${before - ordersCache.length} pedido(s) de demonstração removido(s).`);
+      }
       console.log(`[ORDER STORAGE] Carregados ${ordersCache.length} pedidos persistidos do arquivo.`);
     } else {
       // Arquivo ausente/vazio: começa limpo. Pedidos de demonstração só com SEED_DEMO_ORDERS=true.
@@ -497,6 +505,7 @@ export function priceOrderItems(
       selectedOptions: line.selectedOptions,
       notes: cleanText(it.notes, 300) || undefined,
       station: resolveItemStation(line.name, line.station || it.station),
+      printStations: line.printStations as ProductionStation[] | undefined,
       stationStatus: 'recebido' as StationItemStatus,
     };
   });
@@ -1153,6 +1162,85 @@ export function updateOrderItemTransactional(params: {
   ordersCache[idx] = updated;
   persistOrdersSync();
   return updated;
+}
+
+/**
+ * V9.2 — EXCLUIR ITEM: remove SOMENTE a quantidade informada do item selecionado.
+ * - quantity < quantidade do item  → reduz a quantidade (recalcula preço/total);
+ * - quantity >= quantidade do item → remove a linha do item;
+ * - nunca apaga o pedido, cliente, mesa ou histórico; se sobrar zero itens, recusa
+ *   (para isso existe cancelar pedido, com suas próprias regras).
+ * Registra a operação no histórico do pedido (auditoria).
+ */
+export function removeOrderItemQuantityTransactional(params: {
+  orderId: string;
+  itemId: string;
+  quantity: number;
+  operatorName?: string;
+  reason?: string;
+}): { order: Order; removedQty: number; removedValue: number; removedName: string; lineRemoved: boolean } {
+  initializeOrders();
+  const idx = ordersCache.findIndex((o) => o.id === params.orderId);
+  if (idx === -1) throw new Error(`Pedido com ID "${params.orderId}" não encontrado.`);
+  const order = ordersCache[idx];
+  if (order.status === 'finalizado' || order.status === 'cancelado') {
+    throw new Error('Não é possível excluir item de um pedido encerrado ou cancelado.');
+  }
+  if (order.paymentDetails?.paid) {
+    throw new Error('Pedido já pago: exclusão de item bloqueada. Use estorno/cancelamento pelo caixa.');
+  }
+  const itemIndex = order.items.findIndex((i) => i.id === params.itemId);
+  if (itemIndex === -1) throw new Error('Item do pedido não encontrado.');
+  const current = order.items[itemIndex];
+  const wanted = Math.floor(Number(params.quantity));
+  if (!Number.isFinite(wanted) || wanted < 1) throw new Error('Informe uma quantidade válida (mínimo 1).');
+  const removedQty = Math.min(wanted, current.quantity);
+  const remaining = current.quantity - removedQty;
+  if (remaining === 0 && order.items.length === 1) {
+    throw new Error('Este é o único item do pedido. Para removê-lo, cancele o pedido.');
+  }
+
+  let items = [...order.items];
+  let removedValue: number;
+  if (remaining === 0) {
+    removedValue = current.totalPrice;
+    items.splice(itemIndex, 1);
+  } else {
+    const priced = priceOrderItems(order.restaurantSlug, [{
+      id: current.id,
+      name: current.name,
+      quantity: remaining,
+      unitPrice: current.unitPrice,
+      selectedOptions: current.selectedOptions,
+      notes: current.notes,
+      station: current.station,
+    }], { isStaff: true });
+    const replacement = { ...priced.items[0], id: current.id, printStations: current.printStations };
+    removedValue = Number((current.totalPrice - replacement.totalPrice).toFixed(2));
+    items[itemIndex] = replacement;
+  }
+
+  const subtotal = Number(items.reduce((sum, it) => sum + it.totalPrice, 0).toFixed(2));
+  const total = Number(Math.max(0, subtotal - (order.discount || 0) + (order.deliveryFee || 0)).toFixed(2));
+  const nowIso = new Date().toISOString();
+  const updated: Order = {
+    ...order,
+    items,
+    subtotal,
+    total,
+    statusHistory: [
+      ...order.statusHistory,
+      {
+        status: order.status,
+        timestamp: 'Agora mesmo',
+        note: `ITEM EXCLUÍDO: ${removedQty}x ${current.name} (R$ ${removedValue.toFixed(2)})${params.reason ? ` — motivo: ${params.reason}` : ''}${params.operatorName ? ` — por ${params.operatorName}` : ''}.`,
+      },
+    ],
+    updatedAt: nowIso,
+  };
+  ordersCache[idx] = updated;
+  persistOrdersSync();
+  return { order: updated, removedQty, removedValue, removedName: current.name, lineRemoved: remaining === 0 };
 }
 
 /**

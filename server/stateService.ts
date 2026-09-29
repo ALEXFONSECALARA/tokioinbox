@@ -34,6 +34,8 @@ export const STATE_DOCS: Record<string, DocSpec> = {
   printerSettings: { read: ALL_STAFF, write: ADMINS },
   delaySettings: { read: ALL_STAFF, write: ADMINS },
   salesChannels: { read: ALL_STAFF, write: ADMINS },
+  // V9.2: configurações globais editáveis (KDS ligado/desligado, tipos de relatório de caixa).
+  systemSettings: { read: ALL_STAFF, write: ADMINS },
 };
 
 interface StoredDoc {

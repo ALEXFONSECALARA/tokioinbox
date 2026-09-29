@@ -1,3 +1,4 @@
+import { sanitizeDemoRestaurant } from '../src/utils/demoData';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -113,6 +114,17 @@ export function initializeCatalog(): Catalog {
             tablesMigrated = true;
           }
         }
+      }
+      // V9.3: nome oficial do 7º restaurante e remoção de dados de demonstração (WhatsApp/PIX/telefone/
+      // endereço fictícios e avaliações inventadas) — só quando o valor ainda é EXATAMENTE o do seed.
+      let demoCleaned = 0;
+      for (const [slug, restaurant] of Object.entries(parsed.restaurants || {})) {
+        const { value, changed } = sanitizeDemoRestaurant(restaurant as any);
+        if (changed) { (parsed.restaurants as any)[slug] = value; demoCleaned++; }
+      }
+      if (demoCleaned > 0) {
+        console.log(`[CATALOG] ${demoCleaned} restaurante(s): dados de demonstração removidos (cadastre os dados reais em Restaurantes).`);
+        tablesMigrated = true; // força versão+persistência
       }
       if (tablesMigrated) {
         parsed.version = Number(parsed.version || 1) + 1;
@@ -294,6 +306,7 @@ export interface PricedLine {
   unitPrice: number;
   selectedOptions: { groupId: string; groupTitle: string; optionId: string; name: string; price: number }[];
   station?: string;
+  printStations?: string[];
   fromCatalog: boolean;
 }
 
@@ -303,6 +316,14 @@ export interface PricedLine {
  * - Se não existe: só é aceito quando `allowCustom` (colaborador autenticado
  *   lançando item avulso). Público => erro.
  */
+const VALID_PRINT_STATIONS = ['cozinha', 'sushibar', 'bar'];
+/** Mantém só setores válidos, sem repetição. Retorna undefined quando vazio (usa `station`). */
+export function sanitizePrintStations(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = [...new Set(v.filter((s): s is string => typeof s === 'string' && VALID_PRINT_STATIONS.includes(s)))];
+  return out.length ? out : undefined;
+}
+
 export function priceLine(
   slug: string,
   raw: {
@@ -354,6 +375,7 @@ export function priceLine(
       unitPrice: Number((base + optionsTotal).toFixed(2)),
       selectedOptions: selected,
       station: item.station,
+      printStations: sanitizePrintStations((item as any).printStations),
       fromCatalog: true,
     };
   }

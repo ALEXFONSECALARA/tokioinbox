@@ -211,6 +211,14 @@ export interface ConnectedDevice {
   status: 'online' | 'offline';
   lastPingAt: string;
   connectedAt: string;
+  // V9.2 — conexão por QR Code
+  revoked?: boolean;
+  revokedAt?: string;
+  revokedBy?: string;
+  restaurantSlug?: string;
+  connectedBy?: string; // usuário que autorizou
+  deviceType?: string; // celular | tablet
+  connectedVia?: 'qr' | 'code';
 }
 
 export interface AuditActionLog {
@@ -643,15 +651,131 @@ export function getAllDevices(): ConnectedDevice[] {
     const isOnline = now - lastPing < 90000;
     return {
       ...dev,
-      status: isOnline ? 'online' : 'offline',
+      status: isOnline && !dev.revoked ? 'online' : 'offline',
     };
   });
 }
 
+// V9.2 — códigos de pareamento agora são EMITIDOS pelo servidor, expiram e são de uso único.
+// Antes, /api/devices/pair aceitava qualquer texto como código.
+const PAIRING_CODE_TTL_MS = 10 * 60 * 1000;
+const issuedPairingCodes = new Map<string, number>(); // code -> expiresAt
+
+function purgeExpired<T extends { expiresAt: number }>(m: Map<string, T>) {
+  const now = Date.now();
+  for (const [k, v] of m) if (v.expiresAt <= now) m.delete(k);
+}
+
 export function generatePairingCode(): string {
   initializeDevices();
+  const now = Date.now();
+  for (const [k, exp] of issuedPairingCodes) if (exp <= now) issuedPairingCodes.delete(k);
   const code = `NX-${secureNumericCode(6)}`;
+  issuedPairingCodes.set(code, now + PAIRING_CODE_TTL_MS);
   return code;
+}
+
+// ---------- QR Code: token temporário, uso único, com aprovação do administrador ----------
+const QR_TOKEN_TTL_MS = 5 * 60 * 1000;
+const CLAIM_TTL_MS = 5 * 60 * 1000;
+
+interface QrToken { expiresAt: number; createdBy: string; restaurantSlug?: string }
+interface QrClaim {
+  id: string; expiresAt: number; deviceName: string; platform: ConnectedDevice['platform'];
+  deviceType: string; restaurantSlug?: string; requestedBy: string;
+  status: 'pending' | 'approved' | 'rejected'; deviceId?: string;
+}
+const qrTokens = new Map<string, QrToken>();
+const qrClaims = new Map<string, QrClaim>();
+
+export function createQrPairingToken(createdBy: string, restaurantSlug?: string) {
+  purgeExpired(qrTokens as any);
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = Date.now() + QR_TOKEN_TTL_MS;
+  qrTokens.set(token, { expiresAt, createdBy, restaurantSlug });
+  logAuditAction({ userName: createdBy, userRole: 'admin', action: 'Gerou QR Code de conexão de dispositivo (expira em 5 min)', category: 'device' });
+  return { token, expiresAt: new Date(expiresAt).toISOString() };
+}
+
+/** Consome o token (uso único) e abre uma solicitação pendente de aprovação. */
+export function claimQrToken(params: {
+  token: string; deviceName: string; platform?: ConnectedDevice['platform']; deviceType?: string; requestedBy: string;
+}): { claimId: string; expiresAt: string } {
+  purgeExpired(qrTokens as any);
+  purgeExpired(qrClaims as any);
+  const t = qrTokens.get(params.token);
+  if (!t || t.expiresAt <= Date.now()) throw new Error('QR Code inválido ou expirado. Gere um novo QR Code.');
+  qrTokens.delete(params.token); // uso único
+  const id = `claim-${crypto.randomBytes(12).toString('hex')}`;
+  const claim: QrClaim = {
+    id, expiresAt: Date.now() + CLAIM_TTL_MS,
+    deviceName: (params.deviceName || 'Celular').trim().slice(0, 60) || 'Celular',
+    platform: params.platform || 'other', deviceType: params.deviceType === 'tablet' ? 'tablet' : 'celular',
+    restaurantSlug: t.restaurantSlug, requestedBy: params.requestedBy, status: 'pending',
+  };
+  qrClaims.set(id, claim);
+  return { claimId: id, expiresAt: new Date(claim.expiresAt).toISOString() };
+}
+
+export function listPendingQrClaims() {
+  purgeExpired(qrClaims as any);
+  return [...qrClaims.values()].filter((c) => c.status === 'pending').map((c) => ({
+    id: c.id, deviceName: c.deviceName, platform: c.platform, deviceType: c.deviceType,
+    restaurantSlug: c.restaurantSlug, requestedBy: c.requestedBy, expiresAt: new Date(c.expiresAt).toISOString(),
+  }));
+}
+
+export function getQrClaimStatus(claimId: string): { status: 'pending' | 'approved' | 'rejected' | 'expired'; deviceId?: string } {
+  const c = qrClaims.get(claimId);
+  if (!c || c.expiresAt <= Date.now()) return { status: c?.status === 'approved' ? 'approved' : 'expired', deviceId: c?.deviceId };
+  return { status: c.status, deviceId: c.deviceId };
+}
+
+export function decideQrClaim(claimId: string, approve: boolean, operatorName: string): ConnectedDevice | null {
+  initializeDevices();
+  const c = qrClaims.get(claimId);
+  if (!c || c.expiresAt <= Date.now() || c.status !== 'pending') throw new Error('Solicitação inexistente, expirada ou já decidida.');
+  if (!approve) {
+    c.status = 'rejected';
+    logAuditAction({ userName: operatorName, userRole: 'admin', action: `Recusou conexão do dispositivo "${c.deviceName}"`, category: 'device' });
+    return null;
+  }
+  const now = new Date().toISOString();
+  const dev: ConnectedDevice = {
+    id: `dev-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    pairingCode: `QR-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+    deviceName: c.deviceName, platform: c.platform, soundEnabled: true, soundType: 'sound1', volume: 0.8,
+    vibrationEnabled: true, delayAlertsEnabled: true, delayMinutesThreshold: 15, delayRepeatMinutes: 3,
+    status: 'online', lastPingAt: now, connectedAt: now,
+    restaurantSlug: c.restaurantSlug, connectedBy: `${c.requestedBy} (autorizado por ${operatorName})`,
+    deviceType: c.deviceType, connectedVia: 'qr',
+  };
+  devicesCache.push(dev);
+  persistDevicesSync();
+  c.status = 'approved';
+  c.deviceId = dev.id;
+  logAuditAction({ userName: operatorName, userRole: 'admin', action: `Autorizou conexão por QR do dispositivo "${dev.deviceName}"`, category: 'device' });
+  return dev;
+}
+
+export function revokeDevice(id: string, operatorName: string): ConnectedDevice {
+  initializeDevices();
+  const dev = devicesCache.find((d) => d.id === id);
+  if (!dev) throw new Error('Dispositivo não encontrado.');
+  dev.revoked = true; dev.revokedAt = new Date().toISOString(); dev.revokedBy = operatorName;
+  persistDevicesSync();
+  logAuditAction({ userName: operatorName, userRole: 'admin', action: `REVOGOU o dispositivo "${dev.deviceName}"`, category: 'device' });
+  return dev;
+}
+
+export function reconnectDevice(id: string, operatorName: string): ConnectedDevice {
+  initializeDevices();
+  const dev = devicesCache.find((d) => d.id === id);
+  if (!dev) throw new Error('Dispositivo não encontrado.');
+  dev.revoked = false; dev.revokedAt = undefined; dev.revokedBy = undefined;
+  persistDevicesSync();
+  logAuditAction({ userName: operatorName, userRole: 'admin', action: `Reconectou o dispositivo "${dev.deviceName}"`, category: 'device' });
+  return dev;
 }
 
 export function registerOrPairDevice(data: {
@@ -665,9 +789,15 @@ export function registerOrPairDevice(data: {
   const now = new Date().toISOString();
 
   // If pairing code matches existing, re-activate
-  let dev = devicesCache.find((d) => d.pairingCode.toUpperCase() === data.pairingCode.toUpperCase().trim());
+  const normalizedCode = data.pairingCode.toUpperCase().trim();
+  let dev = devicesCache.find((d) => d.pairingCode.toUpperCase() === normalizedCode);
+  if (dev?.revoked) throw new Error('Este dispositivo foi revogado. Peça ao administrador para reconectá-lo.');
 
   if (!dev) {
+    // V9.2: código precisa ter sido emitido pelo servidor, não expirado, e é de uso único.
+    const exp = issuedPairingCodes.get(normalizedCode);
+    if (!exp || exp <= Date.now()) throw new Error('Código de pareamento inválido ou expirado.');
+    issuedPairingCodes.delete(normalizedCode);
     dev = {
       id: `dev-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
       pairingCode: data.pairingCode.toUpperCase().trim(),
@@ -708,7 +838,7 @@ export function registerOrPairDevice(data: {
 export function updateDevicePing(idOrCode: string): ConnectedDevice | undefined {
   initializeDevices();
   const dev = devicesCache.find((d) => d.id === idOrCode || d.pairingCode === idOrCode);
-  if (dev) {
+  if (dev && !dev.revoked) {
     dev.lastPingAt = new Date().toISOString();
     dev.status = 'online';
     persistDevicesSync();

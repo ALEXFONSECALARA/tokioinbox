@@ -20,6 +20,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { secureToken, safeEqual } from './security';
+import { DATA_DIR } from './dataDir';
 
 // ---------------------------------------------------------------------------
 // Sessões de colaboradores: persistidas em disco (sobrevivem a reinícios) e
@@ -32,7 +33,11 @@ interface StoredSession {
   createdAt: number;
 }
 
-const SESSIONS_FILE = path.join(process.cwd(), 'data', 'staff_sessions.json');
+// V9.3: usa o mesmo DATA_DIR configurável do resto do sistema — antes, sessões de login
+// eram gravadas em process.cwd()/data mesmo quando DATA_DIR apontava para um disco
+// persistente, então sessões (e o próprio login) se perdiam a cada deploy num ambiente
+// com filesystem efêmero.
+const SESSIONS_FILE = path.join(DATA_DIR, 'staff_sessions.json');
 let sessionsLoaded = false;
 const activeSessions = new Map<string, StoredSession>(); // key = sha256(token)
 
