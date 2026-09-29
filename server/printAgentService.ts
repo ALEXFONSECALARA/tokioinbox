@@ -155,10 +155,11 @@ export function enqueuePrintJob(params: {
     const chosen = matchingPrinters.filter((p) => p.id === printerId);
     if (chosen.length > 0) matchingPrinters = chosen;
   }
-  // Sem nenhuma impressora cadastrada/online para a estação: ainda assim
-  // registra 1 trabalho pendente (sem impressora atribuída) para não perder
-  // o pedido — ele aparece na fila como pendente até uma impressora ser
-  // cadastrada para essa estação.
+  // CORREÇÃO V9 PLUS ULTRA 02: se não há impressora cadastrada/online para
+  // RESTAURANTE + SETOR, o trabalho NUNCA é redirecionado para outra
+  // impressora (ex.: a do Caixa). Ele é registrado com status ERRO e uma
+  // mensagem clara, para que o setor e o Admin vejam imediatamente:
+  // "Nenhuma impressora configurada para este setor."
   const targets = matchingPrinters.length > 0 ? matchingPrinters : [null];
 
   const createdJobs: PrintJob[] = [];
@@ -173,6 +174,7 @@ export function enqueuePrintJob(params: {
       continue;
     }
 
+    const noPrinterConfigured = !printer;
     const newJob: PrintJob = {
       jobId: `job-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       orderId,
@@ -180,10 +182,11 @@ export function enqueuePrintJob(params: {
       restaurantSlug,
       station,
       printerId: printer?.id,
-      printerName: printer?.name || `Impressora ${station}`,
-      status: 'PENDENTE',
+      printerName: printer?.name || `Impressora ${station} (não configurada)`,
+      status: noPrinterConfigured ? 'ERRO' : 'PENDENTE',
       attempts: 0,
       maxAttempts: 4,
+      errorMessage: noPrinterConfigured ? 'Nenhuma impressora configurada para este setor.' : undefined,
       rawEscPos,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -255,6 +258,26 @@ export function retryPrintJob(jobId: string): PrintJob | null {
   initializePrintQueue();
   const job = printJobsQueue.find((j) => j.jobId === jobId);
   if (!job) return null;
+
+  // Se o trabalho não tinha impressora atribuída (setor sem impressora
+  // configurada), tenta resolver novamente — o Admin pode ter cadastrado
+  // uma impressora para o setor desde então. Nunca usa a impressora de
+  // outro setor/estação como substituta.
+  if (!job.printerId) {
+    initializePrinters();
+    const match = registeredPrinters.find(
+      (p) => p.restaurantSlug === job.restaurantSlug && p.stations?.includes(job.station) && p.status === 'online'
+    );
+    if (!match) {
+      job.status = 'ERRO';
+      job.errorMessage = 'Nenhuma impressora configurada para este setor.';
+      job.updatedAt = new Date().toISOString();
+      persistPrintQueue();
+      return job;
+    }
+    job.printerId = match.id;
+    job.printerName = match.name;
+  }
 
   job.status = 'PENDENTE';
   job.errorMessage = undefined;
