@@ -21,6 +21,7 @@ import {
   updateOrderPrintStatusTransactional,
   updateOrderTableTransactional,
   updateOrderItemTransactional,
+  removeOrderItemQuantityTransactional,
   deleteOrderTransactional,
   clearOrdersTransactional,
   masterResetOrdersTransactional,
@@ -53,6 +54,13 @@ import {
   generatePairingCode,
   registerOrPairDevice,
   updateDevicePing,
+  createQrPairingToken,
+  claimQrToken,
+  listPendingQrClaims,
+  getQrClaimStatus,
+  decideQrClaim,
+  revokeDevice,
+  reconnectDevice,
   updateDeviceSettings,
   disconnectDevice,
   getAuditLogs,
@@ -138,6 +146,8 @@ import {
   IS_PRODUCTION,
 } from './server/security';
 import { STATE_DOCS, isKnownKey, canAccess, readableKeys, getDoc, saveDoc } from './server/stateService';
+import { fiscalRouter } from './server/fiscal/fiscalRoutes';
+import { getFiscalConfig } from './server/fiscal/documentService';
 import {
   initializeCatalog,
   getCatalog,
@@ -169,6 +179,7 @@ app.use(corsMiddleware);
 app.use('/api/upload', express.json({ limit: '12mb' }));
 app.use('/api/catalog', express.json({ limit: '8mb' }));
 app.use('/api/state', express.json({ limit: '2mb' }));
+app.use('/api/fiscal', express.json({ limit: '3mb' })); // certificado .pfx em base64
 app.use(express.json({ limit: '256kb' }));
 
 // Limites de abuso para rotas públicas
@@ -768,10 +779,15 @@ function routeOrderToPrint(order: any, sourceItems?: any[], operationKey?: strin
   const jobs: any[] = [];
   const source = Array.isArray(sourceItems) && sourceItems.length ? sourceItems : (order.items || []);
   const byStation: Record<string, any[]> = {};
+  // V9.2: um item pode ir para VÁRIOS setores (ex.: Hot Philadelphia → cozinha + sushi bar).
+  // A impressão NÃO depende do KDS: este roteamento roda no servidor, com KDS ligado ou desligado.
   for (const item of source) {
-    const station = item.station || (String(item.name || '').toLowerCase().includes('sushi') ? 'sushibar' : 'cozinha');
-    if (!byStation[station]) byStation[station] = [];
-    byStation[station].push(item);
+    const fallback = item.station || (String(item.name || '').toLowerCase().includes('sushi') ? 'sushibar' : 'cozinha');
+    const targets: string[] = Array.isArray(item.printStations) && item.printStations.length ? item.printStations : [fallback];
+    for (const station of new Set(targets)) {
+      if (!byStation[station]) byStation[station] = [];
+      byStation[station].push(item);
+    }
   }
   const stationMap: Record<string, any> = { cozinha: 'COZINHA', sushibar: 'SUSHI_BAR', bar: 'BAR' };
   for (const [stationKey, items] of Object.entries(byStation)) {
@@ -1580,8 +1596,21 @@ app.post('/api/tables/:tableNumber/reopen', authenticateStaff, requirePermission
 });
 
 // 5d. Close Table Order & Free Table (Fechamento de Conta do Garçom / Salão)
+// V9.2 — Caixa é obrigatório para operações financeiras de mesa.
+// Lê o turno de caixa e a configuração diretamente do estado do servidor (não confia no cliente).
+function cashRequiredForTablesError(): string | null {
+  const settings: any = getDoc('systemSettings')?.value;
+  if (settings && settings.requireCashForTables === false) return null; // administrador desligou a regra
+  const shift: any = getDoc('cashShift')?.value;
+  if (!shift || shift.isClosed !== false) return 'Abra o Caixa para utilizar as mesas.';
+  return null;
+}
+
 app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
   try {
+    const cashError = cashRequiredForTablesError();
+    if (cashError) return res.status(409).json({ success: false, code: 'CASH_CLOSED', error: cashError });
+
     const {
       tableNumber,
       paymentMethod,
@@ -1694,6 +1723,28 @@ app.patch('/api/orders/:id/items/:itemId', authenticateStaff, requirePermission(
     broadcastOrdersUpdate('order_item_updated', updated);
     syncOrderToSupabase(updated).catch(() => {});
     res.json({ success: true, order: updated });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// V9.2 — EXCLUIR ITEM (somente a quantidade selecionada; nunca o pedido inteiro)
+app.delete('/api/orders/:id/items/:itemId', authenticateStaff, requirePermission('can_edit_orders'), (req, res) => {
+  try {
+    const { quantity, reason, confirmed } = req.body || {};
+    if (confirmed !== true) {
+      return res.status(400).json({ success: false, error: 'Confirmação obrigatória para excluir item.' });
+    }
+    const result = removeOrderItemQuantityTransactional({
+      orderId: req.params.id,
+      itemId: req.params.itemId,
+      quantity: Number(quantity),
+      operatorName: req.userSession?.name,
+      reason: typeof reason === 'string' ? reason.slice(0, 200) : undefined,
+    });
+    broadcastOrdersUpdate('order_item_removed', result.order);
+    syncOrderToSupabase(result.order).catch(() => {});
+    res.json({ success: true, ...result });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
   }
@@ -2145,15 +2196,80 @@ app.post('/api/devices/ping', rateLimit({ key: 'dev-ping', max: 120, windowMs: 6
       return res.status(400).json({ success: false, error: 'Identificador do dispositivo é obrigatório.' });
     }
     const dev = updateDevicePing(idOrCode);
+    if (dev?.revoked) return res.status(403).json({ success: false, code: 'DEVICE_REVOKED', error: 'Dispositivo revogado.' });
     res.json({ success: true, device: dev });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
+// ---- V9.2: conexão por QR Code (token temporário, uso único, aprovação do admin) ----
+app.post('/api/devices/qr/create', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
+  try {
+    const slug = typeof req.body?.restaurantSlug === 'string' ? req.body.restaurantSlug : undefined;
+    if (slug && slug !== 'all' && !canAccessRestaurant(req, slug)) {
+      return res.status(403).json({ success: false, error: 'Sem acesso a este restaurante.' });
+    }
+    const out = createQrPairingToken(req.userSession?.name || 'Administrador', slug && slug !== 'all' ? slug : undefined);
+    res.json({ success: true, ...out });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Celular (já logado como equipe) apresenta o token lido do QR e pede autorização.
+app.post('/api/devices/qr/claim', authenticateStaff, authLimiter, (req, res) => {
+  try {
+    const { token, deviceName, platform, deviceType } = req.body || {};
+    if (typeof token !== 'string' || token.length < 20) {
+      return res.status(400).json({ success: false, error: 'Token inválido.' });
+    }
+    const out = claimQrToken({
+      token, deviceName: String(deviceName || ''), platform, deviceType,
+      requestedBy: req.userSession?.name || 'Usuário',
+    });
+    res.json({ success: true, ...out });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/devices/qr/claim/:claimId', authenticateStaff, rateLimit({ key: 'qr-status', max: 200, windowMs: 5 * 60 * 1000 }), (req, res) => {
+  res.json({ success: true, ...getQrClaimStatus(req.params.claimId) });
+});
+
+app.get('/api/devices/qr/pending', authenticateStaff, requireRole('super_admin', 'administrador'), (_req, res) => {
+  res.json({ success: true, claims: listPendingQrClaims() });
+});
+
+app.post('/api/devices/qr/claim/:claimId/decision', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
+  try {
+    const approve = req.body?.approve === true;
+    const dev = decideQrClaim(req.params.claimId, approve, req.userSession?.name || 'Administrador');
+    res.json({ success: true, approved: approve, device: dev });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/devices/:id/revoke', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
+  try {
+    const dev = req.body?.reconnect === true
+      ? reconnectDevice(req.params.id, req.userSession?.name || 'Administrador')
+      : revokeDevice(req.params.id, req.userSession?.name || 'Administrador');
+    res.json({ success: true, device: dev });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 app.patch('/api/devices/:id', authenticateStaff, requireRole('super_admin', 'administrador'), (req, res) => {
   try {
-    const updated = updateDeviceSettings(req.params.id, req.body);
+    const allowed = ['soundEnabled', 'soundType', 'volume', 'vibrationEnabled', 'delayAlertsEnabled', 'delayMinutesThreshold', 'delayRepeatMinutes', 'deviceName'];
+    const safe: Record<string, unknown> = {};
+    for (const k of allowed) if (req.body && req.body[k] !== undefined) safe[k] = req.body[k];
+    if (typeof safe.deviceName === 'string') safe.deviceName = (safe.deviceName as string).trim().slice(0, 60);
+    const updated = updateDeviceSettings(req.params.id, safe as any);
     res.json({ success: true, device: updated });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
@@ -2374,7 +2490,17 @@ app.get('/api/admin/system-audit', ...adminOnly, (req, res) => {
   add('public-orders', 'Listagem de pedidos protegida', 'ok', 'GET /api/orders, stream e alterações exigem login de colaborador.');
   add('server-pricing', 'Preço validado no servidor', 'ok', 'Pedidos são recalculados a partir do catálogo do servidor.');
 
-  add('fiscal', 'Emissão fiscal', 'warn', 'Desativada nesta versão. O sistema opera sem nota fiscal.');
+  {
+    const slugs = Object.keys(getCatalog().restaurants);
+    const withCert = slugs.filter((s) => { try { return getFiscalConfig(s).cnpj; } catch { return false; } });
+    if (!process.env.FISCAL_ENCRYPTION_KEY) {
+      add('fiscal', 'Emissão fiscal', 'warn', 'FISCAL_ENCRYPTION_KEY não definida: cofre de certificados indisponível. Configure a variável para habilitar o upload do certificado A1.');
+    } else if (withCert.length === 0) {
+      add('fiscal', 'Emissão fiscal', 'warn', 'Módulo pronto; nenhum restaurante tem CNPJ/certificado cadastrado ainda (Ferramentas → Fiscal).');
+    } else {
+      add('fiscal', 'Emissão fiscal', 'ok', `${withCert.length} restaurante(s) com dados fiscais cadastrados.`);
+    }
+  }
   add('print-agent-key', 'Chave do agente de impressão', process.env.PRINT_AGENT_KEY ? 'ok' : 'warn', process.env.PRINT_AGENT_KEY ? 'Configurada.' : 'Sem PRINT_AGENT_KEY: apenas usuários logados acessam a fila de impressão.');
   add('gemini', 'IA (Gemini)', process.env.GEMINI_API_KEY ? 'ok' : 'warn', process.env.GEMINI_API_KEY ? 'Chave configurada.' : 'Sem chave: recursos de IA usam respostas locais.');
   add('cloudinary', 'Upload de imagens (Cloudinary)', isCloudinaryConfigured() ? 'ok' : 'warn', isCloudinaryConfigured() ? 'Configurado.' : 'Não configurado.');
@@ -2391,7 +2517,10 @@ app.get('/api/admin/system-audit', ...adminOnly, (req, res) => {
 // ==========================================
 // FISCAL MODULE API (NFC-e, NF-e, CERTIFICADOS, CÁLCULO TRIBUTÁRIO)
 // ==========================================
-// Emissão fiscal desativada nesta versão: o sistema opera sem nota fiscal.
+// V9.3: módulo fiscal REATIVADO. Fica PRONTO PARA EMITIR quando o restaurante tiver
+// certificado digital A1 (.pfx/.p12) instalado E CNPJ/UF/município configurados.
+// Sem isso, os endpoints funcionam normalmente mas a emissão real é recusada (ver documentService).
+app.use('/api/fiscal', fiscalRouter);
 
 // Áreas internas (equipe) são servidas por um aplicativo SEPARADO (painel.html).
 // Tudo o mais é o cardápio do cliente (index.html). Comparação por 1º segmento exato do caminho,
