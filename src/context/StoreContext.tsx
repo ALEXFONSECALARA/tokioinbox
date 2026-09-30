@@ -1475,6 +1475,13 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
               body: JSON.stringify(op.payload),
             });
             removeOfflineOperation(op.id);
+          } else if (op.type === 'UPDATE_STATION_STATUS') {
+            await fetch(`/api/orders/${op.payload.orderId}/station-status`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(op.payload),
+            });
+            removeOfflineOperation(op.id);
           }
         } catch (e) {
           console.warn(`[SYNC FAIL] Falha ao processar operação ${op.type} (${op.id}):`, e);
@@ -2073,9 +2080,50 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     status: StationItemStatus,
     operatorName?: string
   ): Promise<void> => {
+    const opName = operatorName || currentUser?.name || `Operador ${station.toUpperCase()}`;
+    const opRole = currentUser?.role || station;
+
+    // V9 PLUS ULTRA 02 — OFFLINE PRIORIDADE MÁXIMA: "Operação dos KDS" precisa
+    // funcionar sem internet. 1) Atualização otimista local dos itens desta
+    // praça (para o KDS continuar operando na hora). 2) Se a rede falhar,
+    // enfileira com ID único para sincronizar depois sem duplicar.
+    const applyOptimisticStationStatus = () => {
+      setOrders((prev) =>
+        prev.map((o) => {
+          if (o.id !== orderId) return o;
+          const updatedItems = o.items.map((it) =>
+            (it.station || 'cozinha') === station ? { ...it, stationStatus: status } : it
+          );
+          const relevantStations = Array.from(new Set(updatedItems.map((it) => it.station || 'cozinha')));
+          const allStationsDone = relevantStations.every((st) =>
+            updatedItems.filter((it) => (it.station || 'cozinha') === st).every((it) => it.stationStatus === 'pedido_feito')
+          );
+          const thisStationDone = updatedItems
+            .filter((it) => (it.station || 'cozinha') === station)
+            .every((it) => it.stationStatus === 'pedido_feito');
+          const newStatus: OrderStatus = allStationsDone
+            ? 'pronto'
+            : thisStationDone
+              ? 'parcialmente_pronto'
+              : o.status;
+          return { ...o, items: updatedItems, status: newStatus, updatedAt: new Date().toISOString() };
+        })
+      );
+    };
+
+    applyOptimisticStationStatus();
+
+    const isOfflineMode = getSimulatedOffline() || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (isOfflineMode) {
+      enqueueOfflineOperation(
+        'UPDATE_STATION_STATUS',
+        { orderId, station, status, operatorName: opName, operatorRole: opRole },
+        `station-${orderId}-${station}-${status}-${Date.now()}`
+      );
+      return;
+    }
+
     try {
-      const opName = operatorName || currentUser?.name || `Operador ${station.toUpperCase()}`;
-      const opRole = currentUser?.role || station;
       const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
 
       const res = await fetch(`/api/orders/${orderId}/station-status`, {
@@ -2106,8 +2154,14 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         );
       }
     } catch (err: any) {
-      console.error('[STATION ERROR]:', err);
-      showToast(err.message || 'Erro ao comunicar com praça', 'error');
+      // Falha de rede: já aplicamos a atualização otimista acima, então o
+      // KDS continua operando; agora enfileira para sincronizar sem perder.
+      console.warn('[OFFLINE] Praça atualizada offline, sincronizará ao reconectar:', err);
+      enqueueOfflineOperation(
+        'UPDATE_STATION_STATUS',
+        { orderId, station, status, operatorName: opName, operatorRole: opRole },
+        `station-${orderId}-${station}-${status}-${Date.now()}`
+      );
     }
   };
 
@@ -2131,12 +2185,100 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     tableAccessToken?: string;
     idempotencyKey?: string;
   }): Promise<{ success: boolean; order?: Order; isNew?: boolean; error?: string }> => {
-    try {
-      const restSlug = params.restaurantSlug || activeRestaurantSlug || 'japones';
-      const restName = params.restaurantName || restaurants[restSlug]?.name || 'Restaurante';
-      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
+    const restSlug = params.restaurantSlug || activeRestaurantSlug || 'japones';
+    const restName = params.restaurantName || restaurants[restSlug]?.name || 'Restaurante';
+    const finalKey = params.idempotencyKey || `append-idem-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      const res = await fetch('/api/orders/table/append', {
+    // V9 PLUS ULTRA 02 — OFFLINE PRIORIDADE MÁXIMA: "Abrir mesa" e "Lançar
+    // produtos" usam esta mesma função. Sem fallback offline, o garçom
+    // ficava travado sem internet nas duas operações mais usadas do PDV.
+    const buildOptimisticItems = () =>
+      params.items.map((it, idx) => ({
+        id: it.id || `item-off-${idx}-${Date.now()}`,
+        menuItemId: it.id || `off-${idx}`,
+        name: it.name,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        totalPrice: Number((it.unitPrice * it.quantity).toFixed(2)),
+        selectedOptions: it.selectedOptions,
+        notes: it.notes,
+        station: it.station || 'cozinha',
+        stationStatus: 'recebido' as const,
+      }));
+
+    const applyOfflineAppend = (): { order: Order; isNew: boolean } => {
+      const existing = orders.find(
+        (o) =>
+          o.orderType === 'mesa' &&
+          o.tableNumber === params.tableNumber &&
+          o.restaurantSlug === restSlug &&
+          o.status !== 'finalizado' &&
+          o.status !== 'cancelado'
+      );
+      const newItems = buildOptimisticItems();
+
+      if (existing) {
+        const addedSubtotal = newItems.reduce((sum, i) => sum + i.totalPrice, 0);
+        const updated: Order = {
+          ...existing,
+          items: [...existing.items, ...newItems],
+          subtotal: Number((existing.subtotal + addedSubtotal).toFixed(2)),
+          total: Number((existing.total + addedSubtotal).toFixed(2)),
+          statusHistory: [
+            ...existing.statusHistory,
+            { status: existing.status, timestamp: 'Agora mesmo', note: `+${newItems.length} item(s) lançados offline (${finalKey})` },
+          ],
+          updatedAt: new Date().toISOString(),
+        };
+        setOrders((prev) => prev.map((o) => (o.id === existing.id ? updated : o)));
+        return { order: updated, isNew: false };
+      }
+
+      const subtotalCalc = newItems.reduce((sum, i) => sum + i.totalPrice, 0);
+      const created: Order = {
+        id: `off-ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        shortCode: `#OFF-${Math.floor(100 + Math.random() * 900)}`,
+        restaurantSlug: restSlug,
+        restaurantName: restName,
+        customerName: params.customerName || `Mesa ${params.tableNumber}`,
+        customerPhone: params.customerPhone,
+        orderType: 'mesa',
+        tableNumber: params.tableNumber,
+        items: newItems,
+        subtotal: subtotalCalc,
+        deliveryFee: 0,
+        discount: 0,
+        total: subtotalCalc,
+        paymentMethod: 'dinheiro',
+        status: 'recebido',
+        statusHistory: [{ status: 'recebido', timestamp: 'Agora mesmo', note: 'Mesa aberta localmente no PDV Offline' }],
+        printStatus: 'pendente',
+        idempotencyKey: finalKey,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setOrders((prev) => [created, ...prev]);
+      return { order: created, isNew: true };
+    };
+
+    const isOfflineMode = getSimulatedOffline() || (typeof navigator !== 'undefined' && !navigator.onLine);
+
+    if (isOfflineMode) {
+      enqueueOfflineOperation('APPEND_TABLE_ITEMS', { ...params, restaurantSlug: restSlug, restaurantName: restName, idempotencyKey: finalKey }, finalKey);
+      const { order, isNew } = applyOfflineAppend();
+      showToast(
+        isNew
+          ? `Mesa ${params.tableNumber} aberta localmente (Modo Offline)!`
+          : `+${params.items.length} item(s) lançados localmente (Modo Offline)!`,
+        'info'
+      );
+      return { success: true, order, isNew };
+    }
+
+    let res: Response;
+    try {
+      const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
+      res = await fetch('/api/orders/table/append', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2146,9 +2288,25 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
           ...params,
           restaurantSlug: restSlug,
           restaurantName: restName,
+          idempotencyKey: finalKey,
         }),
       });
+    } catch (networkErr: any) {
+      // Falha de REDE de verdade (sem resposta): cai para offline. Erros de
+      // negócio (400/403 com resposta do servidor) são tratados abaixo.
+      console.warn('[TABLE SYNC] Falha na rede, enfileirando localmente:', networkErr);
+      enqueueOfflineOperation('APPEND_TABLE_ITEMS', { ...params, restaurantSlug: restSlug, restaurantName: restName, idempotencyKey: finalKey }, finalKey);
+      const { order, isNew } = applyOfflineAppend();
+      showToast(
+        isNew
+          ? `Sem conexão: Mesa ${params.tableNumber} aberta localmente e será sincronizada depois.`
+          : `Sem conexão: itens lançados localmente e serão sincronizados depois.`,
+        'warning'
+      );
+      return { success: true, order, isNew };
+    }
 
+    try {
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Erro ao sincronizar mesa');
