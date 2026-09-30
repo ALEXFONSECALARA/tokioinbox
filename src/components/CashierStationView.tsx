@@ -1,8 +1,8 @@
 import { CashCloseModal } from './CashCloseModal';
 import { OpenCashShiftCard } from './OpenCashShiftCard';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Order, PaymentMethod, CashRegisterMovement } from '../types/restaurant';
+import { Order, PaymentMethod, CashRegisterMovement, ConferenceSource } from '../types/restaurant';
 import { OrderOriginBadge } from './OrderOriginBadge';
 import { RemoveOrderItemButton } from './RemoveOrderItemButton';
 import { ThermalTicketModal } from './ThermalTicketModal';
@@ -89,6 +89,17 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   const [isDiscountAuthorized, setIsDiscountAuthorized] = useState<boolean>(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState<boolean>(false);
   const [isAuthorizingDiscount, setIsAuthorizingDiscount] = useState<boolean>(false);
+
+  // V9 PLUS ULTRA 03 — CORREÇÃO: a Taxa de Serviço de 10% é EXCLUSIVA de
+  // MESA (Salão). Delivery e Balcão/Retirada NUNCA cobram os 10%. Além
+  // disso, o fechamento de MESA agora SEMPRE fecha com os 10% incluídos por
+  // padrão em cada nova conta aberta — antes o estado do checkbox "vazava"
+  // de uma conta para a próxima (se o operador desmarcasse numa mesa, a
+  // próxima mesa também abria sem a taxa, por engano).
+  const isMesaOrder = selectedOrder?.orderType === 'mesa';
+  useEffect(() => {
+    if (selectedOrder) setIncludeServiceFee(true);
+  }, [selectedOrder?.id]);
 
   // Cash movement modal
   const [showMovementModal, setShowMovementModal] = useState<boolean>(false);
@@ -210,7 +221,8 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     return selectedFinancialOrders.reduce((acc, curr) => acc + (curr.subtotal || curr.total || 0), 0);
   }, [selectedOrder, selectedFinancialOrders]);
 
-  const serviceFee = includeServiceFee ? subtotalSelected * 0.1 : 0;
+  // V9 PLUS ULTRA 03: 10% só se aplica a MESA. Delivery/Balcão nunca.
+  const serviceFee = isMesaOrder && includeServiceFee ? subtotalSelected * 0.1 : 0;
   const finalTotal = Math.max(0, subtotalSelected + serviceFee - discountAmount);
   const valuePerPerson = splitCount > 0 ? finalTotal / splitCount : finalTotal;
 
@@ -340,6 +352,13 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
       playAlertSound('sound1', 0.8);
       showToast(`Pedido #${selectedOrder.shortCode} recebido e finalizado com sucesso!`, 'success');
     }
+
+    // V9 PLUS ULTRA 03: "Confirmar Recebimento & Liberar Mesa" agora fecha E
+    // já imprime automaticamente o Cupom Comum na impressora do Caixa, no
+    // mesmo clique — não é mais preciso um segundo passo manual de impressão.
+    const printSource: ConferenceSource = isMesaOrder ? 'caixa' : selectedOrder.orderType === 'delivery' ? 'delivery' : 'retirada';
+    const orderToPrint = isMesaOrder && selectedFinancialOrders.length ? mergeOrdersForConference(selectedFinancialOrders) : selectedOrder;
+    void printConference(orderToPrint, printSource, { force: true, silentToast: true });
 
     // Reset selection and payment state
     setSelectedOrder(null);
@@ -760,18 +779,27 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
 
                     {/* Taxa de serviço e desconto permanecem no corpo, que é a única área rolável. */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
-                        <div>
-                          <span className="text-xs font-bold text-white block">Taxa Serviço 10%</span>
-                          <span className="text-[10px] text-slate-400">R$ {serviceFee.toFixed(2)}</span>
+                      {isMesaOrder ? (
+                        <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
+                          <div>
+                            <span className="text-xs font-bold text-white block">Taxa Serviço 10% (Mesa)</span>
+                            <span className="text-[10px] text-slate-400">R$ {serviceFee.toFixed(2)} • incluída por padrão</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={includeServiceFee}
+                            onChange={(e) => setIncludeServiceFee(e.target.checked)}
+                            className="w-5 h-5 rounded text-amber-500 cursor-pointer"
+                          />
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={includeServiceFee}
-                          onChange={(e) => setIncludeServiceFee(e.target.checked)}
-                          className="w-5 h-5 rounded text-amber-500 cursor-pointer"
-                        />
-                      </div>
+                      ) : (
+                        <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between opacity-60">
+                          <div>
+                            <span className="text-xs font-bold text-white block">Taxa Serviço 10%</span>
+                            <span className="text-[10px] text-slate-400">Não se aplica a Delivery/Balcão</span>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
                         <div>
@@ -807,7 +835,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
 
                     <div className="bg-[#0E121C] p-3 sm:p-4 rounded-2xl border border-slate-800 space-y-1.5 text-xs font-mono">
                       <div className="flex justify-between text-slate-400"><span>Subtotal Consumido:</span><span>R$ {subtotalSelected.toFixed(2)}</span></div>
-                      {includeServiceFee && <div className="flex justify-between text-slate-400"><span>Serviço (10%):</span><span>+ R$ {serviceFee.toFixed(2)}</span></div>}
+                      {serviceFee > 0 && <div className="flex justify-between text-slate-400"><span>Serviço (10%):</span><span>+ R$ {serviceFee.toFixed(2)}</span></div>}
                       {discountAmount > 0 && <div className="flex justify-between text-emerald-400"><span>Desconto Gerente:</span><span>- R$ {discountAmount.toFixed(2)}</span></div>}
                       <div className="flex justify-between text-base font-black text-amber-400 pt-2 border-t border-slate-800"><span>TOTAL A PAGAR:</span><span>R$ {finalTotal.toFixed(2)}</span></div>
                     </div>
@@ -865,9 +893,13 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                       onClick={handleConfirmPayment}
                       disabled={isConfirmingPayment}
                       className="mt-1.5 w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-950/40 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                      title="Fecha a conta e já imprime o Cupom Comum automaticamente na impressora do Caixa"
                     >
                       <CheckCircle2 className="w-5 h-5" />
                       <span>{isConfirmingPayment ? 'Processando...' : 'Confirmar Recebimento & Liberar Mesa'}</span>
+                      {/* V9 PLUS ULTRA 03: ícone ao lado do botão indicando que o
+                          Cupom Comum é impresso automaticamente neste mesmo clique. */}
+                      <Printer className="w-4 h-4 opacity-90" />
                     </button>
                   </div>
                 </div>

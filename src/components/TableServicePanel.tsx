@@ -112,6 +112,14 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [splitCount, setSplitCount] = useState(2);
   const [isSendingOrder, setIsSendingOrder] = useState(false);
   const [isClosingTable, setIsClosingTable] = useState(false);
+
+  // V9 PLUS ULTRA 03 — CORREÇÃO: a Taxa de Serviço de 10% do Salão deve
+  // fechar SEMPRE incluída por padrão em cada mesa nova. Antes, se o
+  // operador desmarcasse em uma mesa, o estado "vazava" e a próxima mesa
+  // também abria sem os 10%, por engano.
+  useEffect(() => {
+    if (activeTableId !== null) setIncludeServiceFee(true);
+  }, [activeTableId]);
   // V9 ULTRA-CORREÇÃO: confirmação obrigatória antes de REABRIR CONTA
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [isReopeningTable, setIsReopeningTable] = useState(false);
