@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, PaymentMethod, CashRegisterMovement } from '../types/restaurant';
 import { OrderOriginBadge } from './OrderOriginBadge';
+import { RemoveOrderItemButton } from './RemoveOrderItemButton';
 import { ThermalTicketModal } from './ThermalTicketModal';
 import { ConferenceAutoPrintPanel } from './ConferenceAutoPrintPanel';
 import { useConferencePrint } from '../utils/useConferencePrint';
@@ -36,6 +37,7 @@ import {
   ShieldAlert,
   X,
   Plus,
+  Trash2,
   Search as SearchIcon,
 } from 'lucide-react';
 import { playAlertSound } from '../utils/audioAlert';
@@ -347,6 +349,33 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     setSplitCount(1);
     } finally {
       setIsConfirmingPayment(false);
+    }
+  };
+
+  // V9 PLUS ULTRA 02 — CAIXA → 🗑 Excluir Mesa: cancela a(s) comanda(s) da
+  // mesa (ex.: pedido lançado errado, cliente desistiu sem consumir) SEM
+  // registrar pagamento. Nunca apaga histórico/auditoria — usa o mesmo
+  // fluxo de status já existente (status: 'cancelado'), que já libera a
+  // mesa nos filtros de Caixa/Kanban/Salão, igual ao fechamento normal.
+  const [isCancelingTable, setIsCancelingTable] = useState(false);
+  const handleCancelTable = async () => {
+    if (!selectedOrder || isCancelingTable) return;
+    const targets = selectedOrder.orderType === 'mesa' && selectedFinancialOrders.length ? selectedFinancialOrders : [selectedOrder];
+    const label = selectedOrder.orderType === 'mesa' ? `Mesa ${selectedOrder.tableNumber}` : `Pedido ${selectedOrder.shortCode}`;
+    const confirmed = window.confirm(
+      `Excluir ${label}?\n\nIsso cancela ${targets.length > 1 ? 'todas as comandas desta mesa' : 'esta comanda'} sem registrar pagamento e libera a mesa. Esta ação fica registrada no histórico do pedido.`
+    );
+    if (!confirmed) return;
+    const reason = window.prompt('Motivo da exclusão (opcional, fica no histórico):', '') || undefined;
+    setIsCancelingTable(true);
+    try {
+      for (const ord of targets) {
+        await updateOrderStatus(ord.id, 'cancelado', reason ? `Mesa excluída pelo Caixa — ${reason}` : 'Mesa excluída pelo Caixa');
+      }
+      showToast(`${label} excluída com sucesso.`, 'success');
+      setSelectedOrder(null);
+    } finally {
+      setIsCancelingTable(false);
     }
   };
 
@@ -674,19 +703,35 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                       >
                         Fechar
                       </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelTable}
+                        disabled={isCancelingTable}
+                        className="text-xs text-rose-300 hover:text-white px-3 py-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 font-bold disabled:opacity-50 flex items-center gap-1.5"
+                        title={selectedOrder.orderType === 'mesa' ? 'Cancelar a(s) comanda(s) desta mesa sem pagamento' : 'Cancelar este pedido sem pagamento'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{isCancelingTable ? 'Excluindo...' : selectedOrder.orderType === 'mesa' ? 'Excluir Mesa' : 'Excluir Pedido'}</span>
+                      </button>
                     </div>
                   </div>
 
                   {/* ÚNICA área rolável do modal */}
                   <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-5 space-y-3">
-                    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-[#0E121C] px-3 py-2">
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-[#0E121C] px-3 py-2 flex-wrap">
                       <div className="min-w-0">
                         <span className="text-[10px] uppercase font-black text-slate-500">Itens da comanda</span>
                         <p className="text-xs text-slate-300 truncate">Mesa {selectedOrder.tableNumber} • {selectedOrderItems.length} item(ns)</p>
                       </div>
-                      <button type="button" onClick={() => setShowAddItemModal(true)} className="shrink-0 px-3 py-2 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-black flex items-center gap-1.5 hover:bg-sky-500/25">
-                        <Plus className="w-3.5 h-3.5" /> Inserir item
-                      </button>
+                      <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <button type="button" onClick={() => setShowAddItemModal(true)} className="shrink-0 px-3 py-2 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-black flex items-center gap-1.5 hover:bg-sky-500/25">
+                          <Plus className="w-3.5 h-3.5" /> Inserir item
+                        </button>
+                        <RemoveOrderItemButton
+                          order={selectedOrder}
+                          className="shrink-0 px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[10px] font-black flex items-center gap-1.5 hover:bg-rose-500/25"
+                        />
+                      </div>
                     </div>
 
                     {selectedOrderItems.length > 0 ? (

@@ -30,7 +30,6 @@ import {
   CreditCard,
   QrCode,
   DollarSign,
-  Printer,
   Percent,
   ChevronRight,
   Trash2,

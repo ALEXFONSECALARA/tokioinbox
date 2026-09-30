@@ -623,10 +623,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
             </button>
 
             {/* Botão Vitrine Principal */}
+            {/* BUG CORRIGIDO: o botão dizia "Ir para a Vitrine Pública de
+                Restaurantes", mas chamava onBackToApp/backToStart, que apenas
+                navega dentro do próprio painel interno da equipe — para um
+                Admin isso recarregava a mesma tela (área já é "admin"),
+                dando a impressão de botão quebrado, e nunca abria a vitrine
+                pública de verdade (rota "/"). Agora abre a vitrine em uma
+                nova aba, sem derrubar a sessão do painel. */}
             <button
-              onClick={onBackToApp}
+              onClick={() => window.open('/', '_blank', 'noopener,noreferrer')}
               className="px-3 py-1.5 bg-[#0E121B] hover:bg-[#141A26] text-slate-200 hover:text-[#E3BD6A] border border-[#E3BD6A]/30 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors shrink-0"
-              title="Ir para a Vitrine Pública de Restaurantes"
+              title="Abrir a Vitrine Pública de Restaurantes em uma nova aba"
             >
               <Store className="w-3.5 h-3.5 text-[#E3BD6A]" />
               <span className="hidden sm:inline">Vitrine Principal</span>
