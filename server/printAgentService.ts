@@ -142,31 +142,42 @@ export function enqueuePrintJob(params: {
   rawEscPos?: string;
   /** Impressora específica (ex.: a escolhida no Caixa). Se não existir/estiver offline, usa as da estação. */
   printerId?: string;
+  /** Chave estável da operação (ex.: id da operação + setor + itens). Evita duplicar a comanda em retry. */
+  dedupeKey?: string;
 }): { job: PrintJob; deduplicated: boolean; jobs: PrintJob[] } {
   initializePrintQueue();
-  const { orderId, orderShortCode, restaurantSlug, station, rawEscPos, printerId } = params;
+  const { orderId, orderShortCode, restaurantSlug, station, rawEscPos, printerId, dedupeKey } = params;
   const contentHash = crypto.createHash('sha256').update(rawEscPos || '').digest('hex');
+  // CORREÇÃO: o texto da comanda leva data/hora, então o hash do conteúdo muda a
+  // cada segundo e o anti-duplicidade nunca funcionava. Se houver dedupeKey, é ela
+  // (estável) que identifica a operação.
+  const dedupeToken = dedupeKey ? crypto.createHash('sha256').update(dedupeKey).digest('hex') : contentHash;
 
   initializePrinters();
-  let matchingPrinters = registeredPrinters.filter(
-    (p) => p.restaurantSlug === restaurantSlug && p.stations?.includes(station) && p.status === 'online'
+  // CORREÇÃO: antes, qualquer impressora "offline"/"sem_papel" fazia o setor cair em
+  // "Nenhuma impressora configurada" e o pedido nunca era impresso, mesmo com a
+  // impressora cadastrada. Agora: 1) usa as ONLINE do setor; 2) se não houver, enfileira
+  // para as CADASTRADAS do setor (ficam PENDENTES e saem assim que voltarem);
+  // 3) só gera ERRO se realmente não existe impressora para RESTAURANTE + SETOR.
+  const forStation = registeredPrinters.filter(
+    (p) => p.restaurantSlug === restaurantSlug && p.stations?.includes(station)
   );
+  let matchingPrinters = forStation.filter((p) => p.status === 'online');
+  if (matchingPrinters.length === 0) matchingPrinters = forStation;
   if (printerId) {
     const chosen = matchingPrinters.filter((p) => p.id === printerId);
     if (chosen.length > 0) matchingPrinters = chosen;
   }
-  // CORREÇÃO V9 PLUS ULTRA 02: se não há impressora cadastrada/online para
-  // RESTAURANTE + SETOR, o trabalho NUNCA é redirecionado para outra
-  // impressora (ex.: a do Caixa). Ele é registrado com status ERRO e uma
-  // mensagem clara, para que o setor e o Admin vejam imediatamente:
-  // "Nenhuma impressora configurada para este setor."
+  // Se não há impressora cadastrada para RESTAURANTE + SETOR, o trabalho NUNCA é
+  // redirecionado para outra impressora (ex.: a do Caixa). Ele é registrado com
+  // status ERRO e uma mensagem clara: "Nenhuma impressora configurada para este setor."
   const targets = matchingPrinters.length > 0 ? matchingPrinters : [null];
 
   const createdJobs: PrintJob[] = [];
   let anyDeduplicated = false;
 
   for (const printer of targets) {
-    const idempotencyHash = `${orderId}-${station}-${restaurantSlug}-${printer?.id || 'sem-impressora'}-${contentHash}`;
+    const idempotencyHash = `${orderId}-${station}-${restaurantSlug}-${printer?.id || 'sem-impressora'}-${dedupeToken}`;
     const existing = printJobsQueue.find((j) => j.idempotencyHash === idempotencyHash);
     if (existing) {
       createdJobs.push(existing);
@@ -198,12 +209,12 @@ export function enqueuePrintJob(params: {
     createdJobs.push(newJob);
   }
 
-  persistPrintQueue();
-
-  // Keep queue size under control (last 300 jobs)
+  // Keep queue size under control (last 300 jobs) — ANTES de gravar em disco
+  // (antes o arquivo guardava a fila sem o corte e crescia sem limite).
   if (printJobsQueue.length > 300) {
     printJobsQueue = printJobsQueue.slice(0, 300);
   }
+  persistPrintQueue();
 
   return { job: createdJobs[0], deduplicated: anyDeduplicated, jobs: createdJobs };
 }
@@ -245,6 +256,12 @@ export function updatePrintJobStatus(
   if (status === 'ERRO' || status === 'RETRY') {
     job.attempts++;
     job.errorMessage = errorMessage || 'Falha de comunicação com impressora térmica';
+    // CORREÇÃO: maxAttempts existia mas nunca era aplicado — um trabalho com
+    // falha ficava em RETRY para sempre, travando a fila do agente.
+    if (status === 'RETRY' && job.attempts >= (job.maxAttempts || 4)) {
+      job.status = 'ERRO';
+      job.errorMessage = `${job.errorMessage} (esgotou ${job.maxAttempts || 4} tentativas — use "Reenviar")`;
+    }
   }
 
   persistPrintQueue();
@@ -280,6 +297,7 @@ export function retryPrintJob(jobId: string): PrintJob | null {
   }
 
   job.status = 'PENDENTE';
+  job.attempts = 0;
   job.errorMessage = undefined;
   job.updatedAt = new Date().toISOString();
   persistPrintQueue();

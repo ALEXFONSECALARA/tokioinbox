@@ -99,6 +99,8 @@ export interface Order {
   stations?: Partial<Record<ProductionStation, StationProductionRecord>>;
   subtotal: number;
   deliveryFee: number;
+  /** Taxa de serviço (10% do Salão) cobrada no fechamento da mesa. 0/ausente = dispensada. */
+  serviceFee?: number;
   discount: number;
   couponCode?: string;
   total: number;
@@ -119,100 +121,20 @@ export interface Order {
   awaitingPayment?: boolean;
   billRequestedAt?: string;
   idempotencyKey?: string;
+  /** Chaves de operações já aplicadas a este pedido (itens adicionados à mesa) — evita duplicar item/comanda em retry. */
+  appliedOperationKeys?: string[];
   /** Token secreto entregue só a quem criou o pedido; permite acompanhar sem login. */
   trackingToken?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-// Automatic item classification into kitchen, sushibar or bar stations
-export function resolveItemStation(name: string, explicitStation?: string): ProductionStation {
-  if (explicitStation === 'cozinha' || explicitStation === 'sushibar' || explicitStation === 'bar') {
-    return explicitStation;
-  }
-  const lower = (name || '').toLowerCase();
-  // Bar & Drinks Station keywords
-  if (
-    lower.includes('drink') ||
-    lower.includes('cerveja') ||
-    lower.includes('chopp') ||
-    lower.includes('refrigerante') ||
-    lower.includes('suco') ||
-    lower.includes('água') ||
-    lower.includes('agua') ||
-    lower.includes('mojito') ||
-    lower.includes('caipirinha') ||
-    lower.includes('gin') ||
-    lower.includes('vinho') ||
-    lower.includes('coquetel') ||
-    lower.includes('café') ||
-    lower.includes('cafe') ||
-    lower.includes('sake') ||
-    lower.includes('saquê') ||
-    lower.includes('saque') ||
-    lower.includes('chá') ||
-    lower.includes('cha') ||
-    lower.includes('coca') ||
-    lower.includes('guaraná') ||
-    lower.includes('guarana') ||
-    lower.includes('cocktail') ||
-    lower.includes('whisky') ||
-    lower.includes('whiskey') ||
-    lower.includes('vodka') ||
-    lower.includes('energético') ||
-    lower.includes('energetico') ||
-    lower.includes('red bull') ||
-    lower.includes('tônica') ||
-    lower.includes('tonica') ||
-    lower.includes('aperol') ||
-    lower.includes('heineken') ||
-    lower.includes('stella') ||
-    lower.includes('corona') ||
-    lower.includes('bebida') ||
-    lower.includes('dose') ||
-    lower.includes('long neck') ||
-    lower.includes('lata') ||
-    lower.includes('garrafa') ||
-    lower.includes('sangria') ||
-    lower.includes('soda') ||
-    lower.includes('limonada') ||
-    lower.includes('prosecco') ||
-    lower.includes('espumante') ||
-    lower.includes('tequila') ||
-    lower.includes('rum') ||
-    lower.includes('licor')
-  ) {
-    return 'bar';
-  }
-  // Sushibar Station keywords
-  if (
-    lower.includes('sushi') ||
-    lower.includes('sashimi') ||
-    lower.includes('temaki') ||
-    lower.includes('uramaki') ||
-    lower.includes('hossomaki') ||
-    lower.includes('niguiri') ||
-    lower.includes('nigiri') ||
-    lower.includes('gunkan') ||
-    lower.includes('combinado') ||
-    lower.includes('hot roll') ||
-    lower.includes('ceviche') ||
-    lower.includes('tataki') ||
-    lower.includes('sunomono') ||
-    lower.includes('edamame') ||
-    lower.includes('carpaccio de salmão') ||
-    lower.includes('carpaccio salmão') ||
-    lower.includes('joy') ||
-    lower.includes('djou') ||
-    lower.includes('poke')
-  ) {
-    return 'sushibar';
-  }
-  // Default is kitchen (cozinha) for all hot meals, burgers, pizzas, pastas, desserts, portions
-  return 'cozinha';
-}
+// Classificação de item -> setor: módulo compartilhado com o navegador (impressão offline).
+export { resolveItemStation } from '../src/utils/stationClassifier';
+import { resolveItemStation } from '../src/utils/stationClassifier';
 
 import { DATA_DIR } from './dataDir'; // Caminho configurável via env DATA_DIR (ver server/dataDir.ts)
+import { getSystemSettings } from './systemSettings';
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const CUSTOMERS_FILE = path.join(DATA_DIR, 'customers.json');
 
@@ -429,7 +351,7 @@ export function getOrderById(idOrCode: string): Order | undefined {
 export function findOrderByDeliveryKey(key: string): Order | undefined {
   initializeOrders();
   if (!key) return undefined;
-  return ordersCache.find((o) => o.idempotencyKey === key);
+  return ordersCache.find((o) => o.idempotencyKey === key || (o.appliedOperationKeys || []).includes(key));
 }
 
 export interface CreateOrderPayload {
@@ -1009,7 +931,7 @@ export function appendItemsToTableOrderTransactional(params: {
   waiterName?: string;
   tableSessionId?: string;
   idempotencyKey?: string;
-}, actor: OrderActor = {}): { order: Order; isNew: boolean } {
+}, actor: OrderActor = {}): { order: Order; isNew: boolean; addedItems: OrderItem[]; deduplicated: boolean } {
   initializeOrders();
 
   if (!restaurantExists(params.restaurantSlug)) {
@@ -1035,7 +957,8 @@ export function appendItemsToTableOrderTransactional(params: {
   if (params.idempotencyKey) {
     const existingByKey = findOrderByDeliveryKey(params.idempotencyKey);
     if (existingByKey && existingByKey.restaurantSlug === params.restaurantSlug) {
-      return { order: existingByKey, isNew: false };
+      // CORREÇÃO: retry/reload com a mesma chave não pode REIMPRIMIR a comanda.
+      return { order: existingByKey, isNew: false, addedItems: [], deduplicated: true };
     }
   }
 
@@ -1107,13 +1030,18 @@ export function appendItemsToTableOrderTransactional(params: {
       status: newStatus,
       statusHistory: updatedHistory,
       waiterName: params.waiterName || existingOrder.waiterName,
+      // CORREÇÃO: guarda a chave desta operação. Antes só a chave de criação do pedido era
+      // lembrada, então um retry (rede lenta, toque duplo) ADICIONAVA os itens de novo.
+      appliedOperationKeys: params.idempotencyKey
+        ? [...(existingOrder.appliedOperationKeys || []), params.idempotencyKey].slice(-50)
+        : existingOrder.appliedOperationKeys,
       updatedAt: nowIso,
     };
 
     ordersCache[existingIdx] = updatedOrder;
     persistOrdersSync();
 
-    return { order: updatedOrder, isNew: false };
+    return { order: updatedOrder, isNew: false, addedItems: sanitizedNewItems, deduplicated: false };
   }
 
   // Otherwise, create new order for table (preços recalculados dentro de createOrderTransactional)
@@ -1134,7 +1062,12 @@ export function appendItemsToTableOrderTransactional(params: {
     actor
   );
 
-  return { order: newOrderResult.order, isNew: true };
+  return {
+    order: newOrderResult.order,
+    isNew: true,
+    addedItems: newOrderResult.order.items,
+    deduplicated: Boolean((newOrderResult as any).deduplicated),
+  };
 }
 
 export function updateOrderItemTransactional(params: {
@@ -1412,7 +1345,16 @@ export function closeTableOrderTransactional(params: {
 
   const nowIso = new Date().toISOString();
   const discount = Math.max(0, Number(params.discount) || 0);
-  const serviceFee = Math.max(0, Number(params.serviceFee) || 0);
+  // Taxa de serviço de 10% (EXCLUSIVA de mesa). Se o cliente não informou o campo
+  // (undefined), vale o padrão do sistema (10% incluída). Se informou 0, foi
+  // DESATIVADA de propósito pelo operador e é respeitada.
+  const feeDefaultOn = getSystemSettings().serviceFeeDefaultOn !== false;
+  const serviceFee =
+    params.serviceFee === undefined || params.serviceFee === null
+      ? feeDefaultOn && currentOrder.orderType === 'mesa'
+        ? Number(((currentOrder.subtotal - discount) * 0.1).toFixed(2))
+        : 0
+      : Math.max(0, Number(params.serviceFee) || 0);
   const finalTotal = Number(
     (params.total !== undefined ? params.total : Math.max(0, currentOrder.subtotal - discount + serviceFee)).toFixed(2)
   );
@@ -1450,7 +1392,10 @@ export function closeTableOrderTransactional(params: {
     awaitingPayment: false,
     paymentMethod: params.paymentMethod,
     discount,
-    deliveryFee: serviceFee, // service fee recorded in fee slot or final total
+    // CORREÇÃO: a taxa de serviço tem campo próprio. Antes era gravada no campo
+    // `deliveryFee`, e o cupom/relatório a rotulava como "Taxa de entrega".
+    // `deliveryFee` fica como estava no pedido (0 em mesa).
+    serviceFee,
     total: finalTotal,
     paymentDetails: {
       ...(currentOrder.paymentDetails || {}),
@@ -1485,7 +1430,7 @@ export function toStaffView(order: Order): Omit<Order, 'trackingToken'> {
 
 /** Visão do cliente dono do pedido (sem chaves internas). */
 export function toCustomerView(order: Order) {
-  const { idempotencyKey, printStatus, ...rest } = order;
+  const { idempotencyKey, appliedOperationKeys, printStatus, ...rest } = order;
   return rest;
 }
 
