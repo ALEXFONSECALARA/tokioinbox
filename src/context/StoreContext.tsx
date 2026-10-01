@@ -2473,7 +2473,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       awaitingPayment: false,
       paymentMethod: params.paymentMethod as PaymentMethod,
       discount: Math.max(0, Number(params.discount) || 0),
-      deliveryFee: Math.max(0, Number(params.serviceFee) || 0),
+      serviceFee: Math.max(0, Number(params.serviceFee) || 0),
       total: params.total !== undefined ? Number(params.total) : base.total,
       paymentDetails: { ...(base.paymentDetails || {}), paid: true, receiptType: params.receiptType || 'comum' },
       statusHistory: [
