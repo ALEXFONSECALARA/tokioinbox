@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
-import { MenuItem, Order } from '../types/restaurant';
+import { MenuItem, MenuItemOptionGroup, Order } from '../types/restaurant';
 import { OrderOriginBadge } from './OrderOriginBadge';
 import {
   Utensils,
@@ -23,12 +23,21 @@ import { isRestaurantAcceptingOrders, PAUSED_ORDERS_MESSAGE } from '../utils/res
 interface ClientTableViewProps {
   tableNumber: number;
   tableAccessToken?: string;
+  /** Restaurante da URL/QR. Evita enviar o pedido para o restaurante errado se o catálogo ainda estiver carregando. */
+  restaurantSlug?: string;
   onExit?: () => void;
 }
+
+type CartOption = { groupId: string; groupTitle: string; optionId: string; name: string; price: number };
+type CartEntry = { key: string; item: MenuItem; quantity: number; notes: string; selectedOptions: CartOption[]; unitPrice: number };
+
+const unitPriceOf = (item: MenuItem, opts: CartOption[]) =>
+  Number(((typeof item.promoPrice === 'number' ? item.promoPrice : item.price) + opts.reduce((a, o) => a + o.price, 0)).toFixed(2));
 
 export const ClientTableView: React.FC<ClientTableViewProps> = ({
   tableNumber,
   tableAccessToken,
+  restaurantSlug,
   onExit,
 }) => {
   const {
@@ -47,13 +56,18 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
   const [customerPhone, setCustomerPhone] = useState('');
 
   // Cart for this customer session
-  const [clientCart, setClientCart] = useState<
-    Array<{ item: MenuItem; quantity: number; notes: string }>
-  >([]);
+  const [clientCart, setClientCart] = useState<CartEntry[]>([]);
+  const [accessToken, setAccessToken] = useState<string | undefined>(tableAccessToken);
+  // Item com opções (ex.: sabor, ponto) aguardando escolha do cliente
+  const [optionPicker, setOptionPicker] = useState<MenuItem | null>(null);
+  const [pickerChoices, setPickerChoices] = useState<Record<string, string[]>>({});
+  // Chave estável da tentativa de envio: se a rede falhar e o cliente tocar de novo, o servidor não duplica o pedido.
+  const sendKeyRef = useRef<string | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
-  const restaurant = restaurants[activeRestaurantSlug] || Object.values(restaurants)[0];
+  const effectiveSlug = restaurantSlug || activeRestaurantSlug;
+  const restaurant = restaurants[effectiveSlug] || Object.values(restaurants)[0];
   const restaurantMenuItems = useMemo(
     () => menuItems.filter((item) => item.restaurantSlug === restaurant?.slug),
     [menuItems, restaurant?.slug]
@@ -68,7 +82,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
     return orders.find(
       (o) =>
         o.orderType === 'mesa' &&
-        o.restaurantSlug === activeRestaurantSlug &&
+        o.restaurantSlug === effectiveSlug &&
         o.tableNumber === tableNumber &&
         o.status !== 'entregue' &&
         o.status !== 'finalizado' &&
@@ -91,40 +105,79 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
 
   const ordersPaused = !isRestaurantAcceptingOrders(restaurant);
 
+  const addEntry = (item: MenuItem, opts: CartOption[]) => {
+    const key = `${item.id}|${opts.map((o) => `${o.groupId}:${o.optionId}`).sort().join(',')}`;
+    setClientCart((prev) => {
+      const idx = prev.findIndex((c) => c.key === key);
+      if (idx >= 0) return prev.map((c, i) => (i === idx ? { ...c, quantity: c.quantity + 1 } : c));
+      return [...prev, { key, item, quantity: 1, notes: '', selectedOptions: opts, unitPrice: unitPriceOf(item, opts) }];
+    });
+    sendKeyRef.current = null; // carrinho mudou: próxima tentativa é uma operação nova
+    try { playAlertSound('sound1', 0.4); } catch { /* áudio bloqueado no celular não pode travar o pedido */ }
+    showToast(`+1x ${item.name} adicionado`, 'info');
+  };
+
   const addToCart = (item: MenuItem) => {
     if (ordersPaused) {
       showToast(PAUSED_ORDERS_MESSAGE, 'error');
       return;
     }
-    setClientCart((prev) => {
-      const idx = prev.findIndex((c) => c.item.id === item.id);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx].quantity += 1;
-        return copy;
-      }
-      return [...prev, { item, quantity: 1, notes: '' }];
-    });
-    playAlertSound('sound1', 0.4);
-    showToast(`+1x ${item.name} adicionado`, 'info');
+    // Itens com opções (sabor, ponto, adicionais) precisam de escolha — o servidor recusa se faltar opção obrigatória.
+    if ((item.optionGroups || []).length > 0) {
+      const initial: Record<string, string[]> = {};
+      (item.optionGroups || []).forEach((g) => {
+        initial[g.id] = g.required && g.options.length > 0 && (g.maxSelections ?? 1) === 1 ? [g.options[0].id] : [];
+      });
+      setPickerChoices(initial);
+      setOptionPicker(item);
+      return;
+    }
+    addEntry(item, []);
   };
 
-  const updateQuantity = (itemId: string, delta: number) => {
-    setClientCart((prev) => {
-      return prev
-        .map((c) => {
-          if (c.item.id === itemId) {
-            const newQ = c.quantity + delta;
-            return newQ > 0 ? { ...c, quantity: newQ } : null;
-          }
-          return c;
-        })
-        .filter(Boolean) as any;
+  const togglePickerOption = (g: MenuItemOptionGroup, optionId: string) => {
+    setPickerChoices((prev) => {
+      const cur = prev[g.id] || [];
+      const max = g.maxSelections ?? 1;
+      if (max === 1) return { ...prev, [g.id]: cur.includes(optionId) && !g.required ? [] : [optionId] };
+      if (cur.includes(optionId)) return { ...prev, [g.id]: cur.filter((x) => x !== optionId) };
+      if (cur.length >= max) {
+        showToast(`Máximo de ${max} opção(ões) em "${g.title}"`, 'error');
+        return prev;
+      }
+      return { ...prev, [g.id]: [...cur, optionId] };
     });
+  };
+
+  const confirmPicker = () => {
+    if (!optionPicker) return;
+    const opts: CartOption[] = [];
+    for (const g of optionPicker.optionGroups || []) {
+      const chosen = pickerChoices[g.id] || [];
+      if (g.required && chosen.length === 0) {
+        showToast(`Escolha uma opção em "${g.title}"`, 'error');
+        return;
+      }
+      for (const id of chosen) {
+        const o = g.options.find((x) => x.id === id);
+        if (o) opts.push({ groupId: g.id, groupTitle: g.title, optionId: o.id, name: o.name, price: Number(o.price) || 0 });
+      }
+    }
+    addEntry(optionPicker, opts);
+    setOptionPicker(null);
+  };
+
+  const updateQuantity = (key: string, delta: number) => {
+    sendKeyRef.current = null;
+    setClientCart((prev) =>
+      prev
+        .map((c) => (c.key === key ? { ...c, quantity: c.quantity + delta } : c))
+        .filter((c) => c.quantity > 0)
+    );
   };
 
   const cartTotal = useMemo(() => {
-    return clientCart.reduce((acc, c) => acc + c.item.price * c.quantity, 0);
+    return clientCart.reduce((acc, c) => acc + c.unitPrice * c.quantity, 0);
   }, [clientCart]);
 
   const cartCount = useMemo(() => {
@@ -132,36 +185,71 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
   }, [clientCart]);
 
   const handleSendOrder = async () => {
-    if (clientCart.length === 0) return;
+    if (clientCart.length === 0 || isSending) return;
     if (ordersPaused) {
       showToast(PAUSED_ORDERS_MESSAGE, 'error');
       return;
     }
     setIsSending(true);
+    if (!sendKeyRef.current) sendKeyRef.current = `qr-${effectiveSlug}-${tableNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     try {
+      // CORREÇÃO (QR da mesa não finalizava pelo celular): o payload NÃO levava o
+      // `menuItemId`. Para cliente (não funcionário) o servidor só aceita itens que
+      // reconhece no cardápio, então recusava o pedido — e a tela não mostrava nada.
       const itemsPayload = clientCart.map((c) => ({
+        menuItemId: c.item.id,
         name: c.item.name,
         quantity: c.quantity,
-        unitPrice: c.item.price,
+        unitPrice: c.unitPrice,
+        selectedOptions: c.selectedOptions,
         notes: c.notes,
+        station: c.item.station,
       }));
 
-      const res = await appendItemsToTableOrder({
-        tableNumber,
-        restaurantSlug: activeRestaurantSlug,
-        tableAccessToken,
-        items: itemsPayload,
-        customerName: customerName.trim() || `Cliente Mesa ${tableNumber}`,
-        customerPhone: customerPhone.trim(),
-      });
+      const send = (token?: string) =>
+        appendItemsToTableOrder({
+          tableNumber,
+          restaurantSlug: effectiveSlug,
+          tableAccessToken: token,
+          items: itemsPayload as any,
+          customerName: customerName.trim() || `Cliente Mesa ${tableNumber}`,
+          customerPhone: customerPhone.trim(),
+          idempotencyKey: sendKeyRef.current!,
+        });
+
+      let res = await send(accessToken);
+
+      // Senha/QR expirada (a conta da mesa foi fechada depois que a página abriu): renova
+      // sozinha pelo QR permanente da mesa e tenta de novo, sem o cliente precisar reescanear.
+      if (!res.success && /senha|qr|token|expirad/i.test(res.error || '')) {
+        try {
+          const r = await fetch(`/api/tables/${encodeURIComponent(effectiveSlug)}/${tableNumber}/qr-access`);
+          const d = await r.json();
+          if (d?.success && d?.active && d?.tableAccessToken) {
+            setAccessToken(d.tableAccessToken);
+            res = await send(d.tableAccessToken);
+          } else if (d?.success && d?.active === false) {
+            showToast(d.message || 'Pedidos pela mesa estão desativados. Chame o atendimento.', 'error');
+            return;
+          }
+        } catch {
+          /* cai no erro abaixo */
+        }
+      }
 
       if (res.success) {
         setClientCart([]);
         setIsCartOpen(false);
-        playAlertSound('sound3', 0.7);
+        sendKeyRef.current = null;
+        try { playAlertSound('sound3', 0.7); } catch { /* ignore */ }
         showToast('Seu pedido foi enviado para a cozinha!', 'success');
+      } else {
+        // CORREÇÃO: antes, falha = nenhuma mensagem. Agora o cliente sempre vê o motivo.
+        showToast(res.error || 'Não foi possível enviar o pedido. Tente novamente ou chame o atendimento.', 'error');
       }
+    } catch (err: any) {
+      showToast(err?.message || 'Falha ao enviar o pedido. Tente novamente.', 'error');
     } finally {
       setIsSending(false);
     }
@@ -331,7 +419,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
 
                 <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-800/60">
                   <span className="text-sm font-black text-amber-400 font-mono">
-                    R$ {item.price.toFixed(2)}
+                    R$ {(typeof item.promoPrice === 'number' ? item.promoPrice : item.price).toFixed(2)}
                   </span>
                   <button
                     onClick={() => addToCart(item)}
@@ -385,23 +473,28 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
 
             {/* Cart Items */}
             <div className="flex-1 overflow-y-auto py-4 space-y-3">
-              {clientCart.map((c, idx) => (
+              {clientCart.map((c) => (
                 <div
-                  key={idx}
+                  key={c.key}
                   className="bg-[#151A26] border border-slate-800 p-3 rounded-xl flex items-center justify-between gap-3"
                 >
                   <div className="min-w-0">
                     <span className="text-xs font-bold text-white block truncate">
                       {c.item.name}
                     </span>
+                    {c.selectedOptions.length > 0 && (
+                      <span className="text-[10px] text-slate-400 block truncate">
+                        {c.selectedOptions.map((o) => o.name).join(' • ')}
+                      </span>
+                    )}
                     <span className="text-xs font-mono text-amber-400">
-                      R$ {(c.item.price * c.quantity).toFixed(2)}
+                      R$ {(c.unitPrice * c.quantity).toFixed(2)}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => updateQuantity(c.item.id, -1)}
+                      onClick={() => updateQuantity(c.key, -1)}
                       className="w-7 h-7 rounded-lg bg-slate-800 text-white flex items-center justify-center"
                     >
                       <Minus className="w-3.5 h-3.5" />
@@ -410,7 +503,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
                       {c.quantity}
                     </span>
                     <button
-                      onClick={() => updateQuantity(c.item.id, 1)}
+                      onClick={() => updateQuantity(c.key, 1)}
                       className="w-7 h-7 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-bold"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -447,6 +540,49 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
               >
                 <Send className="w-4 h-4" />
                 <span>{isSending ? 'Enviando...' : 'ENVIAR PEDIDO PARA A COZINHA'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Escolha de opções do produto */}
+      {optionPicker && (
+        <div className="modal-viewport fixed inset-0 z-[60] bg-black/90 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full max-w-md bg-[#10141E] border border-slate-800 rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-800">
+              <h3 className="text-sm font-black text-white">{optionPicker.name}</h3>
+              <button onClick={() => setOptionPicker(null)} className="p-2 text-slate-400 rounded-xl bg-slate-800/60">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {(optionPicker.optionGroups || []).map((g) => (
+                <div key={g.id} className="space-y-2">
+                  <p className="text-xs font-black text-amber-400 uppercase">
+                    {g.title} {g.required ? <span className="text-rose-400">• obrigatório</span> : <span className="text-slate-500">• opcional</span>}
+                  </p>
+                  {g.options.map((o) => {
+                    const on = (pickerChoices[g.id] || []).includes(o.id);
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => togglePickerOption(g, o.id)}
+                        className={`w-full flex items-center justify-between px-3 py-3 rounded-xl border text-xs font-bold ${
+                          on ? 'bg-amber-500/15 border-amber-500 text-amber-300' : 'bg-[#151A26] border-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <span>{on ? '✓ ' : ''}{o.name}</span>
+                        {o.price > 0 && <span className="font-mono">+ R$ {o.price.toFixed(2)}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+            <div className="p-5 border-t border-slate-800">
+              <button onClick={confirmPicker} className="w-full py-3.5 bg-amber-500 text-slate-950 font-black text-sm rounded-2xl active:scale-95">
+                Adicionar ao pedido
               </button>
             </div>
           </div>

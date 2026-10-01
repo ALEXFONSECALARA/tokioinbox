@@ -553,11 +553,25 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
       };
       setShiftHistory((prev) => [historyItem, ...prev]);
 
-      // V8 PRO PLUS: não libera a mesa ainda — abre direto o cupom pronto
-      // para imprimir. A mesa só sai da tela quando o cupom for fechado.
-      setTableJustClosed(true);
-      setShowPrintModal(true);
-      showToast(`Mesa ${tableId} fechada com sucesso! (${receiptLabel}) Imprima o cupom abaixo.`, 'success');
+      // PAGAMENTO imprime o comprovante ESCOLHIDO (Cupom Comum ou Nota Fiscal) no mesmo clique,
+      // já com os 10% (se ativos), e libera a mesa. Antes só abria um modal e a impressão
+      // dependia de um segundo clique.
+      const printed = await printConference(mergeOrdersForConference(activeOrders), 'caixa', {
+        force: true,
+        silentToast: true,
+        includeServiceFee,
+        kind: receiptType,
+        paymentMethod: selectedPaymentMethod,
+      });
+      setTableJustClosed(false);
+      setShowPrintModal(false);
+      setActiveTableId(null);
+      showToast(
+        printed === 'error'
+          ? `Mesa ${tableId} fechada (${receiptLabel}), mas a impressão falhou — reimprima pelo Caixa.`
+          : `Mesa ${tableId} fechada e ${receiptLabel} enviado para impressão!`,
+        printed === 'error' ? 'warning' : 'success'
+      );
     } catch (err: any) {
       showToast(err?.message || 'Erro ao fechar a conta da mesa.', 'error');
     } finally {
@@ -1843,7 +1857,11 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                         const r = await requestTableBill(activeTableId, activeRestaurantSlug);
                         // V9 ULTRA PLUS: FECHAMENTO imprime a conferência automática
                         if (r?.success && activeTableOrders.length > 0) {
-                          void printConference(mergeOrdersForConference(activeTableOrders), 'mesa');
+                          // FECHAMENTO imprime no mesmo clique, com os 10% (se o botão estiver ativo)
+                          void printConference(mergeOrdersForConference(activeTableOrders), 'mesa', {
+                            force: true,
+                            includeServiceFee,
+                          });
                         }
                       }}
                       className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 border border-amber-500/30 transition-colors"

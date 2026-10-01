@@ -843,21 +843,39 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     }
   };
 
-  // V9 — botão FECHAMENTO: só trava a conta (AGUARDANDO PAGAMENTO). Não paga.
-  const handleFechamentoAction = async () => {
-    if (!selectedTable || !currentTableOrder || isFechando) return;
+  // V9 — botão FECHAMENTO: trava a conta (AGUARDANDO PAGAMENTO) e IMPRIME o cupom no MESMO clique.
+  // O cupom sai com os 10% (se o botão da conta estiver ativo). Não registra pagamento.
+  // CORREÇÃO: o botão FECHAMENTO do modal "Detalhes da Mesa" e o do cardápio só trocavam de tela;
+  // o fechamento/impressão dependia de um segundo clique em outra tela.
+  const fecharContaEImprimir = async (table: number) => {
+    const order = activeOrdersByTable[table];
+    if (!order || isFechando) return;
+    setSelectedTable(table);
+    if (awaitingByTable.has(table)) {
+      // já fechada: o próximo passo é o PAGAMENTO
+      setTableModalOption(null);
+      setCurrentScreen('fechamento');
+      return;
+    }
     setIsFechando(true);
     try {
-      const r = await requestTableBill(selectedTable, activeRestaurantSlug);
+      const r = await requestTableBill(table, activeRestaurantSlug);
       if (r.success) {
         setDraftItems([]);
         playAlertSound('sound1', 0.5);
-        // V9 ULTRA PLUS: FECHAMENTO imprime a conferência sozinha na impressora do Caixa
-        void printConference(currentTableOrder, 'garcom');
+        const withFee = table === selectedTable ? serviceFeeEnabled : systemSettings.serviceFeeDefaultOn !== false;
+        void printConference(order, 'garcom', { force: true, includeServiceFee: withFee, kind: 'conferencia' });
+        setTableModalOption(null);
+        setCurrentScreen('fechamento');
       }
     } finally {
       setIsFechando(false);
     }
+  };
+
+  const handleFechamentoAction = async () => {
+    if (!selectedTable) return;
+    await fecharContaEImprimir(selectedTable);
   };
 
   // V9 — REABRIR CONTA (após o aviso obrigatório)
@@ -921,6 +939,14 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
       if (res.success) {
         playAlertSound('sound3', 0.8);
+        // PAGAMENTO imprime o cupom escolhido (aqui: Cupom Comum) no mesmo clique, já com os 10%.
+        void printConference(currentTableOrder, 'caixa', {
+          force: true,
+          silentToast: true,
+          includeServiceFee: serviceFeeEnabled,
+          kind: 'comum',
+          paymentMethod,
+        });
         showToast(`Mesa ${selectedTable} fechada e liberada com sucesso!`, 'success');
         setSelectedTable(null);
         setDraftItems([]);
@@ -1307,7 +1333,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setCurrentScreen('fechamento')}
+                  disabled={isFechando}
+                  onClick={() => (selectedTable ? void fecharContaEImprimir(selectedTable) : setCurrentScreen('fechamento'))}
                   className="min-h-[40px] px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/40 text-xs font-black uppercase rounded-xl flex items-center gap-1.5 transition-all active:scale-95"
                 >
                   <Receipt className="w-4 h-4" />
@@ -1734,7 +1761,8 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => setCurrentScreen('fechamento')}
+                        disabled={isFechando}
+                        onClick={() => (selectedTable ? void fecharContaEImprimir(selectedTable) : setCurrentScreen('fechamento'))}
                         className="min-h-[42px] bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/40 font-black text-xs uppercase rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95"
                       >
                         <Receipt className="w-3.5 h-3.5" />
@@ -2754,7 +2782,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                 <div className="flex gap-2">
                   <button type="button" disabled={awaitingByTable.has(table)} onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('cardapio'); }} className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-black disabled:opacity-40">{awaitingByTable.has(table) ? 'Conta travada' : 'Adicionar Itens'}</button>
                   <RemoveOrderItemButton order={order} disabled={awaitingByTable.has(table)} />
-                  <button type="button" disabled={!order} onClick={() => { setSelectedTable(table); setTableModalOption(null); setCurrentScreen('fechamento'); }} className={`px-5 py-2 rounded-xl text-slate-950 text-xs font-black uppercase disabled:opacity-40 ${awaitingByTable.has(table) ? 'bg-emerald-400 animate-pulse' : 'bg-amber-500'}`}>{awaitingByTable.has(table) ? 'Pagamento' : 'Fechamento'}</button>
+                  <button type="button" disabled={!order || isFechando} onClick={() => void fecharContaEImprimir(table)} className={`px-5 py-2 rounded-xl text-slate-950 text-xs font-black uppercase disabled:opacity-40 ${awaitingByTable.has(table) ? 'bg-emerald-400 animate-pulse' : 'bg-amber-500'}`}>{isFechando ? 'Fechando...' : awaitingByTable.has(table) ? 'Pagamento' : 'Fechamento'}</button>
                 </div>
               </div>
             </div>
@@ -2859,6 +2887,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
           order={currentTableOrder}
           restaurant={restaurant}
           ticketKind={ticketKind}
+          includeServiceFee={serviceFeeEnabled}
           onClose={() => setShowPrintModal(false)}
         />
       )}

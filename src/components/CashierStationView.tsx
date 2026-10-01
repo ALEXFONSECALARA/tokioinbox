@@ -366,7 +366,14 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     // mesmo clique — não é mais preciso um segundo passo manual de impressão.
     const printSource: ConferenceSource = isMesaOrder ? 'caixa' : selectedOrder.orderType === 'delivery' ? 'delivery' : 'retirada';
     const orderToPrint = isMesaOrder && selectedFinancialOrders.length ? mergeOrdersForConference(selectedFinancialOrders) : selectedOrder;
-    void printConference(orderToPrint, printSource, { force: true, silentToast: true });
+    // PAGAMENTO imprime o comprovante ESCOLHIDO (Cupom Comum ou Nota Fiscal), com os 10% da mesa.
+    void printConference(orderToPrint, printSource, {
+      force: true,
+      silentToast: true,
+      includeServiceFee: isMesaOrder ? includeServiceFee : undefined,
+      kind: receiptType,
+      paymentMethod,
+    });
 
     // Reset selection and payment state
     setSelectedOrder(null);
@@ -723,7 +730,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                       ))}
                       <button
                         type="button"
-                        onClick={() => void printConference(mergeOrdersForConference(selectedFinancialOrders.length ? selectedFinancialOrders : [selectedOrder]), 'caixa', { force: true })}
+                        onClick={() => void printConference(mergeOrdersForConference(selectedFinancialOrders.length ? selectedFinancialOrders : [selectedOrder]), 'caixa', { force: true, includeServiceFee })}
                         className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 text-xs font-bold flex items-center gap-1.5"
                         title="Imprimir cupom comum (conta completa) para o cliente — não registra pagamento"
                       >
@@ -738,7 +745,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                             selectedOrder.orderType === 'mesa' && selectedFinancialOrders.length
                               ? mergeOrdersForConference(selectedFinancialOrders)
                               : selectedOrder;
-                          void printConference(toPrint, selectedOrder.orderType === 'mesa' ? 'caixa' : selectedOrder.orderType === 'delivery' ? 'delivery' : 'retirada');
+                          void printConference(toPrint, selectedOrder.orderType === 'mesa' ? 'caixa' : selectedOrder.orderType === 'delivery' ? 'delivery' : 'retirada', { includeServiceFee: selectedOrder.orderType === 'mesa' ? includeServiceFee : undefined });
                           setSelectedOrder(null);
                         }}
                         className="text-xs text-slate-300 hover:text-white px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 font-bold"
@@ -1365,6 +1372,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
           order={ticketOrder}
           restaurant={restaurants[ticketOrder.restaurantSlug]}
           ticketKind="cupom"
+          includeServiceFee={ticketOrder.orderType === 'mesa' ? includeServiceFee : undefined}
           onClose={() => setTicketOrder(null)}
         />
       )}

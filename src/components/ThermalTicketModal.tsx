@@ -1,3 +1,4 @@
+import { applyServiceFeeToOrder } from '../utils/conferencePrint';
 import React, { useState, useEffect } from 'react';
 import { Order, RestaurantConfig, SmartTicketAIAnalysis } from '../types/restaurant';
 import { useStore } from '../context/StoreContext';
@@ -25,15 +26,21 @@ interface ThermalTicketModalProps {
   restaurant: RestaurantConfig;
   onClose: () => void;
   ticketKind?: 'conferencia' | 'cupom';
+  /** Mesa: estado do botão dos 10% na conta (true/false). Indefinido = padrão do sistema. */
+  includeServiceFee?: boolean;
 }
 
 export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
-  order,
+  order: rawOrder,
   restaurant,
   onClose,
   ticketKind,
+  includeServiceFee,
 }) => {
-  const { updateOrderPrintStatus, printerSettings, updatePrinterSettings, showToast } = useStore();
+  const { updateOrderPrintStatus, printerSettings, updatePrinterSettings, showToast, systemSettings } = useStore();
+  // CORREÇÃO: Mesa/Salão imprimia só com o subtotal (sem os 10%). Agora o cupom da mesa
+  // sai SEMPRE com a taxa de serviço, respeitando o botão de desativar da conta.
+  const order = applyServiceFeeToOrder(rawOrder, includeServiceFee, systemSettings?.serviceFeeDefaultOn !== false);
   const [printStep, setPrintStep] = useState<'idle' | 'printing' | 'printed' | 'error'>(
     order.printStatus === 'impresso' ? 'printed' : 'idle'
   );

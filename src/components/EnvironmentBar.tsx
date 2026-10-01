@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Utensils,
   Flame,
@@ -13,6 +13,12 @@ import {
   Activity,
   Layers,
   ChevronDown,
+  Wrench,
+  Percent,
+  Printer,
+  QrCode,
+  Send,
+  Receipt,
 } from 'lucide-react';
 import { OperationalWorkflowModal } from './OperationalWorkflowModal';
 import { useStore } from '../context/StoreContext';
@@ -44,8 +50,35 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
   className = '',
   condensed = false,
 }) => {
-  const { currentUser, salesChannels, systemSettings } = useStore();
+  const { currentUser, salesChannels, systemSettings, updateSystemSettings } = useStore();
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false);
+
+  // FERRAMENTAS DO SALÃO (topo): menu suspenso com tudo que o salão usa no dia a dia.
+  // Fica "fixed" (calculado a partir do botão) porque a barra rola na horizontal e um
+  // menu absoluto seria cortado pelo overflow.
+  const [salaoMenu, setSalaoMenu] = useState<{ top: number; left: number } | null>(null);
+  const salaoBtnRef = useRef<HTMLButtonElement | null>(null);
+  const salaoMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!salaoMenu) return;
+    const close = (e: Event) => {
+      const t = e.target as Node;
+      if (salaoMenuRef.current?.contains(t) || salaoBtnRef.current?.contains(t)) return;
+      setSalaoMenu(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setSalaoMenu(null);
+    const onResize = () => setSalaoMenu(null);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    document.addEventListener('keydown', esc);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('touchstart', close);
+      document.removeEventListener('keydown', esc);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [salaoMenu]);
 
   // Perfis e áreas liberadas seguem exatamente os nomes do servidor (ver painel/access.ts).
   // Sem usuário logado nada é exibido: esta barra só existe dentro do painel autenticado.
@@ -130,6 +163,34 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
               {currentEnvironment === 'pdv' && (
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping ml-0.5 shrink-0" />
               )}
+            </button>
+          )}
+
+          {/* 1b. 🛠 FERRAMENTAS DO SALÃO — menu suspenso no topo */}
+          {(canAccessPdv || canAccessCaixa || canAccessAdmin) && (
+            <button
+              id="env-btn-ferramentas-salao"
+              ref={salaoBtnRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={Boolean(salaoMenu)}
+              onClick={() => {
+                if (salaoMenu) return setSalaoMenu(null);
+                const r = salaoBtnRef.current?.getBoundingClientRect();
+                const width = 300;
+                const left = Math.max(8, Math.min((r?.left ?? 8), window.innerWidth - width - 8));
+                setSalaoMenu({ top: (r?.bottom ?? 48) + 6, left });
+              }}
+              className={`min-h-[42px] px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
+                salaoMenu
+                  ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                  : 'bg-[#121724] border-slate-800 text-slate-300 hover:text-white hover:bg-[#181F30] hover:border-slate-700'
+              }`}
+              title="Ferramentas do Salão & Mesas"
+            >
+              <Wrench className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-xs font-black tracking-wider">FERRAMENTAS DO SALÃO</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${salaoMenu ? 'rotate-180' : ''}`} />
             </button>
           )}
 
@@ -434,6 +495,68 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
           </div>
         )}
       </div>
+
+      {salaoMenu && (
+        <div
+          ref={salaoMenuRef}
+          role="menu"
+          style={{ position: 'fixed', top: salaoMenu.top, left: salaoMenu.left, width: 300, zIndex: 120 }}
+          className="bg-[#0F131D] border border-slate-700 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,.7)] p-2 space-y-1 max-h-[80vh] overflow-y-auto"
+        >
+          <p className="px-2 pt-1 pb-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500">Ferramentas do Salão & Mesas</p>
+          {[
+            { show: canAccessPdv, icon: UserCheck, label: 'Mesas & PDV do Garçom', hint: 'Abrir mesa, lançar itens, FECHAMENTO', go: () => onSelectEnvironment('pdv') },
+            { show: canAccessCaixa, icon: Receipt, label: 'Pagamento & Caixa', hint: 'Receber, 10%, cupom comum/fiscal', go: () => onSelectEnvironment('caixa') },
+            { show: canAccessAdmin, icon: Utensils, label: 'Gestão de Mesas', hint: 'Mesas e comandas', go: () => onSelectEnvironment('admin', 'tables') },
+            { show: canAccessAdmin, icon: QrCode, label: 'Placas QR das Mesas', hint: 'Imprimir/ativar o QR de cada mesa', go: () => onSelectEnvironment('admin', 'tables') },
+            { show: canAccessAdmin, icon: Printer, label: 'Impressoras (Print Agent)', hint: 'Cozinha, Sushi Bar, Bar e Caixa', go: () => onSelectEnvironment('admin', 'print_agent') },
+            { show: canAccessAdmin, icon: Wrench, label: 'Configurações do Salão', hint: '10%, impressão por setor, Kanban', go: () => onSelectEnvironment('admin', 'tools_catalog') },
+          ]
+            .filter((it) => it.show)
+            .map((it) => (
+              <button
+                key={it.label}
+                type="button"
+                role="menuitem"
+                onClick={() => { setSalaoMenu(null); it.go(); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-slate-800/70 active:scale-[0.99]"
+              >
+                <it.icon className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-xs font-black text-white">{it.label}</span>
+                  <span className="block text-[10px] text-slate-400">{it.hint}</span>
+                </span>
+              </button>
+            ))}
+
+          {canAccessAdmin && (
+            <div className="border-t border-slate-800 mt-1 pt-2 space-y-1.5">
+              <p className="px-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Liga / desliga</p>
+              {[
+                { on: systemSettings.serviceFeeDefaultOn !== false, icon: Percent, label: 'Taxa de serviço 10%', set: () => updateSystemSettings({ serviceFeeDefaultOn: !(systemSettings.serviceFeeDefaultOn !== false) }) },
+                { on: systemSettings.autoSendToStations !== false, icon: Send, label: 'Envio automático aos setores', set: () => updateSystemSettings({ autoSendToStations: !(systemSettings.autoSendToStations !== false) }) },
+                { on: systemSettings.kanbanEnabled !== false, icon: Kanban, label: 'Kanban de pedidos', set: () => updateSystemSettings({ kanbanEnabled: !(systemSettings.kanbanEnabled !== false) }) },
+              ].map((t) => (
+                <button
+                  key={t.label}
+                  type="button"
+                  aria-pressed={t.on}
+                  onClick={() => t.set()}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/70 hover:bg-slate-800/70"
+                >
+                  <span className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <t.icon className="w-3.5 h-3.5 text-amber-400" />
+                    {t.label}
+                  </span>
+                  <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${t.on ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'}`}>
+                    {t.on ? 'ATIVO' : 'DESATIVADO'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Operational Workflow Modal */}
       <OperationalWorkflowModal
