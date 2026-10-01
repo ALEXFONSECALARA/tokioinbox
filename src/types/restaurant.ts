@@ -334,6 +334,8 @@ export interface Order {
   stationsStatus?: Partial<Record<ProductionStation, StationItemStatus>>;
   subtotal: number;
   deliveryFee: number;
+  /** Taxa de serviço (10% do Salão) cobrada no fechamento da mesa. 0/ausente = dispensada. */
+  serviceFee?: number;
   discount: number;
   couponCode?: string;
   total: number;
@@ -668,9 +670,23 @@ export interface CmvRecipeItem {
 /** V9.2 — Configurações globais editáveis pelo administrador (documento `systemSettings`). */
 export type ReportKind = 'dinheiro' | 'pix' | 'credito' | 'debito' | 'delivery' | 'mesa' | 'retirada' | 'balcao' | 'outros';
 
+export type PrintableStation = 'cozinha' | 'sushibar' | 'bar' | 'caixa';
+
 export interface SystemSettings {
   /** false = módulo KDS não é carregado/exibido. NUNCA afeta a impressão. */
   kdsEnabled: boolean;
+  /** false = o Kanban de pedidos fica oculto em todas as telas. NUNCA afeta o envio aos setores nem a impressão. */
+  kanbanEnabled: boolean;
+  /**
+   * true (padrão) = ao ENVIAR o pedido, o sistema manda automaticamente os itens
+   * para cada setor (cozinha, sushi bar, bar) — impressão + painel do setor —
+   * sem depender de ninguém mover cartões no Kanban.
+   */
+  autoSendToStations: boolean;
+  /** Impressão ativa por setor (padrão: todos ligados). Desligar um setor só para a impressão dele. */
+  stationPrint: Record<PrintableStation, boolean>;
+  /** true (padrão) = a Taxa de Serviço de 10% já vem INCLUÍDA ao fechar/pagar mesa (pode ser desativada em cada conta). */
+  serviceFeeDefaultOn: boolean;
   /** tipos incluídos por padrão no relatório de venda do fechamento de caixa */
   reportKinds: ReportKind[];
   /** true (padrão) = Mesas só operam com o Caixa aberto. Editável pelo administrador. */
@@ -679,6 +695,10 @@ export interface SystemSettings {
 
 export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   kdsEnabled: true,
+  kanbanEnabled: true,
+  autoSendToStations: true,
+  stationPrint: { cozinha: true, sushibar: true, bar: true, caixa: true },
+  serviceFeeDefaultOn: true,
   requireCashForTables: true,
   reportKinds: ['dinheiro', 'pix', 'credito', 'debito', 'delivery', 'mesa', 'retirada', 'balcao', 'outros'],
 };
