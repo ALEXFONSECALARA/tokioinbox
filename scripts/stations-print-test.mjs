@@ -101,6 +101,39 @@ try {
   const c2 = await j(`/api/orders/${o8.id}/close-table`, 'POST', { tableNumber: 8, paymentMethod: 'pix', serviceFee: 0, total: o8.subtotal }, tok);
   t('10% desativado (serviceFee 0) é respeitado', c2.body?.success && (c2.body.order.serviceFee || 0) === 0 && Math.abs(c2.body.order.total - o8.subtotal) < 0.01, JSON.stringify([c2.body?.order?.serviceFee, c2.body?.order?.total]));
 
+  // 8) QR da mesa pelo CELULAR (cliente sem login)
+  await setSettings({ requireCashForTables: false }, tok);
+  const qa = await j(`/api/tables/${slug}/21/qr-access`);
+  t('QR da mesa emite senha de acesso', qa.body?.success && qa.body?.active && !!qa.body?.tableAccessToken, JSON.stringify(qa.body));
+  const qtok = qa.body?.tableAccessToken;
+  const itPlain = full.body.menuItems.find((m) => m.restaurantSlug === slug && m.available !== false && !(m.optionGroups || []).length);
+  const oldShape = await j('/api/orders/table/append', 'POST', {
+    tableNumber: 21, restaurantSlug: slug, tableAccessToken: qtok, idempotencyKey: 'qr-old-' + Date.now(),
+    items: [{ name: itPlain.name, quantity: 1, unitPrice: itPlain.price }],
+  });
+  t('(causa do bug) item SEM menuItemId é recusado para cliente', oldShape.status === 400 && /não encontrado no cardápio/i.test(oldShape.body?.error || ''), JSON.stringify(oldShape.body));
+  const qKey = 'qr-new-' + Date.now();
+  const qBody = { tableNumber: 21, restaurantSlug: slug, tableAccessToken: qtok, idempotencyKey: qKey, customerName: 'Cliente Mesa 21', items: [{ menuItemId: itPlain.id, name: itPlain.name, quantity: 2, unitPrice: itPlain.price, selectedOptions: [] }] };
+  const newShape = await j('/api/orders/table/append', 'POST', qBody);
+  t('CELULAR: pedido com menuItemId é aceito', newShape.body?.success === true, JSON.stringify(newShape.body));
+  const qOrderId = newShape.body?.order?.id;
+  const qJobs = (await jobsOf(slug, qOrderId, tok)).length;
+  t('pedido do QR já gera comanda para o setor', qJobs >= 1, String(qJobs));
+  const retry = await j('/api/orders/table/append', 'POST', qBody);
+  const after = (await j(`/api/orders/${qOrderId}`, 'GET', null, tok)).body?.order;
+  t('retry do celular (mesma chave) não duplica itens', retry.body?.success && after.items.length === 1 && after.items[0].quantity === 2, JSON.stringify(after?.items?.map((i) => [i.name, i.quantity])));
+  const bad = await j('/api/orders/table/append', 'POST', { ...qBody, idempotencyKey: 'x' + Date.now(), tableAccessToken: 'invalido.abc' });
+  t('senha de QR inválida é recusada (403)', bad.status === 403);
+  // item com opção obrigatória: sem escolher => erro claro; escolhendo => aceito
+  const itOpt = full.body.menuItems.find((m) => m.restaurantSlug === slug && m.available !== false && (m.optionGroups || []).some((g) => g.required));
+  if (itOpt) {
+    const g = itOpt.optionGroups.find((x) => x.required);
+    const noOpt = await j('/api/orders/table/append', 'POST', { tableNumber: 21, restaurantSlug: slug, tableAccessToken: qtok, idempotencyKey: 'qr-o1-' + Date.now(), items: [{ menuItemId: itOpt.id, name: itOpt.name, quantity: 1, selectedOptions: [] }] });
+    t('item com opção obrigatória sem escolha => erro claro', noOpt.status === 400 && /Selecione uma opção/i.test(noOpt.body?.error || ''), JSON.stringify(noOpt.body));
+    const withOpt = await j('/api/orders/table/append', 'POST', { tableNumber: 21, restaurantSlug: slug, tableAccessToken: qtok, idempotencyKey: 'qr-o2-' + Date.now(), items: [{ menuItemId: itOpt.id, name: itOpt.name, quantity: 1, selectedOptions: [{ groupId: g.id, groupTitle: g.title, optionId: g.options[0].id, name: g.options[0].name, price: g.options[0].price }] }] });
+    t('item com opção escolhida => aceito', withOpt.body?.success === true, JSON.stringify(withOpt.body));
+  } else console.log('INFO nenhum item com opção obrigatória no catálogo de teste');
+
   // 7) Configurações novas persistem
   await setSettings({ kanbanEnabled: false, requireCashForTables: false }, tok);
   const cur = await j('/api/state/systemSettings', 'GET', null, tok);
