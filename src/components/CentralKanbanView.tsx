@@ -1,3 +1,4 @@
+import { KanbanToggleButton } from './KanbanToggleButton';
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, OrderStatus, ProductionStation, normalizeOrderType } from '../types/restaurant';
@@ -193,6 +194,7 @@ export const CentralKanbanView: React.FC<CentralKanbanViewProps> = ({ onBackToAp
           >
             {soundSettings.enabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
+          <KanbanToggleButton />
           <OfflineStatusIndicator showToggle />
         </div>
       </header>

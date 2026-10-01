@@ -855,7 +855,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           )}
 
           {/* Kanban Tab */}
-          {isTabInCategory('kanban') && (
+          {isTabInCategory('kanban') && systemSettings.kanbanEnabled && (
             <button
               onClick={() => setActiveTab('kanban')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1294,8 +1294,20 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToApp, initialTa
           />
         )}
 
-        {activeTab === 'kanban' && (
+        {activeTab === 'kanban' && systemSettings.kanbanEnabled && (
           <AdminKanban selectedFilterSlug={selectedFilterSlug} />
+        )}
+
+        {activeTab === 'kanban' && !systemSettings.kanbanEnabled && (
+          <div className="min-h-[40vh] flex items-center justify-center p-6 text-center">
+            <div className="max-w-sm space-y-2">
+              <p className="text-white font-bold">Kanban desativado</p>
+              <p className="text-xs text-slate-400">
+                Os pedidos continuam sendo enviados automaticamente para cada setor. Para reativar, use Ferramentas →
+                Configurações do Sistema.
+              </p>
+            </div>
+          </div>
         )}
 
         {activeTab === 'kds' && systemSettings.kdsEnabled && (

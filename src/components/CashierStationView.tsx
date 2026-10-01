@@ -62,6 +62,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     activeRestaurantSlug,
     appendItemsToTableOrder,
     salesChannels,
+    systemSettings,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'mesas' | 'delivery' | 'retirada' | 'movimentacoes' | 'qrcodes'>('mesas');
@@ -99,8 +100,9 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   // próxima mesa também abria sem a taxa, por engano).
   const isMesaOrder = selectedOrder?.orderType === 'mesa';
   useEffect(() => {
-    if (selectedOrder) setIncludeServiceFee(true);
-  }, [selectedOrder?.id]);
+    // Padrão do sistema = 10% INCLUÍDO (Ferramentas). O botão da conta permite desativar.
+    if (selectedOrder) setIncludeServiceFee(systemSettings.serviceFeeDefaultOn !== false);
+  }, [selectedOrder?.id, systemSettings.serviceFeeDefaultOn]);
 
   // Cash movement modal
   const [showMovementModal, setShowMovementModal] = useState<boolean>(false);
@@ -223,8 +225,8 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
   }, [selectedOrder, selectedFinancialOrders]);
 
   // V9 PLUS ULTRA 03: 10% só se aplica a MESA. Delivery/Balcão nunca.
-  const serviceFee = isMesaOrder && includeServiceFee ? subtotalSelected * 0.1 : 0;
-  const finalTotal = Math.max(0, subtotalSelected + serviceFee - discountAmount);
+  const serviceFee = isMesaOrder && includeServiceFee ? Number((subtotalSelected * 0.1).toFixed(2)) : 0;
+  const finalTotal = Number(Math.max(0, subtotalSelected + serviceFee - discountAmount).toFixed(2));
   const valuePerPerson = splitCount > 0 ? finalTotal / splitCount : finalTotal;
 
   const cashReceivedNum = parseFloat(cashReceived.replace(',', '.')) || 0;
@@ -329,7 +331,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
           ? Number((finalTotal - allocatedTotal).toFixed(2))
           : Number(Math.max(0, (ord.subtotal || 0) + orderServiceFee - orderDiscount).toFixed(2));
 
-        await closeTableOrder({
+        const closeResult = await closeTableOrder({
           orderId: ord.id,
           tableNumber: selectedOrder.tableNumber,
           paymentMethod,
@@ -340,6 +342,11 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
           operatorName: currentUser?.name || 'Operador Caixa',
           receiptType,
         });
+        // CORREÇÃO: antes o resultado era ignorado e o Caixa mostrava "fechada com
+        // sucesso" mesmo se o servidor recusasse (ex.: caixa fechado, conta já paga).
+        if (!closeResult?.success) {
+          throw new Error(closeResult?.error || `Falha ao fechar o pedido ${ord.shortCode || ord.id} da mesa`);
+        }
 
         allocatedTotal += orderTotal;
         allocatedService += orderServiceFee;
@@ -800,14 +807,19 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                         <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
                           <div>
                             <span className="text-xs font-bold text-white block">Taxa Serviço 10% (Mesa)</span>
-                            <span className="text-[10px] text-slate-400">R$ {serviceFee.toFixed(2)} • incluída por padrão</span>
+                            <span className="text-[10px] text-slate-400">{includeServiceFee ? `R$ ${serviceFee.toFixed(2)} • incluída` : 'Dispensada nesta conta'}</span>
                           </div>
-                          <input
-                            type="checkbox"
-                            checked={includeServiceFee}
-                            onChange={(e) => setIncludeServiceFee(e.target.checked)}
-                            className="w-5 h-5 rounded text-amber-500 cursor-pointer"
-                          />
+                          <button
+                            type="button"
+                            aria-pressed={includeServiceFee}
+                            onClick={() => setIncludeServiceFee((v) => !v)}
+                            className={`px-3 py-2 rounded-xl text-[10px] font-black ${
+                              includeServiceFee ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'
+                            }`}
+                            title={includeServiceFee ? 'Clique para desativar os 10%' : 'Clique para incluir os 10%'}
+                          >
+                            {includeServiceFee ? '10% INCLUÍDO · desativar' : '10% DESATIVADO · incluir'}
+                          </button>
                         </div>
                       ) : (
                         <div className="bg-[#181E2E] p-3 rounded-2xl border border-slate-800 flex items-center justify-between opacity-60">

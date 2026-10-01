@@ -75,7 +75,7 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
   const canAccessCaixa = canUse('caixa');
   const canAccessProducao = systemSettings.kdsEnabled && (canUse('cozinha') || canUse('sushibar') || canUse('bar'));
   const canAccessAdmin = canUse('admin');
-  const canAccessKanban = canUse('kanban');
+  const canAccessKanban = systemSettings.kanbanEnabled && canUse('kanban');
 
   // Check if current view is a production station
   const isProducaoActive =

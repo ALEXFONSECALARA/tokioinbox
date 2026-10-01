@@ -1,3 +1,4 @@
+import { KanbanToggleButton } from './KanbanToggleButton';
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, OrderStatus, RestaurantSlug } from '../types/restaurant';
@@ -187,6 +188,9 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <KanbanToggleButton />
+      </div>
       {/* Audio Unlock Banner if browser autoplay is constrained */}
       {!isAudioUnlocked && (
         <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-amber-200">

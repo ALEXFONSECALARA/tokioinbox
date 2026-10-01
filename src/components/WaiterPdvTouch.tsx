@@ -93,6 +93,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     currentUser,
     showToast,
     updateRestaurantConfig,
+    systemSettings,
   } = useStore();
 
   // ---------------------------------------------------------------------
@@ -549,6 +550,13 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
     if (!serviceFeeEnabled) return 0;
     return Math.round(tableSubtotal * 0.1 * 100) / 100;
   }, [serviceFeeEnabled, tableSubtotal]);
+
+  // CORREÇÃO: o botão dos 10% "vazava" de uma mesa para a próxima (se o operador
+  // desativasse numa conta, a seguinte abria sem os 10%). Agora cada mesa selecionada
+  // volta ao padrão do sistema (10% INCLUÍDO).
+  useEffect(() => {
+    setServiceFeeEnabled(systemSettings.serviceFeeDefaultOn !== false);
+  }, [selectedTable, systemSettings.serviceFeeDefaultOn]);
 
   const finalBillTotal = useMemo(() => {
     return Math.max(0, tableSubtotal - discountAmount + serviceFeeAmount);
@@ -2210,7 +2218,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                       </div>
 
                       <div className="rounded-2xl bg-[#0B1019] border border-slate-800 p-3 space-y-2">
-                        <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-black text-slate-400">Taxa de Serviço 10%</span><button type="button" onClick={() => setServiceFeeEnabled((v) => !v)} className={`px-2.5 py-1 rounded-lg text-[9px] font-black ${serviceFeeEnabled ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>{serviceFeeEnabled ? 'Ativada' : 'Dispensada'}</button></div>
+                        <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-black text-slate-400">Taxa de Serviço 10%</span><button type="button" onClick={() => setServiceFeeEnabled((v) => !v)} className={`px-2.5 py-1 rounded-lg text-[9px] font-black ${serviceFeeEnabled ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>{serviceFeeEnabled ? '10% INCLUÍDO · desativar' : '10% DESATIVADO · incluir'}</button></div>
                         <div className="text-lg font-black font-mono text-emerald-400">+ R$ {serviceFeeAmount.toFixed(2)}</div>
                         <p className="text-[9px] text-slate-500">Opcional e removível conforme a operação.</p>
                       </div>

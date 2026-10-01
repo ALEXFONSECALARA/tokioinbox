@@ -81,6 +81,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     showToast,
     soundSettings,
     updateRestaurantConfig,
+    systemSettings,
   } = useStore();
 
   // Authentication State
@@ -109,6 +110,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   const [searchItemFilter, setSearchItemFilter] = useState('');
   const [tableServicePeople, setTableServicePeople] = useState(2);
   const [includeServiceFee, setIncludeServiceFee] = useState(true);
+  const feeDefaultOn = systemSettings.serviceFeeDefaultOn !== false;
   const [splitCount, setSplitCount] = useState(2);
   const [isSendingOrder, setIsSendingOrder] = useState(false);
   const [isClosingTable, setIsClosingTable] = useState(false);
@@ -117,9 +119,10 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
   // fechar SEMPRE incluída por padrão em cada mesa nova. Antes, se o
   // operador desmarcasse em uma mesa, o estado "vazava" e a próxima mesa
   // também abria sem os 10%, por engano.
+  // Padrão = 10% INCLUÍDO (configurável em Ferramentas). O botão da conta permite desativar.
   useEffect(() => {
-    if (activeTableId !== null) setIncludeServiceFee(true);
-  }, [activeTableId]);
+    if (activeTableId !== null) setIncludeServiceFee(feeDefaultOn);
+  }, [activeTableId, feeDefaultOn]);
   // V9 ULTRA-CORREÇÃO: confirmação obrigatória antes de REABRIR CONTA
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [isReopeningTable, setIsReopeningTable] = useState(false);
@@ -473,7 +476,7 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
       return;
     }
 
-    const totalToClose = includeServiceFee ? activeTableSubtotal * 1.1 : activeTableSubtotal;
+    const totalToClose = Number((activeTableSubtotal + serviceFeeValue).toFixed(2));
 
     // Não permitir fechar com saldo pendente: em dinheiro, o valor
     // recebido precisa cobrir o total da mesa.
@@ -698,8 +701,8 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
     (o) => o.awaitingPayment && o.status !== 'finalizado' && o.status !== 'cancelado'
   );
   const activeTableSubtotal = activeTableId ? getTableTotal(activeTableId) : 0;
-  const serviceFeeValue = includeServiceFee ? activeTableSubtotal * 0.1 : 0;
-  const activeTableGrandTotal = activeTableSubtotal + serviceFeeValue;
+  const serviceFeeValue = includeServiceFee ? Number((activeTableSubtotal * 0.1).toFixed(2)) : 0;
+  const activeTableGrandTotal = Number((activeTableSubtotal + serviceFeeValue).toFixed(2));
   const perPersonTotal = splitCount > 0 ? activeTableGrandTotal / splitCount : activeTableGrandTotal;
 
   // Render Lock Screen if not authenticated
@@ -1674,15 +1677,20 @@ export const TableServicePanel: React.FC<TableServicePanelProps> = ({
                       </div>
 
                       <div className="flex items-center justify-between py-2">
-                        <label className="flex items-center gap-2 cursor-pointer text-xs">
-                          <input
-                            type="checkbox"
-                            checked={includeServiceFee}
-                            onChange={(e) => setIncludeServiceFee(e.target.checked)}
-                            className="rounded text-amber-500 focus:ring-amber-500"
-                          />
+                        <div className="flex items-center gap-2 text-xs">
                           <span>Taxa de Serviço do Salão (10%)</span>
-                        </label>
+                          <button
+                            type="button"
+                            aria-pressed={includeServiceFee}
+                            onClick={() => setIncludeServiceFee((v) => !v)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
+                              includeServiceFee ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'
+                            }`}
+                            title={includeServiceFee ? 'Clique para desativar os 10%' : 'Clique para incluir os 10%'}
+                          >
+                            {includeServiceFee ? '10% INCLUÍDO · desativar' : '10% DESATIVADO · incluir'}
+                          </button>
+                        </div>
                         <span className="font-bold text-amber-400">
                           {includeServiceFee ? `R$ ${serviceFeeValue.toFixed(2)}` : 'R$ 0,00'}
                         </span>

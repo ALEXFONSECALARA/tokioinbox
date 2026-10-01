@@ -417,10 +417,18 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
                   <span>- R$ {order.discount.toFixed(2)}</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span>Taxa de Entrega:</span>
-                <span>R$ {order.deliveryFee.toFixed(2)}</span>
-              </div>
+              {(order.orderType === 'delivery' || order.deliveryFee > 0) && (
+                <div className="flex justify-between">
+                  <span>Taxa de Entrega:</span>
+                  <span>R$ {order.deliveryFee.toFixed(2)}</span>
+                </div>
+              )}
+              {(order.serviceFee || 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>Taxa de Serviço (10%):</span>
+                  <span>R$ {(order.serviceFee || 0).toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm font-black pt-1">
                 <span>TOTAL:</span>
                 <span>R$ {order.total.toFixed(2)}</span>
