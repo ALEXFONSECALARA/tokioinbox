@@ -37,6 +37,7 @@ import {
   OrderStatus,
   ProductionStation,
   StationItemStatus,
+  resolveItemStation,
 } from './server/orderService';
 import {
   findUserByUsername,
@@ -104,6 +105,7 @@ import {
   upsertPrinter,
   deletePrinter,
 } from './server/printAgentService';
+import { getSystemSettings } from './server/systemSettings';
 import {
   registerCustomer,
   loginCustomer,
@@ -866,39 +868,62 @@ function routeOrderToPrint(order: any, sourceItems?: any[], operationKey?: strin
   // durante uma queda de internet, o cliente marca `skipAutoPrint: true` no
   // payload para o servidor NUNCA duplicar o ticket ao sincronizar depois.
   if (opts?.skipAutoPrint) return [];
+
+  // ENVIO AUTOMÁTICO AOS SETORES: ao enviar o pedido, o sistema manda os itens
+  // direto para cada setor (cozinha / sushi bar / bar) sem depender do Kanban.
+  // O botão em Ferramentas pode desligar o envio automático; o Kanban ligado
+  // ou desligado NUNCA interfere aqui.
+  const settings = getSystemSettings();
+  if (settings.autoSendToStations === false) return [];
+
   const jobs: any[] = [];
   const source = Array.isArray(sourceItems) && sourceItems.length ? sourceItems : (order.items || []);
+  if (!source.length) return jobs;
   const byStation: Record<string, any[]> = {};
   // V9.2: um item pode ir para VÁRIOS setores (ex.: Hot Philadelphia → cozinha + sushi bar).
   // A impressão NÃO depende do KDS: este roteamento roda no servidor, com KDS ligado ou desligado.
   for (const item of source) {
-    const fallback = item.station || (String(item.name || '').toLowerCase().includes('sushi') ? 'sushibar' : 'cozinha');
-    const targets: string[] = Array.isArray(item.printStations) && item.printStations.length ? item.printStations : [fallback];
+    // CORREÇÃO: antes só reconhecia "sushi" no nome e tudo o mais ia para a
+    // cozinha (bebida/temaki/sashimi saíam no setor errado, principalmente nos
+    // itens adicionados à mesa). Agora usa a MESMA classificação do pedido
+    // (resolveItemStation), que respeita o setor cadastrado no produto.
+    const primary = resolveItemStation(String(item.name || ''), item.station);
+    const configured: string[] = Array.isArray(item.printStations)
+      ? item.printStations.filter((x: string) => x === 'cozinha' || x === 'sushibar' || x === 'bar')
+      : [];
+    const targets: string[] = configured.length ? configured : [primary];
     for (const station of new Set(targets)) {
       if (!byStation[station]) byStation[station] = [];
       byStation[station].push(item);
     }
   }
   const stationMap: Record<string, any> = { cozinha: 'COZINHA', sushibar: 'SUSHI_BAR', bar: 'BAR' };
+  // Chave estável (não muda a cada segundo) para o anti-duplicidade funcionar de verdade.
+  const opKey = operationKey || 'initial';
   for (const [stationKey, items] of Object.entries(byStation)) {
     const station = stationMap[stationKey];
     if (!station) continue;
+    // Impressão ativa por setor (botão em Ferramentas). Padrão: todos ligados.
+    if ((settings.stationPrint as any)?.[stationKey] === false) continue;
+    const itemsSig = items.map((i: any) => `${i.id || i.name}:${i.quantity}:${i.notes || ''}`).join('|');
     jobs.push(enqueuePrintJob({
       orderId: order.id,
       orderShortCode: order.shortCode,
       restaurantSlug: order.restaurantSlug,
       station,
       rawEscPos: buildKitchenTicket(order, items, operationKey),
+      dedupeKey: `${opKey}|${stationKey}|${itemsSig}`,
     }));
   }
-  if (['delivery', 'balcao', 'retirada', 'online'].includes(order.orderType)) {
+  if (['delivery', 'balcao', 'retirada', 'online'].includes(order.orderType) && settings.stationPrint?.caixa !== false) {
     const body = source.map((i: any) => `${i.quantity}x ${i.name}${i.notes ? ` | ${i.notes}` : ''}`).join('\n');
     jobs.push(enqueuePrintJob({
       orderId: order.id,
       orderShortCode: order.shortCode,
       restaurantSlug: order.restaurantSlug,
       station: 'CAIXA',
-      rawEscPos: `CAIXA ${order.shortCode}\nOP ${operationKey || 'initial'}\n${body}\nTOTAL R$ ${Number(order.total || 0).toFixed(2)}\n------------------------------\n`,
+      rawEscPos: `CAIXA ${order.shortCode}\nOP ${opKey}\n${body}\nTOTAL R$ ${Number(order.total || 0).toFixed(2)}\n------------------------------\n`,
+      dedupeKey: `${opKey}|caixa`,
     }));
   }
   return jobs;
@@ -1670,7 +1695,12 @@ app.post('/api/orders/table/append', publicWriteLimiter, optionalStaffAuth, (req
       idempotencyKey,
     }, { isStaff });
 
-    if (result.order) routeOrderToPrint(result.order, result.isNew ? result.order.items : req.body.items, req.body.idempotencyKey, { skipAutoPrint: !!req.body.skipAutoPrint });
+    // CORREÇÃO: imprime SÓ os itens recém-adicionados, já com o setor resolvido
+    // pelo servidor (antes usava req.body.items cru, sem setor), e NUNCA reimprime
+    // quando é um retry com a mesma idempotencyKey.
+    if (result.order && !result.deduplicated && result.addedItems.length > 0) {
+      routeOrderToPrint(result.order, result.addedItems, req.body.idempotencyKey, { skipAutoPrint: !!req.body.skipAutoPrint });
+    }
 
     // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
     broadcastOrdersUpdate(result.isNew ? 'order_created' : 'table_items_appended', result.order);
@@ -1802,7 +1832,8 @@ app.post('/api/orders/:id/close-table', authenticateStaff, requirePermission('ca
       tableNumber: Number(tableNumber),
       paymentMethod,
       discount: Number(discount) || 0,
-      serviceFee: Number(serviceFee) || 0,
+      // undefined = padrão do sistema (10% incluída); 0 = desativada pelo operador
+      serviceFee: serviceFee === undefined || serviceFee === null ? undefined : Number(serviceFee) || 0,
       total: total !== undefined ? Number(total) : undefined,
       splitCount: Number(splitCount) || 1,
       operatorName,
