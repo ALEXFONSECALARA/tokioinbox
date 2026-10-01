@@ -36,6 +36,7 @@ import {
   getOfflineQueue,
   removeOfflineOperation,
 } from '../utils/offlineQueueManager';
+import { printSectorTicketsOffline } from '../utils/offlineSectorPrint';
 import {
   INITIAL_RESTAURANTS,
   INITIAL_CATEGORIES,
@@ -1482,6 +1483,13 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
               body: JSON.stringify(op.payload),
             });
             removeOfflineOperation(op.id);
+          } else if (op.type === 'REMOVE_ITEM') {
+            await fetch(`/api/orders/${op.payload.orderId}/items/${op.payload.itemId}`, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ quantity: op.payload.quantity, reason: op.payload.reason, confirmed: true }),
+            });
+            removeOfflineOperation(op.id);
           }
         } catch (e) {
           console.warn(`[SYNC FAIL] Falha ao processar operação ${op.type} (${op.id}):`, e);
@@ -1771,14 +1779,13 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
 
     if (isOfflineMode) {
       // Offline-First execution: enqueue operation and generate local order
-      enqueueOfflineOperation('CREATE_ORDER', payload, finalKey);
       const subtotalCalc = itemsPayload.reduce((acc, i) => acc + i.totalPrice, 0);
       const deliveryFeeCalc = orderData.orderType === 'delivery' ? (restaurant.deliveryFee || 7.0) : 0;
       const totalCalc = Math.max(0, subtotalCalc + deliveryFeeCalc - (appliedCoupon?.value || 0));
 
       confirmedOrder = {
         id: `off-ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        shortCode: `#OFF-${Math.floor(100 + Math.random() * 900)}`,
+        shortCode: `OFF-${Math.floor(100 + Math.random() * 900)}`,
         restaurantSlug: activeRestaurantSlug,
         restaurantName: restaurant.name,
         customerName: orderData.customerName,
@@ -1808,7 +1815,17 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      showToast(`Pedido #${confirmedOrder.shortCode} salvo localmente no PDV! (Modo Offline)`, 'info');
+      // V9 PLUS ULTRA 04 — IMPRESSÃO 100% OFFLINE: imprime a comanda de
+      // cozinha/sushibar/bar direto pelo navegador e marca skipAutoPrint
+      // para o servidor nunca duplicar o ticket ao sincronizar depois.
+      printSectorTicketsOffline(itemsPayload, {
+        restaurantName: restaurant.name,
+        orderShortCode: confirmedOrder.shortCode,
+        tableNumber: orderData.tableNumber,
+        orderType: orderData.orderType,
+      });
+      enqueueOfflineOperation('CREATE_ORDER', { ...payload, skipAutoPrint: true }, finalKey);
+      showToast(`Pedido ${confirmedOrder.shortCode} salvo localmente e comanda já impressa (Modo Offline)!`, 'info');
     } else {
       try {
         const response = await fetch('/api/orders', {
@@ -1827,14 +1844,13 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         rememberMyOrders([confirmedOrder]);
       } catch (networkErr: any) {
         console.warn('[OFFLINE FALLBACK] Falha na rede, enfileirando operação localmente:', networkErr);
-        enqueueOfflineOperation('CREATE_ORDER', payload, finalKey);
         const subtotalCalc = itemsPayload.reduce((acc, i) => acc + i.totalPrice, 0);
         const deliveryFeeCalc = orderData.orderType === 'delivery' ? (restaurant.deliveryFee || 7.0) : 0;
         const totalCalc = Math.max(0, subtotalCalc + deliveryFeeCalc - (appliedCoupon?.value || 0));
 
         confirmedOrder = {
           id: `off-ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          shortCode: `#OFF-${Math.floor(100 + Math.random() * 900)}`,
+          shortCode: `OFF-${Math.floor(100 + Math.random() * 900)}`,
           restaurantSlug: activeRestaurantSlug,
           restaurantName: restaurant.name,
           customerName: orderData.customerName,
@@ -1864,7 +1880,14 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        showToast(`Conexão instável: Pedido #${confirmedOrder.shortCode} salvo offline na fila!`, 'info');
+        printSectorTicketsOffline(itemsPayload, {
+          restaurantName: restaurant.name,
+          orderShortCode: confirmedOrder.shortCode,
+          tableNumber: orderData.tableNumber,
+          orderType: orderData.orderType,
+        });
+        enqueueOfflineOperation('CREATE_ORDER', { ...payload, skipAutoPrint: true }, finalKey);
+        showToast(`Conexão instável: Pedido ${confirmedOrder.shortCode} salvo offline, comanda impressa localmente!`, 'info');
       }
     }
 
@@ -1898,7 +1921,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       const payload = {
         restaurantSlug: restSlug,
         restaurantName: restName,
-        customerName: orderTypeToCreate === 'balcao' ? `Retirada #${randomPickup}` : randomName,
+        customerName: orderTypeToCreate === 'balcao' ? `Retirada ${randomPickup}` : randomName,
         customerPhone: '(11) 99882-1234',
         orderType: orderTypeToCreate,
         tableNumber: orderTypeToCreate === 'mesa' ? randomTable : undefined,
@@ -1949,7 +1972,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
         }
         await fetchOrdersFromServer();
         const shortCode = data.order.shortCode || '#TEST';
-        const typeLabel = orderTypeToCreate === 'mesa' ? `Mesa ${randomTable}` : orderTypeToCreate === 'balcao' ? `Senha #${randomPickup}` : 'Delivery';
+        const typeLabel = orderTypeToCreate === 'mesa' ? `Mesa ${randomTable}` : orderTypeToCreate === 'balcao' ? `Senha ${randomPickup}` : 'Delivery';
         showToast(`Novo pedido teste gerado: ${shortCode} (${typeLabel})`, 'success');
         return data.order;
       }
@@ -1978,6 +2001,58 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
   };
 
   const removeOrderItem = async (params: { orderId: string; itemId: string; quantity: number; reason?: string }) => {
+    // V9 PLUS ULTRA 04 — OFFLINE: excluir item também precisa continuar
+    // funcionando sem internet. Reduz/retira o item localmente (otimista) e
+    // enfileira com ID único para sincronizar com o servidor depois.
+    const applyOfflineRemoval = (): { removedQty: number; removedName: string } | null => {
+      const order = orders.find((o) => o.id === params.orderId);
+      const item = order?.items.find((i) => i.id === params.itemId);
+      if (!order || !item) return null;
+      const removeQty = Math.min(params.quantity, item.quantity);
+      const unitPrice = item.totalPrice / item.quantity;
+      const remainingQty = item.quantity - removeQty;
+      const updatedItems =
+        remainingQty > 0
+          ? order.items.map((i) =>
+              i.id === params.itemId ? { ...i, quantity: remainingQty, totalPrice: Number((unitPrice * remainingQty).toFixed(2)) } : i
+            )
+          : order.items.filter((i) => i.id !== params.itemId);
+      const removedValue = Number((unitPrice * removeQty).toFixed(2));
+      const updated: Order = {
+        ...order,
+        items: updatedItems,
+        subtotal: Math.max(0, Number((order.subtotal - removedValue).toFixed(2))),
+        total: Math.max(0, Number((order.total - removedValue).toFixed(2))),
+        statusHistory: [
+          ...order.statusHistory,
+          {
+            status: order.status,
+            timestamp: 'Agora mesmo',
+            note: `${removeQty}x ${item.name} excluído offline${params.reason ? ` — ${params.reason}` : ''}`,
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      return { removedQty: removeQty, removedName: item.name };
+    };
+
+    const isOfflineMode = getSimulatedOffline() || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (isOfflineMode) {
+      const removal = applyOfflineRemoval();
+      if (!removal) {
+        showToast('Item não encontrado localmente para excluir.', 'error');
+        return { success: false, error: 'Item não encontrado' };
+      }
+      enqueueOfflineOperation(
+        'REMOVE_ITEM',
+        { orderId: params.orderId, itemId: params.itemId, quantity: params.quantity, reason: params.reason },
+        `remove-${params.orderId}-${params.itemId}-${Date.now()}`
+      );
+      showToast(`Excluído localmente: ${removal.removedQty}x ${removal.removedName} (Modo Offline)`, 'info');
+      return { success: true, removedQty: removal.removedQty, removedName: removal.removedName };
+    }
+
     try {
       const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
       const res = await fetch(`/api/orders/${params.orderId}/items/${params.itemId}`, {
@@ -1991,6 +2066,19 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       showToast(`Excluído: ${data.removedQty}x ${data.removedName}`, 'success');
       return data;
     } catch (error: any) {
+      // Se foi falha de rede (não resposta de negócio do servidor), cai para offline.
+      if (error instanceof TypeError || String(error.message || '').toLowerCase().includes('fetch')) {
+        const removal = applyOfflineRemoval();
+        if (removal) {
+          enqueueOfflineOperation(
+            'REMOVE_ITEM',
+            { orderId: params.orderId, itemId: params.itemId, quantity: params.quantity, reason: params.reason },
+            `remove-${params.orderId}-${params.itemId}-${Date.now()}`
+          );
+          showToast(`Sem conexão: ${removal.removedQty}x ${removal.removedName} excluído localmente.`, 'warning');
+          return { success: true, removedQty: removal.removedQty, removedName: removal.removedName };
+        }
+      }
       showToast(error.message || 'Erro ao excluir item', 'error');
       return { success: false, error: error.message };
     }
@@ -2264,12 +2352,26 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
     const isOfflineMode = getSimulatedOffline() || (typeof navigator !== 'undefined' && !navigator.onLine);
 
     if (isOfflineMode) {
-      enqueueOfflineOperation('APPEND_TABLE_ITEMS', { ...params, restaurantSlug: restSlug, restaurantName: restName, idempotencyKey: finalKey }, finalKey);
       const { order, isNew } = applyOfflineAppend();
+      // V9 PLUS ULTRA 04 — IMPRESSÃO 100% OFFLINE: imprime a comanda de
+      // cozinha/sushibar/bar direto pelo navegador (sem depender do
+      // servidor) e marca skipAutoPrint para o servidor nunca duplicar o
+      // ticket quando esta operação sincronizar depois.
+      printSectorTicketsOffline(params.items, {
+        restaurantName: restName,
+        orderShortCode: order.shortCode,
+        tableNumber: params.tableNumber,
+        orderType: 'mesa',
+      });
+      enqueueOfflineOperation(
+        'APPEND_TABLE_ITEMS',
+        { ...params, restaurantSlug: restSlug, restaurantName: restName, idempotencyKey: finalKey, skipAutoPrint: true },
+        finalKey
+      );
       showToast(
         isNew
-          ? `Mesa ${params.tableNumber} aberta localmente (Modo Offline)!`
-          : `+${params.items.length} item(s) lançados localmente (Modo Offline)!`,
+          ? `Mesa ${params.tableNumber} aberta localmente e comanda já impressa (Modo Offline)!`
+          : `+${params.items.length} item(s) lançados e comanda já impressa (Modo Offline)!`,
         'info'
       );
       return { success: true, order, isNew };
@@ -2295,12 +2397,22 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
       // Falha de REDE de verdade (sem resposta): cai para offline. Erros de
       // negócio (400/403 com resposta do servidor) são tratados abaixo.
       console.warn('[TABLE SYNC] Falha na rede, enfileirando localmente:', networkErr);
-      enqueueOfflineOperation('APPEND_TABLE_ITEMS', { ...params, restaurantSlug: restSlug, restaurantName: restName, idempotencyKey: finalKey }, finalKey);
       const { order, isNew } = applyOfflineAppend();
+      printSectorTicketsOffline(params.items, {
+        restaurantName: restName,
+        orderShortCode: order.shortCode,
+        tableNumber: params.tableNumber,
+        orderType: 'mesa',
+      });
+      enqueueOfflineOperation(
+        'APPEND_TABLE_ITEMS',
+        { ...params, restaurantSlug: restSlug, restaurantName: restName, idempotencyKey: finalKey, skipAutoPrint: true },
+        finalKey
+      );
       showToast(
         isNew
-          ? `Sem conexão: Mesa ${params.tableNumber} aberta localmente e será sincronizada depois.`
-          : `Sem conexão: itens lançados localmente e serão sincronizados depois.`,
+          ? `Sem conexão: Mesa ${params.tableNumber} aberta localmente, comanda impressa e será sincronizada depois.`
+          : `Sem conexão: itens lançados, comanda impressa localmente e será sincronizada depois.`,
         'warning'
       );
       return { success: true, order, isNew };
