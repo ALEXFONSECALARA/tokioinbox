@@ -164,6 +164,7 @@ import {
   restaurantExists,
 } from './server/catalogService';
 import { createTableAccessToken, verifyTableAccessToken } from './server/tableAccessService';
+import { listTables, ensureTable, setTableActive, isTableActive } from './server/tableService';
 
 const app = express();
 // Dynamic PORT: respects process.env.PORT on Render (e.g. 10000) or defaults to 3000 in local/dev
@@ -266,6 +267,84 @@ app.get('/api/table/access-token', authenticateStaff, requirePermission('can_cre
     return res.json({ success: true, restaurantSlug: scopedSlug, tableNumber: table, token, restaurantName: restaurant?.name || scopedSlug });
   } catch (error: any) {
     return res.status(503).json({ success: false, error: error?.message || 'QR seguro indisponível: configure a chave da mesa.' });
+  }
+});
+
+// ==========================================
+// V9 PLUS ULTRA 04 — MESAS E QR CODES (QR permanente por mesa)
+// ==========================================
+
+// Lista as mesas cadastradas do restaurante (para o painel "Mesas e QR Codes" do Caixa/Admin).
+app.get('/api/tables/:slug/list', authenticateStaff, requirePermission('can_view_orders'), (req, res) => {
+  const scopedSlug = resolveScopedSlug(req, req.params.slug);
+  if (!scopedSlug || !restaurantExists(scopedSlug)) {
+    return res.status(404).json({ success: false, error: 'Restaurante não encontrado.' });
+  }
+  res.json({ success: true, tables: listTables(scopedSlug) });
+});
+
+// Cadastra/garante que a mesa existe no registro (chamado ao criar uma mesa nova no painel).
+app.post('/api/tables/:slug/:number/ensure', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
+  const scopedSlug = resolveScopedSlug(req, req.params.slug);
+  const number = Number(req.params.number);
+  if (!scopedSlug || !restaurantExists(scopedSlug)) {
+    return res.status(404).json({ success: false, error: 'Restaurante não encontrado.' });
+  }
+  if (!Number.isInteger(number) || number < 1 || number > 999) {
+    return res.status(400).json({ success: false, error: 'Mesa inválida.' });
+  }
+  res.json({ success: true, table: ensureTable(scopedSlug, number) });
+});
+
+// CAIXA decide se a mesa está aceitando pedidos pelo QR (🟢 ATIVA / 🔴 BLOQUEADA).
+// Não cancela pedidos já enviados — apenas bloqueia NOVOS pedidos pelo QR.
+app.post('/api/tables/:slug/:number/toggle', authenticateStaff, requirePermission('can_change_status'), (req, res) => {
+  const scopedSlug = resolveScopedSlug(req, req.params.slug);
+  const number = Number(req.params.number);
+  const active = Boolean(req.body?.active);
+  if (!scopedSlug || !restaurantExists(scopedSlug)) {
+    return res.status(404).json({ success: false, error: 'Restaurante não encontrado.' });
+  }
+  if (!Number.isInteger(number) || number < 1 || number > 999) {
+    return res.status(400).json({ success: false, error: 'Mesa inválida.' });
+  }
+  res.json({ success: true, table: setTableActive(scopedSlug, number, active) });
+});
+
+// PÚBLICO — resolvido quando o cliente escaneia o QR PERMANENTE da mesa
+// (link estável: /{slug}/mesa/{numero}, sem token na URL). Se a mesa estiver
+// ativa, emite uma senha/QR de sessão válida (reaproveitando createTableAccessToken
+// e todo o fluxo de pedidos já existente); se bloqueada, devolve a mensagem
+// que o cliente deve ver, sem emitir token nenhum.
+app.get('/api/tables/:slug/:number/qr-access', (req, res) => {
+  const scopedSlug = String(req.params.slug || '').trim().toLowerCase();
+  const number = Number(req.params.number);
+  if (!scopedSlug || !restaurantExists(scopedSlug)) {
+    return res.status(404).json({ success: false, error: 'Restaurante não encontrado.' });
+  }
+  if (!Number.isInteger(number) || number < 1 || number > 999) {
+    return res.status(400).json({ success: false, error: 'Mesa inválida.' });
+  }
+  if (!isTableActive(scopedSlug, number)) {
+    return res.json({
+      success: true,
+      active: false,
+      message: 'Pedidos pela mesa estão temporariamente desativados. Aguarde o atendimento.',
+    });
+  }
+  try {
+    const token = createTableAccessToken(scopedSlug, number);
+    const restaurant = getRestaurant(scopedSlug);
+    return res.json({
+      success: true,
+      active: true,
+      restaurantSlug: scopedSlug,
+      restaurantName: restaurant?.name || scopedSlug,
+      tableNumber: number,
+      tableAccessToken: token,
+    });
+  } catch (error: any) {
+    return res.status(503).json({ success: false, error: error?.message || 'QR seguro indisponível.' });
   }
 });
 
@@ -781,7 +860,12 @@ app.post('/api/ai-engine/simulate', ...adminOnly, async (req, res) => {
   }
 });
 
-function routeOrderToPrint(order: any, sourceItems?: any[], operationKey?: string) {
+function routeOrderToPrint(order: any, sourceItems?: any[], operationKey?: string, opts?: { skipAutoPrint?: boolean }) {
+  // V9 PLUS ULTRA 04 — OFFLINE 100%: quando o pedido/itens já foram impressos
+  // localmente no dispositivo (via window.print(), sem depender do servidor)
+  // durante uma queda de internet, o cliente marca `skipAutoPrint: true` no
+  // payload para o servidor NUNCA duplicar o ticket ao sincronizar depois.
+  if (opts?.skipAutoPrint) return [];
   const jobs: any[] = [];
   const source = Array.isArray(sourceItems) && sourceItems.length ? sourceItems : (order.items || []);
   const byStation: Record<string, any[]> = {};
@@ -799,13 +883,12 @@ function routeOrderToPrint(order: any, sourceItems?: any[], operationKey?: strin
   for (const [stationKey, items] of Object.entries(byStation)) {
     const station = stationMap[stationKey];
     if (!station) continue;
-    const body = items.map((i: any) => `${i.quantity}x ${i.name}${i.notes ? ` | ${i.notes}` : ''}`).join('\n');
     jobs.push(enqueuePrintJob({
       orderId: order.id,
       orderShortCode: order.shortCode,
       restaurantSlug: order.restaurantSlug,
       station,
-      rawEscPos: `PEDIDO ${order.shortCode}\nOP ${operationKey || 'initial'}\nMESA ${order.tableNumber || '-'}\n${body}\n------------------------------\n`,
+      rawEscPos: buildKitchenTicket(order, items, operationKey),
     }));
   }
   if (['delivery', 'balcao', 'retirada', 'online'].includes(order.orderType)) {
@@ -819,6 +902,65 @@ function routeOrderToPrint(order: any, sourceItems?: any[], operationKey?: strin
     }));
   }
   return jobs;
+}
+
+// V9 PLUS ULTRA 04 — seções 8, 9 e 10: comanda da cozinha otimizada para
+// leitura rápida durante o preparo. Hierarquia visual (do mais para o menos
+// destacado): 1º MESA, 2º PEDIDO, 3º itens+quantidade, 4º observações,
+// 5º demais informações. Usa comandos ESC/POS padrão (negrito e fonte
+// duplicada/triplicada) — o campo é `rawEscPos` porque o Print Agent envia
+// estes bytes direto para a impressora térmica, então os comandos abaixo
+// são respeitados por qualquer impressora ESC/POS comum (Epson, Elgin, etc.).
+const ESC = '\x1B';
+const GS = '\x1D';
+const BOLD_ON = `${ESC}E\x01`;
+const BOLD_OFF = `${ESC}E\x00`;
+const SIZE_HUGE = `${GS}!\x33`; // 4x largura e altura — MESA / PEDIDO
+const SIZE_BIG = `${GS}!\x11`; // 2x largura e altura — itens + quantidade
+const SIZE_MED = `${GS}!\x01`; // 2x altura apenas — observações
+const SIZE_NORMAL = `${GS}!\x00`;
+const ALIGN_CENTER = `${ESC}a\x01`;
+const ALIGN_LEFT = `${ESC}a\x00`;
+const LINE = '--------------------------------';
+
+function buildKitchenTicket(order: any, items: any[], operationKey?: string): string {
+  const lines: string[] = [];
+  lines.push(`${ALIGN_CENTER}${LINE}`);
+
+  // 1º — MESA (maior destaque de todos)
+  if (order.tableNumber) {
+    lines.push(`${BOLD_ON}${SIZE_HUGE}MESA ${order.tableNumber}${SIZE_NORMAL}${BOLD_OFF}`);
+  } else {
+    // Delivery/Retirada também têm itens roteados por setor (ex.: bebida no bar) — sem número de mesa.
+    const originLabel = order.orderType === 'delivery' ? 'DELIVERY' : order.orderType === 'retirada' || order.orderType === 'balcao' ? 'BALCÃO' : 'PEDIDO ONLINE';
+    lines.push(`${BOLD_ON}${SIZE_HUGE}${originLabel}${SIZE_NORMAL}${BOLD_OFF}`);
+  }
+
+  // 2º — NÚMERO DO PEDIDO
+  lines.push(`${BOLD_ON}${SIZE_BIG}PEDIDO ${order.shortCode}${SIZE_NORMAL}${BOLD_OFF}`);
+  lines.push(`${LINE}${ALIGN_LEFT}`);
+
+  // 3º — ITENS E QUANTIDADES (quantidade + produto sempre em negrito e fonte grande)
+  for (const item of items) {
+    lines.push(`${BOLD_ON}${SIZE_BIG}${item.quantity}x ${String(item.name || '').toUpperCase()}${SIZE_NORMAL}${BOLD_OFF}`);
+    const options: string[] = Array.isArray(item.selectedOptions)
+      ? item.selectedOptions.map((o: any) => (typeof o === 'string' ? o : o?.name)).filter(Boolean)
+      : [];
+    for (const opt of options) {
+      lines.push(`${SIZE_MED}  + ${String(opt).toUpperCase()}${SIZE_NORMAL}`);
+    }
+    // 4º — OBSERVAÇÕES do item (médio, negrito, mas abaixo do item)
+    if (item.notes) {
+      lines.push(`${BOLD_ON}${SIZE_MED}OBS: ${String(item.notes).toUpperCase()}${SIZE_NORMAL}${BOLD_OFF}`);
+    }
+  }
+
+  lines.push(LINE);
+  // 5º — demais informações (tamanho normal, sem negrito)
+  lines.push(`${ALIGN_CENTER}OP ${operationKey || 'initial'}`);
+  lines.push(new Date().toLocaleString('pt-BR'));
+  lines.push(`${LINE}\n\n`);
+  return lines.join('\n');
 }
 
 // ==========================================
@@ -1368,7 +1510,7 @@ app.post('/api/orders', publicWriteLimiter, optionalStaffAuth, (req, res) => {
     // Um cliente jamais define o id de outro cliente
     if (!authCust) delete payload.customerId;
     const result = createOrderTransactional(payload, { isStaff });
-    if (!result.deduplicated) routeOrderToPrint(result.order);
+    if (!result.deduplicated) routeOrderToPrint(result.order, undefined, undefined, { skipAutoPrint: !!payload.skipAutoPrint });
 
     // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
     broadcastOrdersUpdate('order_created', result.order);
@@ -1528,7 +1670,7 @@ app.post('/api/orders/table/append', publicWriteLimiter, optionalStaffAuth, (req
       idempotencyKey,
     }, { isStaff });
 
-    if (result.order) routeOrderToPrint(result.order, result.isNew ? result.order.items : req.body.items, req.body.idempotencyKey);
+    if (result.order) routeOrderToPrint(result.order, result.isNew ? result.order.items : req.body.items, req.body.idempotencyKey, { skipAutoPrint: !!req.body.skipAutoPrint });
 
     // Broadcast Real-Time SSE update immediately to Garçom, Cozinha, Bar, SushiBar and Client
     broadcastOrdersUpdate(result.isNew ? 'order_created' : 'table_items_appended', result.order);
