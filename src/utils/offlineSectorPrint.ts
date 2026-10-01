@@ -1,3 +1,4 @@
+import { resolveItemStation } from './stationClassifier';
 import { ProductionStation } from '../types/restaurant';
 
 /**
@@ -39,11 +40,8 @@ const STATION_LABEL: Record<ProductionStation, string> = {
 };
 
 function resolveStation(item: OfflinePrintItem): ProductionStation {
-  if (item.station) return item.station;
-  const n = (item.name || '').toLowerCase();
-  if (n.includes('sushi') || n.includes('temaki') || n.includes('sashimi') || n.includes('uramaki')) return 'sushibar';
-  if (n.includes('drink') || n.includes('suco') || n.includes('refrigerante') || n.includes('cerveja') || n.includes('chopp')) return 'bar';
-  return 'cozinha';
+  // Mesma classificação do servidor (antes esta lista era menor e errava bebidas/sushi).
+  return resolveItemStation(item.name || '', item.station);
 }
 
 function buildTicketHtml(station: ProductionStation, items: OfflinePrintItem[], ctx: OfflinePrintContext): string {

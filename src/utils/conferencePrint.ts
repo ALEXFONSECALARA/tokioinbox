@@ -72,6 +72,7 @@ export function mergeOrdersForConference(orders: Order[]): Order {
     subtotal: orders.reduce((s, o) => s + (o.subtotal || 0), 0),
     discount: orders.reduce((s, o) => s + (o.discount || 0), 0),
     deliveryFee: orders.reduce((s, o) => s + (o.deliveryFee || 0), 0),
+    serviceFee: orders.reduce((s, o) => s + (o.serviceFee || 0), 0),
     total: orders.reduce((s, o) => s + (o.total || 0), 0),
   };
 }
@@ -130,6 +131,7 @@ ${items}
 <div class="row"><span>Subtotal</span><span>${money(order.subtotal)}</span></div>
 ${order.discount > 0 ? `<div class="row"><span>Desconto</span><span>- ${money(order.discount)}</span></div>` : ''}
 ${order.deliveryFee > 0 ? `<div class="row"><span>Taxa de entrega</span><span>${money(order.deliveryFee)}</span></div>` : ''}
+${(order.serviceFee || 0) > 0 ? `<div class="row"><span>Taxa de servico (10%)</span><span>${money(order.serviceFee || 0)}</span></div>` : ''}
 <div class="row big"><span>TOTAL</span><span>${money(order.total)}</span></div>
 <div class="hr"></div>
 <div class="c">Confira os itens. Este cupom nao e documento fiscal.</div>
@@ -174,6 +176,7 @@ export function buildConferenceEscPos(
   out.push(pad('Subtotal', money(order.subtotal)));
   if (order.discount > 0) out.push(pad('Desconto', `- ${money(order.discount)}`));
   if (order.deliveryFee > 0) out.push(pad('Taxa entrega', money(order.deliveryFee)));
+  if ((order.serviceFee || 0) > 0) out.push(pad('Taxa servico 10%', money(order.serviceFee || 0)));
   out.push(`${ESC}E\x01${pad('TOTAL', money(order.total))}${ESC}E\x00`);
   out.push(line);
   out.push(center('Confira os itens. Nao e documento fiscal.'.slice(0, cols)));
