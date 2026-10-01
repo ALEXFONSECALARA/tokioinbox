@@ -247,7 +247,7 @@ function getInitialSampleOrders(): Order[] {
   return [
     {
       id: 'ord-101',
-      shortCode: '#TK-4821',
+      shortCode: 'TK-4821',
       restaurantSlug: 'japones',
       restaurantName: 'Sakura Sushi House',
       customerName: 'Mariana Oliveira',
@@ -307,7 +307,7 @@ function getInitialSampleOrders(): Order[] {
     },
     {
       id: 'ord-102',
-      shortCode: '#TK-4822',
+      shortCode: 'TK-4822',
       restaurantSlug: 'hamburgueria',
       restaurantName: 'Burger Craft & Beer',
       customerName: 'Lucas Ferreira',
@@ -624,7 +624,10 @@ export function createOrderTransactional(
 
 // 4. Generate Unique IDs & Codes
   const randomSuffix = crypto.randomInt(1000, 10000);
-  const shortCode = `#TK-${randomSuffix}`;
+  // V9 PLUS ULTRA 04 — seção 5: remover completamente o símbolo "#" da
+  // apresentação dos pedidos. shortCode é só um código curto de exibição
+  // (o ID interno real continua sendo `orderId`, abaixo, intocado).
+  const shortCode = `TK-${randomSuffix}`;
   const orderId = `ord-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const nowIso = new Date().toISOString();
 
