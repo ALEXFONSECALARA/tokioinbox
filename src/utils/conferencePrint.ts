@@ -59,7 +59,7 @@ const noAccents = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, 
 function originLabel(order: Order): string {
   if (order.orderType === 'mesa') return `MESA ${order.tableNumber ?? 'S/N'}`;
   if (order.orderType === 'delivery') return 'ENTREGA DELIVERY';
-  return `SENHA #${order.pickupNumber ?? ((order.shortCode || '').replace(/\D/g, '') || '01')}`;
+  return `SENHA ${order.pickupNumber ?? ((order.shortCode || '').replace(/\D/g, '') || '01')}`;
 }
 
 /** Junta todos os pedidos abertos da mesma mesa em uma única conferência. */

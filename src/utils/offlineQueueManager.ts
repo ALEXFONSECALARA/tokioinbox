@@ -5,7 +5,8 @@ export type OfflineOperationType =
   | 'APPEND_TABLE_ITEMS'
   | 'CLOSE_TABLE'
   | 'UPDATE_STATUS'
-  | 'UPDATE_STATION_STATUS';
+  | 'UPDATE_STATION_STATUS'
+  | 'REMOVE_ITEM';
 
 export interface OfflineOperation {
   id: string;
