@@ -135,7 +135,7 @@ export const CentralKanbanView: React.FC<CentralKanbanViewProps> = ({ onBackToAp
     try {
       await updateOrderStatus(order.id, nextStatus);
       playAlertSound('sound1', 0.4);
-      showToast(`Pedido #${order.shortCode} atualizado para ${nextStatus.toUpperCase()}`, 'success');
+      showToast(`Pedido ${order.shortCode} atualizado para ${nextStatus.toUpperCase()}`, 'success');
     } catch {
       showToast('Erro ao avançar status', 'error');
     }

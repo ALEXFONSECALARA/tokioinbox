@@ -119,7 +119,7 @@ export const AdminManualOrderModal: React.FC<AdminManualOrderModalProps> = ({
       if (orderType === 'mesa') {
         finalCustomerName = `Mesa ${tableNumber}`;
       } else if (orderType === 'balcao') {
-        finalCustomerName = pickupNumber ? `Retirada #${pickupNumber}` : 'Balcão Express';
+        finalCustomerName = pickupNumber ? `Retirada ${pickupNumber}` : 'Balcão Express';
       } else {
         finalCustomerName = 'Cliente Delivery';
       }
@@ -193,7 +193,7 @@ export const AdminManualOrderModal: React.FC<AdminManualOrderModalProps> = ({
           orderType === 'mesa'
             ? `Mesa ${tableNumber}`
             : orderType === 'balcao' && pickupNumber
-            ? `Retirada #${pickupNumber}`
+            ? `Retirada ${pickupNumber}`
             : orderType.toUpperCase()
         }) enviado à cozinha com sucesso!`,
         'success'
@@ -414,7 +414,7 @@ export const AdminManualOrderModal: React.FC<AdminManualOrderModalProps> = ({
                       Senha de Chamada no Painel / Ticket (1 a 100):
                     </span>
                     <span className="font-mono font-black text-amber-400 text-xs">
-                      {pickupNumber ? `Senha #${pickupNumber}` : 'Aguardando número...'}
+                      {pickupNumber ? `Senha ${pickupNumber}` : 'Aguardando número...'}
                     </span>
                   </div>
 
@@ -497,7 +497,7 @@ export const AdminManualOrderModal: React.FC<AdminManualOrderModalProps> = ({
                   orderType === 'mesa'
                     ? `Mesa ${tableNumber || '..'}`
                     : orderType === 'balcao' && pickupNumber
-                    ? `Retirada #${pickupNumber}`
+                    ? `Retirada ${pickupNumber}`
                     : 'Nome do cliente'
                 }
                 value={customerName}

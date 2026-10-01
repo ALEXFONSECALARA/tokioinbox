@@ -473,7 +473,7 @@ export const AdminCashRegister: React.FC = () => {
                         {isBalcao && (
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black text-xs">
                             <Store className="w-3.5 h-3.5" />
-                            <span>BALCÃO - RETIRADA #{ord.pickupNumber ?? (ord.shortCode.replace(/\D/g, '') || '01')}</span>
+                            <span>BALCÃO - RETIRADA {ord.pickupNumber ?? (ord.shortCode.replace(/\D/g, '') || '01')}</span>
                           </div>
                         )}
                         {isDelivery && (

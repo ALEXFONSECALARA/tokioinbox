@@ -52,7 +52,7 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
             <span>🚶 BALCÃO</span>
           </div>
           <div className="text-white font-black text-sm tracking-tight mt-0.5">
-            {pickupNumber ? `SENHA #${pickupNumber}` : shortCode ? `SENHA #${shortCode.replace('#', '')}` : 'PEDIDO BALCÃO'}
+            {pickupNumber ? `SENHA ${pickupNumber}` : shortCode ? `SENHA ${shortCode.replace('#', '')}` : 'PEDIDO BALCÃO'}
           </div>
           <div className="text-[10px] text-sky-300/80 font-bold uppercase tracking-wider mt-0.5">
             VENDA DIRETA
@@ -76,7 +76,7 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
           </div>
           {shortCode && (
             <div className="text-white font-black text-sm font-mono tracking-tight mt-0.5">
-              PEDIDO #{shortCode.replace('#', '')}
+              PEDIDO {shortCode.replace('#', '')}
             </div>
           )}
           <div className="text-[10px] text-purple-300/80 font-bold uppercase tracking-wider mt-0.5">
@@ -99,14 +99,17 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
             <Utensils className="w-3.5 h-3.5" />
             <span>🍽️ SALÃO / CASA</span>
           </div>
-          <div className="text-white font-black text-sm tracking-tight mt-0.5">
-            MESA {tableNumber !== undefined ? String(tableNumber).padStart(2, '0') : '--'}
-          </div>
+          {/* V9 PLUS ULTRA 04 — seção 4: PEDIDO e MESA são as informações
+              prioritárias. PEDIDO em destaque, e MESA ainda MAIS destacada
+              (maior, bem acima de qualquer outro texto do card). */}
           {shortCode && (
-            <div className="text-[11px] font-mono font-bold text-amber-300/80 mt-0.5">
-              PEDIDO #{shortCode.replace('#', '')}
+            <div className="text-[11px] font-mono font-bold text-amber-300/80 mt-1">
+              PEDIDO {shortCode.replace('#', '')}
             </div>
           )}
+          <div className="text-white font-black text-2xl sm:text-3xl leading-tight tracking-tight mt-0.5">
+            MESA {tableNumber !== undefined ? String(tableNumber).padStart(2, '0') : '--'}
+          </div>
         </div>
       );
     }
@@ -126,7 +129,7 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
           </div>
           {shortCode && (
             <div className="text-white font-black text-sm font-mono tracking-tight mt-0.5">
-              PEDIDO #{shortCode.replace('#', '')}
+              PEDIDO {shortCode.replace('#', '')}
             </div>
           )}
           <div className="text-[10px] text-emerald-300/80 font-bold uppercase tracking-wider mt-0.5">
@@ -151,7 +154,7 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
         </div>
         {shortCode && (
           <div className="text-white font-black text-sm font-mono tracking-tight mt-0.5">
-            PEDIDO #{shortCode.replace('#', '')}
+            PEDIDO {shortCode.replace('#', '')}
           </div>
         )}
         <div className="text-[10px] text-blue-300/80 font-bold uppercase tracking-wider mt-0.5">
@@ -169,8 +172,8 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-bold text-xs uppercase tracking-wide ${className}`}
       >
         <span>🚶</span>
-        <span>BALCÃO {pickupNumber ? `#${pickupNumber}` : ''}</span>
-        {shortCode && <span className="font-mono font-black">#{shortCode.replace('#', '')}</span>}
+        <span>BALCÃO {pickupNumber ? `${pickupNumber}` : ''}</span>
+        {shortCode && <span className="font-mono font-black">{shortCode.replace('#', '')}</span>}
       </span>
     );
   }
@@ -183,7 +186,7 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
       >
         <span>🌐</span>
         <span>ONLINE</span>
-        {shortCode && <span className="font-mono font-black">#{shortCode.replace('#', '')}</span>}
+        {shortCode && <span className="font-mono font-black">{shortCode.replace('#', '')}</span>}
       </span>
     );
   }
@@ -195,8 +198,8 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-bold text-xs uppercase tracking-wide ${className}`}
       >
         <span>🍽️</span>
-        <span>MESA {tableNumber !== undefined ? String(tableNumber).padStart(2, '0') : '--'}</span>
-        {shortCode && <span className="font-mono font-black">#{shortCode.replace('#', '')}</span>}
+        <span className="text-sm sm:text-base font-black">MESA {tableNumber !== undefined ? String(tableNumber).padStart(2, '0') : '--'}</span>
+        {shortCode && <span className="font-mono font-black">{shortCode.replace('#', '')}</span>}
       </span>
     );
   }
@@ -209,7 +212,7 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
       >
         <span>🚚</span>
         <span>DELIVERY</span>
-        {shortCode && <span className="font-mono font-black">#{shortCode.replace('#', '')}</span>}
+        {shortCode && <span className="font-mono font-black">{shortCode.replace('#', '')}</span>}
       </span>
     );
   }
@@ -221,7 +224,7 @@ export const OrderOriginBadge: React.FC<OrderOriginBadgeProps> = ({
     >
       <span>📦</span>
       <span>RETIRADA</span>
-      {shortCode && <span className="font-mono font-black">#{shortCode.replace('#', '')}</span>}
+      {shortCode && <span className="font-mono font-black">{shortCode.replace('#', '')}</span>}
     </span>
   );
 };

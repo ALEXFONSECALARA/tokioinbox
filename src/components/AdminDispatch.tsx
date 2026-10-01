@@ -344,7 +344,7 @@ export const AdminDispatch: React.FC<AdminDispatchProps> = ({ selectedFilterSlug
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-black text-white font-mono">
-                              #{order.shortCode}
+                              {order.shortCode}
                             </span>
                             <span className="text-xs font-bold text-slate-300">
                               {order.customerName}
@@ -418,7 +418,7 @@ export const AdminDispatch: React.FC<AdminDispatchProps> = ({ selectedFilterSlug
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-black text-white font-mono">
-                            #{order.shortCode}
+                            {order.shortCode}
                           </span>
                           <span className="text-xs font-bold text-slate-200">
                             {order.customerName}

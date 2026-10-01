@@ -134,7 +134,7 @@ export const AdminKds: React.FC<AdminKdsProps> = ({ selectedFilterSlug }) => {
                     <span className="text-[10px] text-slate-400 block truncate">{data.options}</span>
                   )}
                   <span className="text-[9px] text-slate-500 font-mono block">
-                    {data.orders.map((o) => `#${o}`).join(' ')}
+                    {data.orders.map((o) => `${o}`).join(' ')}
                   </span>
                 </div>
                 <span className="text-sm font-black bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-lg border border-amber-500/30 font-mono shrink-0">
@@ -192,14 +192,14 @@ export const AdminKds: React.FC<AdminKdsProps> = ({ selectedFilterSlug }) => {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-base font-black text-white font-mono">
-                        #{order.shortCode}
+                        {order.shortCode}
                       </span>
                       <span className="text-[10px] bg-slate-800 text-slate-300 font-bold px-1.5 py-0.5 rounded uppercase">
                         {order.orderType === 'delivery'
                           ? '🛵 Entrega'
                           : order.orderType === 'mesa'
                           ? `🍽 Mesa ${order.tableNumber || ''}`
-                          : `🥡 Balcão #${order.pickupNumber || (order.shortCode.replace(/\D/g, '') || '')}`}
+                          : `🥡 Balcão ${order.pickupNumber || (order.shortCode.replace(/\D/g, '') || '')}`}
                       </span>
                     </div>
                     <span className="text-[11px] text-slate-400 font-semibold block truncate">

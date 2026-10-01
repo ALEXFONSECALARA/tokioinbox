@@ -213,7 +213,7 @@ export const AdminAdministrativeSuite: React.FC<AdminAdministrativeSuiteProps> =
         playAlertSound(soundSettings.soundType, soundSettings.volume);
       }
 
-      setSimulatorStatus(`Pedido #${orderId} gerado com sucesso! KDS e impressoras acionados.`);
+      setSimulatorStatus(`Pedido ${orderId} gerado com sucesso! KDS e impressoras acionados.`);
       setTimeout(() => setSimulatorStatus(null), 4000);
     } catch (err: any) {
       setSimulatorStatus('Erro ao despachar simulação: ' + err.message);

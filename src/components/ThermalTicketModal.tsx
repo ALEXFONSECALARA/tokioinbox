@@ -289,14 +289,18 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
                   ? 'EXPEDIÇÃO DELIVERY / MOTO'
                   : 'RETIRADA NO BALCÃO'}
               </div>
-              <div className="text-xl font-black tracking-wider">
+              {/* V9 PLUS ULTRA 04 — seção 4: PEDIDO em destaque, e MESA (quando
+                  houver) ainda mais destacada, logo abaixo, bem maior. */}
+              <div className="text-sm font-black tracking-wide text-amber-300/90">
+                PEDIDO {order.shortCode}
+              </div>
+              <div className="text-2xl font-black tracking-wider leading-tight">
                 {order.orderType === 'mesa' && `🍽️ MESA ${order.tableNumber ?? 'S/N'}`}
                 {order.orderType === 'delivery' && '🛵 ENTREGA DELIVERY'}
                 {(order.orderType === 'retirada' || order.orderType === 'balcao') &&
-                  `🥡 SENHA #${order.pickupNumber ?? (order.shortCode.replace(/\D/g, '') || '01')}`}
+                  `🥡 SENHA ${order.pickupNumber ?? (order.shortCode.replace(/\D/g, '') || '01')}`}
               </div>
-              <div className="text-[10px] font-mono text-slate-300 border-t border-slate-800/80 pt-1 flex justify-between px-1">
-                <span>CÓDIGO: {order.shortCode}</span>
+              <div className="text-[10px] font-mono text-slate-300 border-t border-slate-800/80 pt-1 flex justify-center px-1">
                 <span>{new Date(order.createdAt).toLocaleTimeString()}</span>
               </div>
             </div>
@@ -351,7 +355,7 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
               {(order.orderType === 'balcao' || order.orderType === 'retirada') && order.pickupNumber && (
                 <div className="flex justify-between text-xs font-black bg-amber-200/70 px-1 py-0.5 rounded">
                   <span>SENHA RETIRADA:</span>
-                  <span>SENHA #{order.pickupNumber}</span>
+                  <span>SENHA {order.pickupNumber}</span>
                 </div>
               )}
               <div className="flex justify-between">

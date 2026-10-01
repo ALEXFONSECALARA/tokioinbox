@@ -114,7 +114,7 @@ export const DeliveryOnlineOrdersView: React.FC<DeliveryOnlineOrdersViewProps> =
 
     updateOrderStatus(order.id, nextStatus);
     playAlertSound('sound1', 0.5);
-    showToast(`Pedido #${order.shortCode} atualizado para "${nextStatus.replace('_', ' ').toUpperCase()}"`, 'success');
+    showToast(`Pedido ${order.shortCode} atualizado para "${nextStatus.replace('_', ' ').toUpperCase()}"`, 'success');
   };
 
   return (

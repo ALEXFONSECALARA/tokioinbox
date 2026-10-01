@@ -2025,7 +2025,7 @@ export const WaiterPdvTouch: React.FC<WaiterPdvTouchProps> = ({
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                     <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                      Itens Já Enviados na Comanda ({currentTableOrder.items.length}) • #{currentTableOrder.shortCode}
+                      Itens Já Enviados na Comanda ({currentTableOrder.items.length}) • {currentTableOrder.shortCode}
                     </h3>
                   </div>
                   <span className="text-xs font-mono font-bold text-amber-400">

@@ -142,7 +142,7 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp,
     try {
       const orderPayload = {
         customerId: undefined,
-        customerName: customerName.trim() || `Cliente Balcão #${nextCounterNumber}`,
+        customerName: customerName.trim() || `Cliente Balcão ${nextCounterNumber}`,
         customerPhone: customerPhone.trim() || '(Balcão)',
         restaurantSlug: activeRestaurantSlug,
         restaurantName: restaurant?.name || 'Tokio Rest',
@@ -160,7 +160,7 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp,
           paid: true,
           cashChangeFor: selectedPayment === 'dinheiro' ? parseFloat(cashGiven) || total : undefined,
         },
-        notes: `Pedido de Balcão - Senha #${nextCounterNumber}`,
+        notes: `Pedido de Balcão - Senha ${nextCounterNumber}`,
       };
 
       const result = await createOrder(orderPayload);
@@ -171,7 +171,7 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp,
         setCustomerPhone('');
         setCashGiven('');
         playAlertSound('sound1', 0.6);
-        showToast(`Pedido #${result.shortCode} criado com sucesso no Balcão!`, 'success');
+        showToast(`Pedido ${result.shortCode} criado com sucesso no Balcão!`, 'success');
         // V9 ULTRA PLUS: fechamento do balcão imprime a conferência automática
         void printConference(result, 'balcao');
       }
@@ -223,7 +223,7 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp,
               </div>
               <p className="text-xs text-slate-400">
                 {restaurant?.name} • Cardápio exclusivo desta casa • Próxima Senha de Retirada:{' '}
-                <strong className="text-sky-400 font-mono text-sm">#{nextCounterNumber}</strong>
+                <strong className="text-sky-400 font-mono text-sm">{nextCounterNumber}</strong>
               </p>
             </div>
           </div>
@@ -335,7 +335,7 @@ export const CounterTouchView: React.FC<CounterTouchViewProps> = ({ onBackToApp,
                   className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs whitespace-nowrap"
                 >
                   <span className="font-mono font-bold text-sky-400">
-                    Senha #{o.pickupNumber || o.shortCode}
+                    Senha {o.pickupNumber || o.shortCode}
                   </span>
                   <span className="text-slate-400 font-medium">{o.customerName}</span>
                   <span className="font-mono text-emerald-400 font-bold">R$ {o.total.toFixed(2)}</span>

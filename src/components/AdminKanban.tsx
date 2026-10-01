@@ -221,7 +221,7 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
               <span className="text-slate-300 text-[11px]">
                 Pedidos aguardando há mais de {delaySettings.thresholdMinutes} minutos:{' '}
                 <strong className="text-rose-400 font-mono font-black">
-                  {delayedOrders.map((d) => `#${d.shortCode}`).join(', ')}
+                  {delayedOrders.map((d) => `${d.shortCode}`).join(', ')}
                 </strong>
               </span>
             </div>
@@ -412,7 +412,7 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({ selectedFilterSlug }) 
                                 <>
                                   <Store className="w-3 h-3 text-emerald-400" />
                                   <span className="font-bold text-white">
-                                    Balcão #{order.pickupNumber || (order.shortCode.replace(/\D/g, '') || '')}
+                                    Balcão {order.pickupNumber || (order.shortCode.replace(/\D/g, '') || '')}
                                   </span>
                                 </>
                               )}

@@ -205,7 +205,7 @@ export const ClientTableView: React.FC<ClientTableViewProps> = ({
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-black uppercase text-amber-400">
-                      Pedido em Andamento #{currentTableOrder.shortCode}
+                      Pedido em Andamento {currentTableOrder.shortCode}
                     </span>
                     <span className="text-[10px] bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-white font-bold uppercase">
                       {currentTableOrder.status === 'pronto'

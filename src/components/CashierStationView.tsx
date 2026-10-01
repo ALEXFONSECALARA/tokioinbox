@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Order, PaymentMethod, CashRegisterMovement, ConferenceSource } from '../types/restaurant';
 import { OrderOriginBadge } from './OrderOriginBadge';
+import { TablesQrPanel } from './TablesQrPanel';
 import { RemoveOrderItemButton } from './RemoveOrderItemButton';
 import { ThermalTicketModal } from './ThermalTicketModal';
 import { ConferenceAutoPrintPanel } from './ConferenceAutoPrintPanel';
@@ -63,7 +64,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     salesChannels,
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'mesas' | 'delivery' | 'retirada' | 'movimentacoes'>('mesas');
+  const [activeTab, setActiveTab] = useState<'mesas' | 'delivery' | 'retirada' | 'movimentacoes' | 'qrcodes'>('mesas');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [ticketOrder, setTicketOrder] = useState<Order | null>(null);
@@ -350,7 +351,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
       // Delivery or Retirada
       await updateOrderStatus(selectedOrder.id, 'finalizado');
       playAlertSound('sound1', 0.8);
-      showToast(`Pedido #${selectedOrder.shortCode} recebido e finalizado com sucesso!`, 'success');
+      showToast(`Pedido ${selectedOrder.shortCode} recebido e finalizado com sucesso!`, 'success');
     }
 
     // V9 PLUS ULTRA 03: "Confirmar Recebimento & Liberar Mesa" agora fecha E
@@ -570,6 +571,22 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
             >
               <FileSpreadsheet className="w-4 h-4" />
               <span>📜 HISTÓRICO &amp; EXTRATO</span>
+            </button>
+
+            {/* V9 PLUS ULTRA 04: Mesas e QR Codes */}
+            <button
+              onClick={() => {
+                setActiveTab('qrcodes');
+                setSelectedOrder(null);
+              }}
+              className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-black flex items-center justify-center gap-2 transition-all ${
+                activeTab === 'qrcodes'
+                  ? 'bg-amber-500 text-slate-950 shadow'
+                  : 'text-amber-400 hover:bg-amber-500/10'
+              }`}
+            >
+              <QrCode className="w-4 h-4" />
+              <span>📱 MESAS &amp; QR</span>
             </button>
           </div>
 
@@ -998,7 +1015,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                         <button
                           onClick={async () => {
                             await updateOrderStatus(order.id, 'finalizado');
-                            showToast(`Pedido #${order.shortCode} quitado e finalizado!`, 'success');
+                            showToast(`Pedido ${order.shortCode} quitado e finalizado!`, 'success');
                           }}
                           className="px-3 py-1.5 bg-emerald-500 text-slate-950 text-xs font-black rounded-xl hover:bg-emerald-400"
                         >
@@ -1073,7 +1090,7 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                         <button
                           onClick={async () => {
                             await updateOrderStatus(order.id, 'finalizado');
-                            showToast(`Retirada #${order.shortCode} entregue e finalizada!`, 'success');
+                            showToast(`Retirada ${order.shortCode} entregue e finalizada!`, 'success');
                           }}
                           className="px-3 py-1.5 bg-sky-500 text-slate-950 text-xs font-black rounded-xl hover:bg-sky-400"
                         >
@@ -1159,6 +1176,13 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* V9 PLUS ULTRA 04: Mesas e QR Codes */}
+        {activeTab === 'qrcodes' && (
+          <div className="bg-[#121622] rounded-2xl border border-slate-800 p-5 shadow-xl">
+            <TablesQrPanel />
           </div>
         )}
       </main>
