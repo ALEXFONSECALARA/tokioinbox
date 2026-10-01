@@ -157,7 +157,8 @@ export function PainelApp() {
 
   /** Áreas liberadas = permissões do usuário ∩ função única do aparelho (se houver). */
   const computeAllowed = (): StaffArea[] => {
-    const base = allowedAreasForUser(currentUser, salesChannels);
+    // Kanban desativado em Ferramentas: some do menu inicial do painel.
+    const base = allowedAreasForUser(currentUser, salesChannels).filter((a) => a !== 'kanban' || systemSettings.kanbanEnabled);
     if (!deviceRole) return base;
     const target = DEVICE_ROLE_AREA[deviceRole];
     if (target === 'cliente') return [];
@@ -361,7 +362,22 @@ export function PainelApp() {
       screen = withBar(<DeliveryModule onBackToApp={backToStart} />);
       break;
     case 'kanban':
-      screen = withBar(<CentralKanbanView onBackToApp={backToStart} />);
+      screen = systemSettings.kanbanEnabled ? (
+        withBar(<CentralKanbanView onBackToApp={backToStart} />)
+      ) : (
+        withBar(
+          <div className="min-h-[60vh] flex items-center justify-center p-6 text-center">
+            <div className="max-w-sm space-y-2">
+              <p className="text-white font-bold">Kanban desativado</p>
+              <p className="text-xs text-slate-400">
+                Os pedidos continuam sendo enviados automaticamente para cada setor. Para reativar, use Ferramentas →
+                Configurações do Sistema.
+              </p>
+              <button onClick={backToStart} className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold">Voltar</button>
+            </div>
+          </div>
+        )
+      );
       break;
     case 'caixa':
       screen = withBar(<CaixaModule onBackToApp={backToStart} />);
