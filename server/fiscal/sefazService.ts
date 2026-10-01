@@ -329,7 +329,7 @@ export function buildNfeXml(
       </detPag>
     </pag>
     <infAdic>
-      <infCpl>Trib aprox R$: ${doc.items.reduce((s, it) => s + it.tributosAproximadosFederais, 0).toFixed(2)} Fed, R$: ${doc.items.reduce((s, it) => s + it.tributosAproximadosEstaduais, 0).toFixed(2)} Est. Fonte: IBPT. Pedido #${doc.orderShortCode}. Sistema Tokio Food Service.</infCpl>
+      <infCpl>Trib aprox R$: ${doc.items.reduce((s, it) => s + it.tributosAproximadosFederais, 0).toFixed(2)} Fed, R$: ${doc.items.reduce((s, it) => s + it.tributosAproximadosEstaduais, 0).toFixed(2)} Est. Fonte: IBPT. Pedido ${doc.orderShortCode}. Sistema Tokio Food Service.</infCpl>
     </infAdic>
   </infNFe>
 </NFe>`;

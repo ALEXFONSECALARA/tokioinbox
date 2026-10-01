@@ -751,7 +751,7 @@ export function generateDanfceHtml(doc: FiscalDocument, config: RestaurantFiscal
         : '<p><strong>Aguardando Transmissão em Lote</strong></p>'
     }
     <p>Ambiente de ${doc.ambiente === 'producao' ? 'PRODUÇÃO' : 'HOMOLOGAÇÃO - SEM VALOR FISCAL'}</p>
-    <p>Pedido #${doc.orderShortCode} | Sistema Tokio Food Service</p>
+    <p>Pedido ${doc.orderShortCode} | Sistema Tokio Food Service</p>
   </div>
 </body>
 </html>`;
