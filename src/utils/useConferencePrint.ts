@@ -8,10 +8,10 @@ import { printConferenceAuto } from './conferencePrint';
  * Balcão, Retirada, Delivery e Pedidos). Imprime o cupom de conferência sozinho.
  */
 export function useConferencePrint() {
-  const { printerSettings, restaurants, activeRestaurantSlug, showToast } = useStore();
+  const { printerSettings, restaurants, activeRestaurantSlug, showToast, systemSettings } = useStore();
 
   return useCallback(
-    async (order: Order | null | undefined, source: ConferenceSource, opts?: { force?: boolean; silentToast?: boolean }) => {
+    async (order: Order | null | undefined, source: ConferenceSource, opts?: { force?: boolean; silentToast?: boolean; includeServiceFee?: boolean; kind?: 'conferencia' | 'comum' | 'fiscal'; paymentMethod?: string }) => {
       if (!order) return 'error' as const;
       const restaurant = (restaurants as any)?.[order.restaurantSlug || activeRestaurantSlug];
       const result = await printConferenceAuto({
@@ -20,6 +20,10 @@ export function useConferencePrint() {
         settings: printerSettings,
         source,
         force: opts?.force,
+        includeServiceFee: opts?.includeServiceFee,
+        kind: opts?.kind,
+        paymentMethod: opts?.paymentMethod,
+        serviceFeeDefaultOn: systemSettings?.serviceFeeDefaultOn !== false,
       });
       if (!opts?.silentToast) {
         if (result === 'agent') showToast(`Conferência ${order.shortCode} enviada para a impressora do Caixa.`, 'success');
@@ -28,6 +32,6 @@ export function useConferencePrint() {
       }
       return result;
     },
-    [printerSettings, restaurants, activeRestaurantSlug, showToast]
+    [printerSettings, restaurants, activeRestaurantSlug, showToast, systemSettings?.serviceFeeDefaultOn]
   );
 }
