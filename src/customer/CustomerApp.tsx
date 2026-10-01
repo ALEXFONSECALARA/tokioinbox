@@ -74,7 +74,49 @@ export function CustomerApp() {
     hasSignedTableEntry ? 'client_table' : publicMenuEntry ? 'menu' : 'home'
   );
   const [clientTableNumber] = useState<number>(initialTable?.table || 1);
-  const [clientTableAccessToken] = useState<string | undefined>(initialTable?.accessToken);
+  const [clientTableAccessToken, setClientTableAccessToken] = useState<string | undefined>(initialTable?.accessToken);
+
+  // V9 PLUS ULTRA 04 — QR PERMANENTE DA MESA
+  // Link estável sem token na URL (/{slug}/mesa/{numero}): resolve aqui
+  // chamando o Caixa (via API) para saber se a mesa está ATIVA e, se sim,
+  // emitir a senha/QR de sessão automaticamente — sem o cliente perceber.
+  // Se a mesa estiver BLOQUEADA pelo Caixa, mostra a mensagem exigida,
+  // sem nunca abrir o cardápio/pedido daquela mesa.
+  const [tableQrBlockedMessage, setTableQrBlockedMessage] = useState<string | null>(null);
+  const [isResolvingTableQr, setIsResolvingTableQr] = useState<boolean>(
+    () => Boolean(initialTable?.table && initialTable?.restaurantSegment && !initialTable?.accessToken)
+  );
+  useEffect(() => {
+    if (!initialTable?.table || !initialTable?.restaurantSegment || initialTable?.accessToken) return;
+    const rest = resolveRestaurantFromUrlPath(`/${initialTable.restaurantSegment}`, restaurants);
+    if (!rest) return; // catálogo ainda carregando; um efeito adiante em pendingPathRef resolve o slug
+    let cancelled = false;
+    setIsResolvingTableQr(true);
+    fetch(`/api/tables/${encodeURIComponent(rest.slug)}/${initialTable.table}/qr-access`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.success && data?.active && data?.tableAccessToken) {
+          setClientTableAccessToken(data.tableAccessToken);
+          setView('client_table');
+        } else if (data?.success && data?.active === false) {
+          setTableQrBlockedMessage(data.message || 'Pedidos pela mesa estão temporariamente desativados. Aguarde o atendimento.');
+        } else {
+          setTableQrBlockedMessage(data?.error || 'Não foi possível abrir o cardápio desta mesa. Chame a equipe.');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTableQrBlockedMessage('Sem conexão para validar a mesa. Chame a equipe.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsResolvingTableQr(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Roda de novo quando o catálogo de restaurantes chega (resolveRestaurantFromUrlPath depende dele).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurants]);
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -172,9 +214,30 @@ export function CustomerApp() {
     setIsTrackerOpen(true);
   };
 
-  // Pedido feito pelo QR Code da mesa
-  if (view === 'client_table' && hasSignedTableEntry) {
+  // Pedido feito pelo QR Code da mesa (QR de sessão assinado na URL OU QR
+  // permanente resolvido automaticamente via /api/tables/.../qr-access acima)
+  if (view === 'client_table' && (hasSignedTableEntry || clientTableAccessToken)) {
     return <ClienteModule tableNumber={clientTableNumber} tableAccessToken={clientTableAccessToken} onExitToHome={goHome} />;
+  }
+
+  // Mesa bloqueada pelo Caixa (QR permanente escaneado, mas pedidos desativados)
+  if (tableQrBlockedMessage) {
+    return (
+      <div className="min-h-screen bg-matte-black text-slate-100 flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="text-5xl">🔴</div>
+        <h1 className="text-lg font-black text-white">Mesa {clientTableNumber}</h1>
+        <p className="text-sm text-slate-400 max-w-sm">{tableQrBlockedMessage}</p>
+      </div>
+    );
+  }
+
+  if (isResolvingTableQr) {
+    return (
+      <div className="min-h-screen bg-matte-black text-slate-100 flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-slate-400">Abrindo cardápio da mesa...</p>
+      </div>
+    );
   }
 
   return (
