@@ -2635,18 +2635,33 @@ export const StoreProvider: React.FC<{ children: ReactNode; mode?: StoreMode }> 
   };
 
   const deleteOrder = async (orderId: string): Promise<void> => {
+    // CORREÇÃO: antes o pedido sumia da tela de imediato e a resposta do servidor era ignorada.
+    // Se o servidor recusasse (permissão, pedido já excluído, sem internet), o pedido VOLTAVA ao
+    // recarregar, sem aviso. Agora a tela só mantém a exclusão se o servidor confirmou.
+    const snapshot = orders.find((o) => o.id === orderId);
     setOrders((prev) => prev.filter((order) => order.id !== orderId));
     try {
       const token = currentUser?.token || sessionStorage.getItem('tokio_staff_token');
-      await fetch(`/api/orders/${orderId}`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
+      // 404 = já não existe no servidor: o objetivo (sumir) foi atingido.
+      if (!res.ok && res.status !== 404) {
+        let msg = 'Não foi possível excluir o pedido.';
+        try { msg = (await res.json())?.error || msg; } catch { /* corpo vazio */ }
+        if (snapshot) setOrders((prev) => (prev.some((o) => o.id === orderId) ? prev : [snapshot, ...prev]));
+        showToast(msg, 'error');
+        return;
+      }
+      showToast('Pedido excluído.', 'success');
     } catch (err) {
       console.warn('Erro ao deletar pedido no servidor:', err);
+      if (snapshot) setOrders((prev) => (prev.some((o) => o.id === orderId) ? prev : [snapshot, ...prev]));
+      showToast('Sem conexão com o servidor: o pedido NÃO foi excluído.', 'error');
     }
   };
 
