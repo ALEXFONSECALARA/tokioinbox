@@ -169,6 +169,8 @@ export function PainelApp() {
   // Não altera a URL nem cria links /pdv, /balcao, /caixa etc.
   const [area, setArea] = useState<StaffArea | null>(() => areaFromPathname(window.location.pathname));
   const [adminInitialTab, setAdminInitialTab] = useState<any>('dashboard');
+  // Aba pedida ao abrir o Caixa pelo menu do topo (ex.: placas QR). `n` muda a cada pedido para funcionar também com o Caixa já aberto.
+  const [cashierTabRequest, setCashierTabRequest] = useState<{ tab: string; n: number } | undefined>(undefined);
   // BUG CORRIGIDO: o botão "Cliente" (QR Code/Mesa) fazia a aba inteira
   // navegar para fora do painel (window.location.assign('/')), derrubando a
   // sessão da equipe. Agora ele só abre este modal de pré-visualização —
@@ -217,6 +219,7 @@ export function PainelApp() {
     const target = ENV_TO_AREA[env];
     if (!target || !computeAllowed().includes(target)) return;
     if (target === 'admin' && subOption) setAdminInitialTab(subOption);
+    if (target === 'caixa' && subOption) setCashierTabRequest({ tab: subOption, n: Date.now() });
     goArea(target);
   };
 
@@ -380,7 +383,7 @@ export function PainelApp() {
       );
       break;
     case 'caixa':
-      screen = withBar(<CaixaModule onBackToApp={backToStart} />);
+      screen = withBar(<CaixaModule onBackToApp={backToStart} tabRequest={cashierTabRequest} />);
       break;
     case 'cozinha':
     case 'sushibar':
