@@ -134,6 +134,18 @@ try {
     t('item com opção escolhida => aceito', withOpt.body?.success === true, JSON.stringify(withOpt.body));
   } else console.log('INFO nenhum item com opção obrigatória no catálogo de teste');
 
+  // 9) Excluir pedido: some de verdade, cancela impressões pendentes e não "volta" ao recarregar
+  const del1 = await j('/api/orders/table/append', 'POST', { tableNumber: 30, restaurantSlug: slug, idempotencyKey: 'del-' + Date.now(), items: [{ menuItemId: itCoz.id, name: itCoz.name, quantity: 1, unitPrice: itCoz.price }] }, tok);
+  const delId = del1.body?.order?.id;
+  t('pedido de teste criado com comanda na fila', !!delId && (await jobsOf(slug, delId, tok)).length >= 1);
+  const delRes = await j(`/api/orders/${delId}`, 'DELETE', null, tok);
+  t('excluir pedido => 200', delRes.status === 200 && delRes.body?.success, JSON.stringify(delRes.body));
+  t('excluir pedido cancela as impressões pendentes dele', (await jobsOf(slug, delId, tok)).length === 0);
+  const gone = await j(`/api/orders/${delId}`, 'GET', null, tok);
+  t('pedido excluído não existe mais no servidor', gone.status === 404 || !gone.body?.order, JSON.stringify(gone.body).slice(0, 120));
+  const del2 = await j(`/api/orders/${delId}`, 'DELETE', null, tok);
+  t('excluir de novo => 404 (a tela trata como já excluído)', del2.status === 404);
+
   // 7) Configurações novas persistem
   await setSettings({ kanbanEnabled: false, requireCashForTables: false }, tok);
   const cur = await j('/api/state/systemSettings', 'GET', null, tok);
