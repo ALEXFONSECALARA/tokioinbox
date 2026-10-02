@@ -271,6 +271,18 @@ export function updatePrintJobStatus(
 /**
  * Retry failed print job
  */
+/** Remove da fila os trabalhos AINDA NÃO impressos de um pedido (usado ao excluir o pedido). */
+export function cancelPendingPrintJobsForOrder(orderId: string): number {
+  initializePrinters();
+  const before = printJobsQueue.length;
+  printJobsQueue = printJobsQueue.filter(
+    (j) => !(j.orderId === orderId && (j.status === 'PENDENTE' || j.status === 'RETRY' || j.status === 'ERRO'))
+  );
+  const removed = before - printJobsQueue.length;
+  if (removed > 0) persistPrintQueue();
+  return removed;
+}
+
 export function retryPrintJob(jobId: string): PrintJob | null {
   initializePrintQueue();
   const job = printJobsQueue.find((j) => j.jobId === jobId);
