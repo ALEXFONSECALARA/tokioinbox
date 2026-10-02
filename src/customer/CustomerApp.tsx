@@ -217,7 +217,17 @@ export function CustomerApp() {
   // Pedido feito pelo QR Code da mesa (QR de sessão assinado na URL OU QR
   // permanente resolvido automaticamente via /api/tables/.../qr-access acima)
   if (view === 'client_table' && (hasSignedTableEntry || clientTableAccessToken)) {
-    return <ClienteModule tableNumber={clientTableNumber} tableAccessToken={clientTableAccessToken} onExitToHome={goHome} />;
+    const tableRestaurant = initialTable?.restaurantSegment
+      ? resolveRestaurantFromUrlPath(`/${initialTable.restaurantSegment}`, restaurants)
+      : null;
+    return (
+      <ClienteModule
+        tableNumber={clientTableNumber}
+        tableAccessToken={clientTableAccessToken}
+        restaurantSlug={tableRestaurant?.slug}
+        onExitToHome={goHome}
+      />
+    );
   }
 
   // Mesa bloqueada pelo Caixa (QR permanente escaneado, mas pedidos desativados)
