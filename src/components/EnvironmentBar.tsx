@@ -128,6 +128,17 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
             FLUXO OPERACIONAL:
           </span>
 
+          {/* UNIFICADO: SALÃO & CAIXA — Mesas, Fechamento, Pagamento, Placas QR e ferramentas, tudo junto no topo */}
+          {(canAccessPdv || canAccessCaixa || canAccessAdmin) && (
+            <div
+              id="env-group-salao-caixa"
+              className="flex items-stretch gap-1 p-1 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/5 to-yellow-500/5"
+              role="group"
+              aria-label="Salão e Caixa"
+            >
+              <span className="hidden 2xl:flex items-center px-1.5 text-[9px] font-black uppercase tracking-widest text-amber-400/80 select-none">
+                Salão &amp; Caixa
+              </span>
           {/* 1. 🏠 SALÃO (Mesas → Garçom → PDV Touch) */}
           {canAccessPdv && (
             <button
@@ -166,6 +177,44 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
             </button>
           )}
 
+          {/* 5. 💰 CAIXA (Pagamentos → Fechamento) */}
+          {canAccessCaixa && (
+            <button
+              id="env-btn-caixa"
+              type="button"
+              onClick={() => onSelectEnvironment('caixa')}
+              className={`min-h-[42px] px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap text-left ${
+                currentEnvironment === 'caixa'
+                  ? 'bg-yellow-500 text-slate-950 font-black border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.4)]'
+                  : 'bg-[#121724] border-slate-800 text-slate-300 hover:text-white hover:bg-[#181F30] hover:border-slate-700'
+              }`}
+              title="💰 CAIXA: Pagamentos → Fechamento"
+            >
+              <Wallet
+                className={`w-4 h-4 shrink-0 ${
+                  currentEnvironment === 'caixa' ? 'text-slate-950' : 'text-yellow-400'
+                }`}
+              />
+              <div className="flex flex-col">
+                <span className="text-xs font-black tracking-wider leading-tight">
+                  💰 CAIXA
+                </span>
+                {!condensed && (
+                  <span
+                    className={`text-[9px] font-medium hidden sm:inline leading-tight ${
+                      currentEnvironment === 'caixa' ? 'text-slate-900 font-bold' : 'text-slate-400'
+                    }`}
+                  >
+                    Pagamentos → Fechamento
+                  </span>
+                )}
+              </div>
+              {currentEnvironment === 'caixa' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping ml-0.5 shrink-0" />
+              )}
+            </button>
+          )}
+
           {/* 1b. 🛠 FERRAMENTAS DO SALÃO — menu suspenso no topo */}
           {(canAccessPdv || canAccessCaixa || canAccessAdmin) && (
             <button
@@ -186,12 +235,15 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
                   ? 'bg-amber-500/20 border-amber-400 text-amber-300'
                   : 'bg-[#121724] border-slate-800 text-slate-300 hover:text-white hover:bg-[#181F30] hover:border-slate-700'
               }`}
-              title="Ferramentas do Salão & Mesas"
+              title="Ferramentas do Salão, Mesas, Fechamento, Pagamento e Placas QR"
             >
               <Wrench className="w-4 h-4 text-amber-400 shrink-0" />
-              <span className="text-xs font-black tracking-wider">FERRAMENTAS DO SALÃO</span>
+              <span className="text-xs font-black tracking-wider">FERRAMENTAS</span>
               <ChevronDown className={`w-3.5 h-3.5 transition-transform ${salaoMenu ? 'rotate-180' : ''}`} />
             </button>
+          )}
+
+            </div>
           )}
 
           {/* CLIENTE: função preservada, movida para o grupo secundário
@@ -319,44 +371,6 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
               </div>
               {currentEnvironment === 'delivery' && (
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping ml-0.5 shrink-0" />
-              )}
-            </button>
-          )}
-
-          {/* 5. 💰 CAIXA (Pagamentos → Fechamento) */}
-          {canAccessCaixa && (
-            <button
-              id="env-btn-caixa"
-              type="button"
-              onClick={() => onSelectEnvironment('caixa')}
-              className={`min-h-[42px] px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap text-left ${
-                currentEnvironment === 'caixa'
-                  ? 'bg-yellow-500 text-slate-950 font-black border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.4)]'
-                  : 'bg-[#121724] border-slate-800 text-slate-300 hover:text-white hover:bg-[#181F30] hover:border-slate-700'
-              }`}
-              title="💰 CAIXA: Pagamentos → Fechamento"
-            >
-              <Wallet
-                className={`w-4 h-4 shrink-0 ${
-                  currentEnvironment === 'caixa' ? 'text-slate-950' : 'text-yellow-400'
-                }`}
-              />
-              <div className="flex flex-col">
-                <span className="text-xs font-black tracking-wider leading-tight">
-                  💰 CAIXA
-                </span>
-                {!condensed && (
-                  <span
-                    className={`text-[9px] font-medium hidden sm:inline leading-tight ${
-                      currentEnvironment === 'caixa' ? 'text-slate-900 font-bold' : 'text-slate-400'
-                    }`}
-                  >
-                    Pagamentos → Fechamento
-                  </span>
-                )}
-              </div>
-              {currentEnvironment === 'caixa' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping ml-0.5 shrink-0" />
               )}
             </button>
           )}
@@ -503,12 +517,14 @@ export const EnvironmentBar: React.FC<EnvironmentBarProps> = ({
           style={{ position: 'fixed', top: salaoMenu.top, left: salaoMenu.left, width: 300, zIndex: 120 }}
           className="bg-[#0F131D] border border-slate-700 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,.7)] p-2 space-y-1 max-h-[80vh] overflow-y-auto"
         >
-          <p className="px-2 pt-1 pb-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500">Ferramentas do Salão & Mesas</p>
+          <p className="px-2 pt-1 pb-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500">Salão &amp; Caixa — ferramentas</p>
           {[
-            { show: canAccessPdv, icon: UserCheck, label: 'Mesas & PDV do Garçom', hint: 'Abrir mesa, lançar itens, FECHAMENTO', go: () => onSelectEnvironment('pdv') },
-            { show: canAccessCaixa, icon: Receipt, label: 'Pagamento & Caixa', hint: 'Receber, 10%, cupom comum/fiscal', go: () => onSelectEnvironment('caixa') },
-            { show: canAccessAdmin, icon: Utensils, label: 'Gestão de Mesas', hint: 'Mesas e comandas', go: () => onSelectEnvironment('admin', 'tables') },
-            { show: canAccessAdmin, icon: QrCode, label: 'Placas QR das Mesas', hint: 'Imprimir/ativar o QR de cada mesa', go: () => onSelectEnvironment('admin', 'tables') },
+            { show: canAccessPdv, icon: UserCheck, label: 'Mesas & PDV do Garçom', hint: 'Abrir mesa, lançar itens', go: () => onSelectEnvironment('pdv') },
+            { show: canAccessCaixa, icon: Receipt, label: 'Fechamento da conta', hint: 'Fecha e imprime o cupom no mesmo clique', go: () => onSelectEnvironment('caixa', 'mesas') },
+            { show: canAccessCaixa, icon: Wallet, label: 'Pagamento', hint: '10% incluído, cupom comum ou fiscal', go: () => onSelectEnvironment('caixa', 'mesas') },
+            { show: canAccessCaixa || canAccessAdmin, icon: QrCode, label: 'Placas QR das Mesas', hint: 'Gerar, imprimir e liberar o QR de cada mesa', go: () => onSelectEnvironment(canAccessCaixa ? 'caixa' : 'admin', canAccessCaixa ? 'qrcodes' : 'tables') },
+            { show: canAccessCaixa, icon: Wallet, label: 'Sangria, suprimento e extrato', hint: 'Movimentações do caixa', go: () => onSelectEnvironment('caixa', 'movimentacoes') },
+            { show: canAccessAdmin, icon: Utensils, label: 'Gestão de Mesas', hint: 'Mesas e comandas (Administração)', go: () => onSelectEnvironment('admin', 'tables') },
             { show: canAccessAdmin, icon: Printer, label: 'Impressoras (Print Agent)', hint: 'Cozinha, Sushi Bar, Bar e Caixa', go: () => onSelectEnvironment('admin', 'print_agent') },
             { show: canAccessAdmin, icon: Wrench, label: 'Configurações do Salão', hint: '10%, impressão por setor, Kanban', go: () => onSelectEnvironment('admin', 'tools_catalog') },
           ]

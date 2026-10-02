@@ -20,7 +20,9 @@ interface TableRow {
 }
 
 export const TablesQrPanel: React.FC = () => {
-  const { activeRestaurantSlug, currentUser, showToast } = useStore();
+  const { activeRestaurantSlug, currentUser, showToast, restaurants } = useStore();
+  const restaurantName = restaurants?.[activeRestaurantSlug]?.name || 'Cardápio Digital';
+  const [isPrintingAll, setIsPrintingAll] = useState(false);
   const [tables, setTables] = useState<TableRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -124,26 +126,78 @@ export const TablesQrPanel: React.FC = () => {
     }
   };
 
+  const escHtml = (v: string) => v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+
+  const plateHtml = (number: number, dataUrl: string) => `
+    <section class="plate">
+      <div class="brand">${escHtml(restaurantName)}</div>
+      <div class="mesa">MESA ${number}</div>
+      <img src="${dataUrl}" alt="QR Mesa ${number}" />
+      <div class="cta">Aponte a câmera do celular<br/>para ver o cardápio e pedir</div>
+      <div class="url">${escHtml(tableLink(number))}</div>
+    </section>`;
+
+  // CORREÇÃO: a impressão abria uma janela pop-up (bloqueada em celular/Chrome) e, bloqueada, não
+  // acontecia nada e nenhuma mensagem aparecia. Agora imprime por um quadro oculto, sem pop-up.
+  const printPlates = (plates: Array<{ number: number; dataUrl: string }>) => {
+    if (plates.length === 0) return;
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    if (!doc || !iframe.contentWindow) {
+      iframe.remove();
+      showToast('Não foi possível abrir a impressão neste aparelho. Use "Baixar" e imprima a imagem.', 'error');
+      return;
+    }
+    doc.open();
+    doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>Placas QR - ${escHtml(restaurantName)}</title>
+      <style>
+        @page { size: A5 portrait; margin: 10mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
+        .plate { page-break-after: always; text-align: center; padding: 8mm 4mm; border: 2px solid #111; border-radius: 6mm; }
+        .plate:last-child { page-break-after: auto; }
+        .brand { font-size: 20px; font-weight: 700; letter-spacing: .5px; margin-bottom: 4mm; }
+        .mesa { font-size: 44px; font-weight: 900; margin: 2mm 0 4mm; }
+        img { width: 80mm; height: 80mm; }
+        .cta { font-size: 16px; font-weight: 700; margin-top: 4mm; line-height: 1.35; }
+        .url { font-size: 9px; color: #555; margin-top: 4mm; word-break: break-all; }
+      </style></head><body>${plates.map((p) => plateHtml(p.number, p.dataUrl)).join('')}</body></html>`);
+    doc.close();
+    const run = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch {
+        showToast('Não foi possível acionar a impressão. Use "Baixar" e imprima a imagem.', 'error');
+      }
+      setTimeout(() => iframe.remove(), 60000);
+    };
+    // espera as imagens (data URL) carregarem antes de imprimir
+    setTimeout(run, 400);
+  };
+
   const handlePrintQr = (number: number, dataUrl: string | null) => {
     if (!dataUrl) return;
-    const w = window.open('', '_blank', 'width=420,height=560');
-    if (!w) return;
-    w.document.write(`
-      <html><head><title>QR Mesa ${number}</title>
-      <style>
-        body{font-family:sans-serif;text-align:center;padding:24px;}
-        h1{font-size:22px;margin-bottom:4px;} p{color:#555;font-size:12px;}
-        img{width:280px;height:280px;margin:16px auto;}
-      </style></head>
-      <body>
-        <h1>MESA ${number}</h1>
-        <p>Escaneie para ver o cardápio e pedir</p>
-        <img src="${dataUrl}" />
-        <p>${tableLink(number)}</p>
-        <script>window.onload = () => window.print();</script>
-      </body></html>
-    `);
-    w.document.close();
+    printPlates([{ number, dataUrl }]);
+  };
+
+  // Imprime a placa de TODAS as mesas de uma vez (uma placa por página).
+  const handlePrintAll = async () => {
+    if (isPrintingAll || tables.length === 0) return;
+    setIsPrintingAll(true);
+    try {
+      const list = [...tables].sort((a, b) => a.number - b.number);
+      const plates: Array<{ number: number; dataUrl: string }> = [];
+      for (const t of list) plates.push({ number: t.number, dataUrl: await generateQrCodeDataUrl(tableLink(t.number), 360) });
+      printPlates(plates);
+    } catch {
+      showToast('Não foi possível gerar as placas. Tente novamente.', 'error');
+    } finally {
+      setIsPrintingAll(false);
+    }
   };
 
   const sorted = useMemo(() => [...tables].sort((a, b) => a.number - b.number), [tables]);
@@ -176,6 +230,15 @@ export const TablesQrPanel: React.FC = () => {
             className="px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-black flex items-center gap-1.5 hover:bg-amber-500/25 disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" /> Criar Mesa
+          </button>
+          <button
+            type="button"
+            onClick={handlePrintAll}
+            disabled={isPrintingAll || tables.length === 0}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black flex items-center gap-1.5 disabled:opacity-50"
+            title="Imprimir a placa QR de todas as mesas (uma por página)"
+          >
+            <Printer className="w-3.5 h-3.5" /> {isPrintingAll ? 'Gerando...' : 'Imprimir todas as placas'}
           </button>
         </div>
       </div>

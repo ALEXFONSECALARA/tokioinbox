@@ -45,9 +45,11 @@ import { playAlertSound } from '../utils/audioAlert';
 
 interface CashierStationViewProps {
   onBackToApp?: () => void;
+  /** Pedido de aba vindo do menu "Salão & Caixa" do topo (mesas | delivery | retirada | movimentacoes | qrcodes). */
+  tabRequest?: { tab: string; n: number };
 }
 
-export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackToApp }) => {
+export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackToApp, tabRequest }) => {
   const {
     cashShift,
     addCashMovement,
@@ -65,7 +67,18 @@ export const CashierStationView: React.FC<CashierStationViewProps> = ({ onBackTo
     systemSettings,
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'mesas' | 'delivery' | 'retirada' | 'movimentacoes' | 'qrcodes'>('mesas');
+  const VALID_TABS = ['mesas', 'delivery', 'retirada', 'movimentacoes', 'qrcodes'] as const;
+  type CashierTab = (typeof VALID_TABS)[number];
+  const [activeTab, setActiveTab] = useState<CashierTab>(
+    (VALID_TABS as readonly string[]).includes(tabRequest?.tab || '') ? (tabRequest!.tab as CashierTab) : 'mesas'
+  );
+  useEffect(() => {
+    if (tabRequest && (VALID_TABS as readonly string[]).includes(tabRequest.tab)) {
+      setActiveTab(tabRequest.tab as CashierTab);
+      setSelectedOrder(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabRequest?.n]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [ticketOrder, setTicketOrder] = useState<Order | null>(null);
